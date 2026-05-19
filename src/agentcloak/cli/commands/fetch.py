@@ -48,7 +48,7 @@ def fetch_url(
     timeout: float | None = typer.Option(
         None,
         "--timeout",
-        help="Request timeout in seconds (default: config.navigation_timeout).",
+        help="Request timeout in seconds (default: config.browser.navigation_timeout).",
     ),
     output: Path | None = typer.Option(
         None, "--output", "-o", help="Save response body to file."

@@ -24,9 +24,8 @@ import base64
 import contextlib
 import shutil
 import socket
-from datetime import UTC
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 import httpx
@@ -40,10 +39,8 @@ from agentcloak.browser.base import (
 )
 from agentcloak.browser.state import (
     FrameInfo,
-    PendingDialog,
     TabInfo,
 )
-from agentcloak.core.capture import CaptureEntry, CaptureStore
 from agentcloak.core.errors import (
     BackendError,
     BrowserTimeoutError,
@@ -52,6 +49,10 @@ from agentcloak.core.errors import (
 )
 from agentcloak.core.seq import RingBuffer, SeqCounter, SeqEvent
 from agentcloak.core.types import StealthTier
+
+if TYPE_CHECKING:
+    from agentcloak.core.capture import CaptureStore
+    from agentcloak.core.config import BrowserConfig
 
 __all__ = ["PlaywrightContext", "launch_playwright"]
 
@@ -97,11 +98,13 @@ class PlaywrightContext(BrowserContextBase):
         proxy_url: str | None = None,
         capture_store: CaptureStore | None = None,
         cdp_port: int | None = None,
+        browser_config: BrowserConfig | None = None,
     ) -> None:
         super().__init__(
             seq_counter=seq_counter,
             ring_buffer=ring_buffer,
             capture_store=capture_store,
+            browser_config=browser_config,
         )
 
         # Multi-tab state: map tab_id -> Page, initial page is tab 0
@@ -202,33 +205,33 @@ class PlaywrightContext(BrowserContextBase):
             self._pending_request_count -= 1
 
     def _on_dialog(self, dialog: Any) -> None:
-        dtype = dialog.type
-        if dtype in ("alert", "beforeunload"):
-            self._last_auto_dialog = {
-                "type": dtype,
-                "message": dialog.message,
-            }
-            _accept_task = asyncio.ensure_future(dialog.accept())
-            self._pending_captures.add(_accept_task)
-            _accept_task.add_done_callback(self._pending_captures.discard)
-            logger.info(
-                "dialog_auto_accepted",
-                dialog_type=dtype,
-                message=dialog.message[:100],
-            )
-        else:
-            self._pending_dialog = PendingDialog(
-                dialog_type=dtype,
-                message=dialog.message,
-                default_value=dialog.default_value or "",
-                url=self._page.url,
-            )
-            self._dialog_object = dialog
-            logger.info(
-                "dialog_pending",
-                dialog_type=dtype,
-                message=dialog.message[:100],
-            )
+        # Stash the Playwright Dialog object up front so both auto-accept
+        # (for alert/beforeunload) and the agent-driven _dialog_handle_impl
+        # path can reach it via ``self._dialog_object``. The base class
+        # owns the alert-vs-confirm/prompt dispatch logic so this stays
+        # backend-agnostic.
+        self._dialog_object = dialog
+        self._dispatch_dialog_event(
+            dialog_type=dialog.type,
+            message=dialog.message,
+            default_value=dialog.default_value or "",
+            url=self._page.url,
+        )
+
+    async def _auto_accept_dialog_impl(self) -> None:
+        """Accept the stored Playwright Dialog via its native ``accept()``."""
+        dialog = self._dialog_object
+        if dialog is None:
+            return
+        try:
+            await dialog.accept()
+        except Exception:
+            logger.debug("auto_accept_dialog_failed", exc_info=True)
+        finally:
+            # Auto-accepted dialogs are resolved, so clear the slot
+            # otherwise ``_dialog_handle_impl`` would try to operate on a
+            # dead reference.
+            self._dialog_object = None
 
     def _on_frame_navigated(self, frame: Any) -> None:
         try:
@@ -271,9 +274,10 @@ class PlaywrightContext(BrowserContextBase):
 
     async def _record_capture_async(self, request: Any, response: Any) -> None:
         try:
-            from datetime import datetime
-
-            from agentcloak.core.capture import is_recordable_content, truncate_body
+            from agentcloak.core.capture import (
+                build_capture_entry,
+                is_recordable_content,
+            )
 
             req_headers: dict[str, str] = {}
             try:
@@ -300,17 +304,19 @@ class PlaywrightContext(BrowserContextBase):
             except Exception:
                 pass
 
-            resp_body: str | None = None
+            # Only fetch the response body if the content-type suggests
+            # we'll actually keep it — saves a roundtrip on every image,
+            # font, and JS asset the page loads.
+            raw_response_body: str | None = None
             if is_recordable_content(content_type):
                 try:
                     raw = await response.body()
-                    resp_body = truncate_body(raw.decode("utf-8", errors="replace"))
+                    raw_response_body = raw.decode("utf-8", errors="replace")
                 except Exception:
                     pass
 
-            entry = CaptureEntry(
+            entry = build_capture_entry(
                 seq=self._seq_counter.value,
-                timestamp=datetime.now(UTC).isoformat(),
                 method=request.method,
                 url=request.url,
                 status=response.status,
@@ -318,9 +324,8 @@ class PlaywrightContext(BrowserContextBase):
                 request_headers=req_headers,
                 response_headers=resp_headers,
                 request_body=req_body,
-                response_body=resp_body,
+                raw_response_body=raw_response_body,
                 content_type=content_type,
-                duration_ms=0.0,
             )
             self._capture_store.add(entry)
         except Exception:
@@ -1259,6 +1264,7 @@ async def launch_playwright(
     proxy_url: str | None = None,
     browser_proxy: str | None = None,
     extra_args: list[str] | None = None,
+    browser_config: BrowserConfig | None = None,
 ) -> PlaywrightContext:
     """Launch a Playwright browser and return a context.
 
@@ -1323,6 +1329,7 @@ async def launch_playwright(
             browser_context=browser_context,
             proxy_url=proxy_url,
             cdp_port=cdp_port,
+            browser_config=browser_config,
         )
 
     launch_args: dict[str, Any] = {
@@ -1359,4 +1366,5 @@ async def launch_playwright(
         ring_buffer=ring_buffer,
         proxy_url=proxy_url,
         cdp_port=cdp_port,
+        browser_config=browser_config,
     )

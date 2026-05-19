@@ -94,13 +94,13 @@ class ActionService:
         native ``action_batch`` (faster path). Otherwise run our own loop
         that resolves references before each step.
 
-        ``settle_timeout=None`` falls back to ``config.batch_settle_timeout``.
+        ``settle_timeout=None`` falls back to ``config.browser.batch_settle_timeout``.
         """
         if settle_timeout is None:
             from agentcloak.core.config import load_config
 
             _, cfg = load_config()
-            settle_timeout = cfg.batch_settle_timeout
+            settle_timeout = cfg.browser.batch_settle_timeout
         if not self.has_refs(actions):
             return await ctx.action_batch(
                 actions, sleep=sleep_s, settle_timeout=settle_timeout
@@ -165,7 +165,7 @@ class ActionService:
         from agentcloak.core.config import load_config
 
         _, _cfg = load_config()
-        _default_wait_timeout = _cfg.action_timeout
+        _default_wait_timeout = _cfg.browser.action_timeout
 
         results: list[dict[str, Any]] = []
         total = len(actions)

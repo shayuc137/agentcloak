@@ -11,6 +11,8 @@ from agentcloak.core.types import StealthTier
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from agentcloak.core.config import BrowserConfig
+
 __all__ = [
     "BrowserContextBase",
     "BrowserState",
@@ -34,6 +36,7 @@ async def create_context(
     proxy_url: str | None = None,
     browser_proxy: str | None = None,
     extra_args: list[str] | None = None,
+    browser_config: BrowserConfig | None = None,
 ) -> BrowserContextBase:
     """Factory: create a browser context for the given stealth tier.
 
@@ -49,6 +52,12 @@ async def create_context(
       every browser request — page loads, XHRs, WebSockets — egresses
       through that hop. Populated from ``[browser] proxy`` /
       ``AGENTCLOAK_PROXY``.
+
+    ``browser_config`` is the live :class:`BrowserConfig` snapshot the
+    daemon hands down — the backend stores it so per-call defaults
+    (``navigation_timeout``, ``screenshot_quality``, …) do not require a
+    fresh ``load_config()`` on every API call. Passing ``None`` falls
+    back to dataclass defaults inside the backend.
     """
     if tier == StealthTier.PLAYWRIGHT:
         from agentcloak.browser.playwright_ctx import launch_playwright
@@ -61,6 +70,7 @@ async def create_context(
             proxy_url=proxy_url,
             browser_proxy=browser_proxy,
             extra_args=extra_args,
+            browser_config=browser_config,
         )
 
     if tier == StealthTier.CLOAK:
@@ -76,6 +86,7 @@ async def create_context(
             proxy_url=proxy_url,
             browser_proxy=browser_proxy,
             extra_args=extra_args,
+            browser_config=browser_config,
         )
 
     raise NotImplementedError(f"Backend {tier!r} not yet implemented")

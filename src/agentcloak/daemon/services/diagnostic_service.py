@@ -509,7 +509,7 @@ class DiagnosticService:
             # Config-load problems are surfaced via other checks; assume Xvfb
             # might be needed if we can't tell.
             return True
-        return not cfg.headless
+        return not cfg.browser.headless
 
     @staticmethod
     def _check_xvfb() -> dict[str, Any]:

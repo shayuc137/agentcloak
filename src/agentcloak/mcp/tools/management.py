@@ -139,7 +139,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         from agentcloak.core.config import load_config
 
         _, cfg = load_config()
-        actual_tier = tier or cfg.default_tier
+        actual_tier = tier or cfg.browser.default_tier
 
         try:
             envelope = await client.launch(tier=actual_tier, profile=profile or None)
@@ -355,7 +355,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         # ``client`` instance would happily spawn a daemon mid-diagnosis,
         # masking the very problem the user asked about.
         probe = DaemonClient(
-            host=cfg.daemon_host, port=cfg.daemon_port, auto_start=False
+            host=cfg.daemon.host, port=cfg.daemon.port, auto_start=False
         )
         runtime: dict[str, Any] = {"daemon_ok": False}
         try:
@@ -365,7 +365,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                     "name": "daemon",
                     "ok": True,
                     "level": "ok",
-                    "detail": f"{cfg.daemon_host}:{cfg.daemon_port}",
+                    "detail": f"{cfg.daemon.host}:{cfg.daemon.port}",
                     "hint": "",
                 }
             )
@@ -387,7 +387,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                     "name": "daemon",
                     "ok": True,
                     "level": "info",
-                    "detail": f"{cfg.daemon_host}:{cfg.daemon_port}",
+                    "detail": f"{cfg.daemon.host}:{cfg.daemon.port}",
                     "hint": "not running (auto-starts on first command)",
                 }
             )

@@ -35,6 +35,7 @@ from agentcloak.browser.state import (
     TabInfo,
 )
 from agentcloak.core.capture import CaptureStore
+from agentcloak.core.config import BrowserConfig
 from agentcloak.core.errors import (
     BackendError,
     BrowserTimeoutError,
@@ -175,10 +176,19 @@ class BrowserContextBase(ABC):
         seq_counter: SeqCounter | None = None,
         ring_buffer: RingBuffer | None = None,
         capture_store: CaptureStore | None = None,
+        browser_config: BrowserConfig | None = None,
     ) -> None:
         # --- Shared state ---
         self._seq_counter: SeqCounter = seq_counter or SeqCounter()
         self._ring_buffer: RingBuffer = ring_buffer or RingBuffer()
+        # Phase 6d: BrowserConfig is injected at launch time so navigate/
+        # screenshot/wait/fetch/action_batch can read timeouts and quality
+        # defaults straight from the dataclass instead of re-parsing
+        # config.toml on every public call. Defaults to a fresh
+        # BrowserConfig() so backends constructed without explicit
+        # configuration (mostly unit tests) keep working with hard-coded
+        # dataclass defaults.
+        self._browser_config: BrowserConfig = browser_config or BrowserConfig()
         # Default empty store so the remote backend (which doesn't capture
         # natively) still satisfies ``ctx.capture_store`` access from the
         # daemon. Subclasses can replace it with a real store.
@@ -199,6 +209,10 @@ class BrowserContextBase(ABC):
 
         # R1: Dialog handling.
         self._pending_dialog: PendingDialog | None = None
+        # Holds the asyncio tasks spawned by ``_dispatch_dialog_event`` to
+        # auto-accept alert/beforeunload dialogs. We keep strong refs so the
+        # event loop doesn't GC the coroutine before it resolves.
+        self._auto_dialog_tasks: set[asyncio.Task[None]] = set()
 
         # R5: Frame switching — active frame state. Subclasses interpret the
         # value (e.g. PlaywrightAdapter stores a Frame object, RemoteBridge
@@ -380,6 +394,18 @@ class BrowserContextBase(ABC):
     ) -> dict[str, Any]: ...
 
     @abstractmethod
+    async def _auto_accept_dialog_impl(self) -> None:
+        """Auto-accept the currently-pending alert/beforeunload dialog.
+
+        Subclasses route to whichever underlying primitive their backend
+        exposes (Playwright ``dialog.accept()`` vs CDP
+        ``Page.handleJavaScriptDialog``). Called from
+        :meth:`_dispatch_dialog_event` for alert/beforeunload only; the
+        agent-driven accept/dismiss path runs through
+        :meth:`_dialog_handle_impl`.
+        """
+
+    @abstractmethod
     async def _wait_impl(
         self,
         *,
@@ -459,10 +485,7 @@ class BrowserContextBase(ABC):
     ) -> dict[str, Any]:
         self._check_browser_alive()
         if timeout is None:
-            from agentcloak.core.config import load_config
-
-            _, _cfg = load_config()
-            timeout = float(_cfg.navigation_timeout)
+            timeout = float(self._browser_config.navigation_timeout)
         # Flag flips on the failure / success edge, not on entry. If we
         # invalidated *before* awaiting ``_navigate_impl``, a concurrent
         # ``screenshot`` request could observe ``_page_valid = False`` mid-
@@ -643,10 +666,7 @@ class BrowserContextBase(ABC):
         self._check_browser_alive()
         self._check_page_valid()
         if quality is None:
-            from agentcloak.core.config import load_config
-
-            _, _cfg = load_config()
-            quality = _cfg.screenshot_quality
+            quality = self._browser_config.screenshot_quality
         try:
             return await self._screenshot_impl(
                 full_page=full_page, fmt=format, quality=quality
@@ -683,6 +703,48 @@ class BrowserContextBase(ABC):
             action="use 'dialog accept' or 'dialog dismiss'",
             dialog=dialog,
         )
+
+    def _dispatch_dialog_event(
+        self,
+        *,
+        dialog_type: str,
+        message: str,
+        default_value: str,
+        url: str,
+    ) -> None:
+        """Route a freshly-observed dialog into either auto-accept or pending.
+
+        Called by backend-specific event handlers (Playwright
+        ``page.on('dialog')``, CDP ``Page.javascriptDialogOpening``)
+        after they normalise the underlying payload into four plain
+        strings. alert / beforeunload are accepted in the background so
+        scripts driven by ``window.alert()`` keep flowing; confirm /
+        prompt are stashed as ``self._pending_dialog`` and surface as a
+        ``DialogBlockedError`` on the next action — the agent must call
+        ``dialog accept`` / ``dialog dismiss`` to clear it.
+        """
+        if dialog_type in ("alert", "beforeunload"):
+            self._last_auto_dialog = {"type": dialog_type, "message": message}
+            task = asyncio.ensure_future(self._auto_accept_dialog_impl())
+            self._auto_dialog_tasks.add(task)
+            task.add_done_callback(self._auto_dialog_tasks.discard)
+            logger.info(
+                "dialog_auto_accepted",
+                dialog_type=dialog_type,
+                message=message[:100],
+            )
+        else:
+            self._pending_dialog = PendingDialog(
+                dialog_type=dialog_type,
+                message=message,
+                default_value=default_value,
+                url=url,
+            )
+            logger.info(
+                "dialog_pending",
+                dialog_type=dialog_type,
+                message=message[:100],
+            )
 
     async def dialog_status(self) -> PendingDialog | None:
         return self._pending_dialog
@@ -729,10 +791,7 @@ class BrowserContextBase(ABC):
         state: str = "visible",
     ) -> dict[str, Any]:
         if timeout is None:
-            from agentcloak.core.config import load_config
-
-            _, _cfg = load_config()
-            timeout = _cfg.action_timeout
+            timeout = self._browser_config.action_timeout
         self._check_browser_alive()
         # Selector and JS conditions evaluate against the live page; if the
         # last navigate failed, waiting against the stale page is the same
@@ -884,10 +943,7 @@ class BrowserContextBase(ABC):
     ) -> dict[str, Any]:
         self._check_browser_alive()
         if timeout is None:
-            from agentcloak.core.config import load_config
-
-            _, _cfg = load_config()
-            timeout = float(_cfg.navigation_timeout)
+            timeout = float(self._browser_config.navigation_timeout)
         result = await self._fetch_impl(
             url, method=method, body=body, headers=headers, timeout=timeout
         )
@@ -1150,12 +1206,9 @@ class BrowserContextBase(ABC):
         sleep: float = 0.0,
         settle_timeout: int | None = None,
     ) -> dict[str, Any]:
-        from agentcloak.core.config import load_config
-
-        _, _cfg = load_config()
         if settle_timeout is None:
-            settle_timeout = _cfg.batch_settle_timeout
-        _default_wait_timeout = _cfg.action_timeout
+            settle_timeout = self._browser_config.batch_settle_timeout
+        _default_wait_timeout = self._browser_config.action_timeout
 
         results: list[dict[str, Any]] = []
         total = len(actions)

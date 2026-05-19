@@ -37,7 +37,10 @@ def browser_navigate(
     timeout: float | None = typer.Option(
         None,
         "--timeout",
-        help="Navigation timeout in seconds (default: config.navigation_timeout).",
+        help=(
+            "Navigation timeout in seconds (default: "
+            "config.browser.navigation_timeout)."
+        ),
     ),
     snap: bool = typer.Option(
         False,
@@ -83,7 +86,8 @@ def browser_screenshot(
         "--quality",
         "-q",
         help=(
-            "JPEG quality 0-100 (default: config.screenshot_quality, ignored for png)."
+            "JPEG quality 0-100 (default: config.browser.screenshot_quality, "
+            "ignored for png)."
         ),
     ),
 ) -> None:
@@ -141,7 +145,7 @@ def browser_snapshot(
         "--max-nodes",
         help=(
             "Truncate after N nodes. Default applies "
-            "config.snapshot_max_nodes (80) in compact mode; pass "
+            "config.browser.snapshot_max_nodes (80) in compact mode; pass "
             "--limit 0 to opt back into the full tree. --max-nodes "
             "is the legacy alias."
         ),
@@ -179,7 +183,7 @@ def browser_snapshot(
         params["max_chars"] = str(max_chars)
     # ``limit == -1`` is the "user didn't pass --limit" sentinel — leave
     # ``max_nodes`` out so the daemon applies its compact-mode default
-    # (``config.snapshot_max_nodes``). ``--limit 0`` opts back into the full
+    # (``config.browser.snapshot_max_nodes``). ``--limit 0`` opts back into the full
     # tree and we must forward the literal ``0`` to override the default.
     if limit != -1:
         params["max_nodes"] = str(limit)

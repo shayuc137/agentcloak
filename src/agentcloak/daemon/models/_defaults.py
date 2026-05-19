@@ -20,9 +20,7 @@ OpenAPI spec. Runtime values still come from
 
 from __future__ import annotations
 
-from dataclasses import fields
-
-from agentcloak.core.config import AgentcloakConfig
+from agentcloak.core.config import BrowserConfig
 
 __all__ = [
     "DEFAULT_ACTION_TIMEOUT",
@@ -32,20 +30,13 @@ __all__ = [
 ]
 
 
-def _default(name: str) -> object:
-    """Pull a field's dataclass default without instantiating the class.
+# Construct a fresh BrowserConfig — all browser tunables have hard-coded
+# defaults on the dataclass, so no I/O happens. Pre-Phase-6d versions read
+# from ``AgentcloakConfig`` directly; the sub-config refactor moved these
+# fields to ``BrowserConfig`` so we follow them here.
+_BROWSER_DEFAULTS = BrowserConfig()
 
-    ``AgentcloakConfig()`` would also work, but reaching into ``fields()``
-    avoids running any ``default_factory`` we don't care about and makes the
-    intent obvious.
-    """
-    for f in fields(AgentcloakConfig):
-        if f.name == name:
-            return f.default
-    raise AttributeError(f"AgentcloakConfig has no field {name!r}")
-
-
-DEFAULT_NAVIGATE_TIMEOUT: float = float(_default("navigation_timeout"))  # type: ignore[arg-type]
-DEFAULT_ACTION_TIMEOUT: int = int(_default("action_timeout"))  # type: ignore[arg-type]
-DEFAULT_BATCH_SETTLE_TIMEOUT: int = int(_default("batch_settle_timeout"))  # type: ignore[arg-type]
-DEFAULT_MAX_RETURN_SIZE: int = int(_default("max_return_size"))  # type: ignore[arg-type]
+DEFAULT_NAVIGATE_TIMEOUT: float = float(_BROWSER_DEFAULTS.navigation_timeout)
+DEFAULT_ACTION_TIMEOUT: int = int(_BROWSER_DEFAULTS.action_timeout)
+DEFAULT_BATCH_SETTLE_TIMEOUT: int = int(_BROWSER_DEFAULTS.batch_settle_timeout)
+DEFAULT_MAX_RETURN_SIZE: int = int(_BROWSER_DEFAULTS.max_return_size)

@@ -105,7 +105,7 @@ def run_doctor(
     else:
         report = diagnostic.doctor(data_dir=paths.root)
 
-    daemon_check, runtime = _probe_daemon_runtime(cfg.daemon_host, cfg.daemon_port)
+    daemon_check, runtime = _probe_daemon_runtime(cfg.daemon.host, cfg.daemon.port)
     report["checks"].append(daemon_check)
     report["healthy"] = all(c["ok"] for c in report["checks"])
     # ``runtime`` is layered on for the renderer — it stays out of the

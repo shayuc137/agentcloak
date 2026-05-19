@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from agentcloak.browser.playwright_ctx import PlaywrightContext, find_free_port
 from agentcloak.core.errors import BackendError
 from agentcloak.core.seq import RingBuffer, SeqCounter
 from agentcloak.core.types import StealthTier
+
+if TYPE_CHECKING:
+    from agentcloak.core.config import BrowserConfig
 
 __all__ = ["launch_cloak"]
 
@@ -77,6 +80,7 @@ async def launch_cloak(
     proxy_url: str | None = None,
     browser_proxy: str | None = None,
     extra_args: list[str] | None = None,
+    browser_config: BrowserConfig | None = None,
 ) -> CloakContext:
     """Launch a CloakBrowser instance and return a CloakContext.
 
@@ -132,6 +136,7 @@ async def launch_cloak(
             browser_context=browser_context,
             proxy_url=proxy_url,
             cdp_port=cdp_port,
+            browser_config=browser_config,
         )
 
     browser = await cb.launch_async(
@@ -154,4 +159,5 @@ async def launch_cloak(
         ring_buffer=ring_buffer,
         proxy_url=proxy_url,
         cdp_port=cdp_port,
+        browser_config=browser_config,
     )

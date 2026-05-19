@@ -238,24 +238,25 @@ class ContextManager:
         # Keep the Chromium flag composition in lockstep with
         # ``server.py``'s startup launch — split out here would risk
         # drift between the two paths users can reach the launcher from.
-        chromium_args: list[str] = list(self._config.extra_args)
-        if not self._config.dns_over_https:
+        chromium_args: list[str] = list(self._config.browser.extra_args)
+        if not self._config.browser.dns_over_https:
             chromium_args.append("--disable-features=DnsOverHttps")
 
         return await create_context(
             tier=tier,
-            headless=self._config.headless,
-            viewport_width=self._config.viewport_width,
-            viewport_height=self._config.viewport_height,
+            headless=self._config.browser.headless,
+            viewport_width=self._config.browser.viewport_width,
+            viewport_height=self._config.browser.viewport_height,
             profile_dir=profile_dir,
-            humanize=self._config.humanize,
+            humanize=self._config.browser.humanize,
             extensions=extensions,
             # Switch-time launches don't bind to the local TLS proxy —
             # only the initial server start wires httpcloak in. Spelling
             # this out keeps the manager free of httpcloak fallbacks.
             proxy_url=None,
-            browser_proxy=self._config.proxy or None,
+            browser_proxy=self._config.browser.proxy or None,
             extra_args=chromium_args,
+            browser_config=self._config.browser,
         )
 
     # ------------------------------------------------------------------
@@ -263,7 +264,7 @@ class ContextManager:
     # ------------------------------------------------------------------
 
     def _start_idle_timer(self) -> None:
-        timeout = self._config.local_idle_timeout
+        timeout = self._config.bridge.local_idle_timeout
         if timeout <= 0:
             # 0 means "never close" — common when the user wants a
             # permanent warm cache (cheap RAM, fast switch-back).

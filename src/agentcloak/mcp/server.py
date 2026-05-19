@@ -13,7 +13,7 @@ def _configure_logging() -> None:
     from agentcloak.core.config import load_config
 
     _, cfg = load_config()
-    level = getattr(logging, cfg.log_level.upper(), logging.WARNING)
+    level = getattr(logging, cfg.daemon.log_level.upper(), logging.WARNING)
     logging.basicConfig(
         level=level,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
@@ -120,13 +120,13 @@ def _register_exit_hook() -> None:
     from agentcloak.core.config import load_config
 
     _, cfg = load_config()
-    if not cfg.stop_on_exit:
+    if not cfg.browser.stop_on_exit:
         return
 
     def _stop() -> None:
         import httpx
 
-        base = f"http://{cfg.daemon_host}:{cfg.daemon_port}"
+        base = f"http://{cfg.daemon.host}:{cfg.daemon.port}"
         import contextlib
 
         with contextlib.suppress(Exception):

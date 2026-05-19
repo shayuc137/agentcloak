@@ -8,6 +8,7 @@ import pytest
 from agentcloak.core.config import (
     AgentcloakConfig,
     Paths,
+    dump_config,
     load_config,
     write_example_config,
 )
@@ -33,22 +34,22 @@ class TestPaths:
 class TestDefaults:
     def test_default_config_values(self) -> None:
         cfg = AgentcloakConfig()
-        assert cfg.daemon_host == "127.0.0.1"
-        assert cfg.daemon_port == 18765
-        assert cfg.default_tier == "auto"
-        assert cfg.default_profile == ""
-        assert cfg.viewport_width == 1280
-        assert cfg.viewport_height == 720
-        assert cfg.navigation_timeout == 30
-        assert cfg.domain_whitelist == []
-        assert cfg.content_scan is False
+        assert cfg.daemon.host == "127.0.0.1"
+        assert cfg.daemon.port == 18765
+        assert cfg.browser.default_tier == "auto"
+        assert cfg.browser.default_profile == ""
+        assert cfg.browser.viewport_width == 1280
+        assert cfg.browser.viewport_height == 720
+        assert cfg.browser.navigation_timeout == 30
+        assert cfg.security.domain_whitelist == []
+        assert cfg.security.content_scan is False
 
 
 class TestLoadConfig:
     def test_loads_defaults_when_no_file(self, tmp_path: Path) -> None:
         paths, cfg = load_config(root=tmp_path)
         assert paths.root == tmp_path
-        assert cfg.daemon_port == 18765
+        assert cfg.daemon.port == 18765
 
     def test_reads_toml_file(self, tmp_path: Path) -> None:
         config_file = tmp_path / "config.toml"
@@ -56,8 +57,8 @@ class TestLoadConfig:
             '[daemon]\nport = 8888\n[browser]\ndefault_tier = "cloak"\n'
         )
         _, cfg = load_config(root=tmp_path)
-        assert cfg.daemon_port == 8888
-        assert cfg.default_tier == "cloak"
+        assert cfg.daemon.port == 8888
+        assert cfg.browser.default_tier == "cloak"
 
     def test_env_overrides_toml(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -66,14 +67,14 @@ class TestLoadConfig:
         config_file.write_text("[daemon]\nport = 8888\n")
         monkeypatch.setenv("AGENTCLOAK_PORT", "7777")
         _, cfg = load_config(root=tmp_path)
-        assert cfg.daemon_port == 7777
+        assert cfg.daemon.port == 7777
 
     def test_env_domain_whitelist(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("AGENTCLOAK_DOMAIN_WHITELIST", "example.com, test.org")
         _, cfg = load_config(root=tmp_path)
-        assert cfg.domain_whitelist == ["example.com", "test.org"]
+        assert cfg.security.domain_whitelist == ["example.com", "test.org"]
 
 
 class TestWriteExampleConfig:
@@ -97,10 +98,12 @@ class TestWriteExampleConfig:
             (tmp_path / "config.example.toml").read_text(encoding="utf-8")
         )
         defaults = AgentcloakConfig()
-        assert data["daemon"]["port"] == defaults.daemon_port
-        assert data["browser"]["headless"] is defaults.headless
-        assert data["browser"]["viewport_width"] == defaults.viewport_width
-        assert data["bridge"]["local_idle_timeout"] == defaults.local_idle_timeout
+        assert data["daemon"]["port"] == defaults.daemon.port
+        assert data["browser"]["headless"] is defaults.browser.headless
+        assert data["browser"]["viewport_width"] == defaults.browser.viewport_width
+        assert (
+            data["bridge"]["local_idle_timeout"] == defaults.bridge.local_idle_timeout
+        )
 
     def test_overwrites_existing_example(self, tmp_path: Path) -> None:
         paths = Paths(root=tmp_path)
@@ -118,3 +121,65 @@ class TestWriteExampleConfig:
         write_example_config(paths)
         # User's real config is untouched
         assert real_config.read_text() == "[daemon]\nport = 9999\n"
+
+
+class TestDumpConfig:
+    """``cloak config list`` output schema must stay flat for back-compat.
+
+    Phase 6d split ``AgentcloakConfig`` into nested sub-configs but the public
+    ``dump_config`` shape is still keyed by pre-v0.3.x flat field names —
+    existing scripts and JSON consumers rely on it. This test pins that
+    contract so a future cleanup can't silently break it.
+    """
+
+    def test_returns_all_legacy_flat_field_names(self, tmp_path: Path) -> None:
+        paths = Paths(root=tmp_path)
+        cfg = AgentcloakConfig()
+        result = dump_config(cfg, paths)
+        # Sample a key from each section — covers ``daemon`` / ``browser`` /
+        # ``security`` / ``bridge`` translation paths in ``_FLAT_FIELD_MAP``.
+        assert "daemon_port" in result
+        assert "default_tier" in result
+        assert "domain_whitelist" in result
+        assert "bridge_token" in result
+        assert "local_idle_timeout" in result
+
+    def test_values_pulled_from_subconfig(self, tmp_path: Path) -> None:
+        paths = Paths(root=tmp_path)
+        cfg = AgentcloakConfig()
+        cfg.daemon.port = 12345
+        cfg.browser.headless = False
+        cfg.security.content_scan = True
+        result = dump_config(cfg, paths)
+        assert result["daemon_port"]["value"] == 12345
+        assert result["headless"]["value"] is False
+        assert result["content_scan"]["value"] is True
+
+    def test_source_marked_default_when_no_toml(self, tmp_path: Path) -> None:
+        paths = Paths(root=tmp_path)
+        result = dump_config(AgentcloakConfig(), paths)
+        assert result["daemon_port"]["source"] == "default"
+
+    def test_source_marked_config_toml_when_present(self, tmp_path: Path) -> None:
+        paths = Paths(root=tmp_path)
+        paths.ensure_dirs()
+        paths.config_file.write_text("[daemon]\nport = 9001\n")
+        # Note: dump_config doesn't reload — it expects the cfg already reflects
+        # the toml. Build the cfg from load_config so source detection sees the
+        # raw TOML keys.
+        _, cfg = load_config(root=tmp_path)
+        result = dump_config(cfg, paths)
+        assert result["daemon_port"]["source"] == "config.toml"
+        assert result["daemon_port"]["value"] == 9001
+
+    def test_env_source_takes_precedence(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        paths = Paths(root=tmp_path)
+        paths.ensure_dirs()
+        paths.config_file.write_text("[daemon]\nport = 9001\n")
+        monkeypatch.setenv("AGENTCLOAK_PORT", "7777")
+        _, cfg = load_config(root=tmp_path)
+        result = dump_config(cfg, paths)
+        assert result["daemon_port"]["source"] == "env:AGENTCLOAK_PORT"
+        assert result["daemon_port"]["value"] == 7777

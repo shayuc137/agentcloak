@@ -33,7 +33,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
     @mcp.tool(annotations=ToolAnnotations(destructiveHint=False, readOnlyHint=False))
     async def agentcloak_navigate(
         url: str,
-        timeout: float = float(cfg.navigation_timeout),
+        timeout: float = float(cfg.browser.navigation_timeout),
         include_snapshot: bool = False,
         snapshot_mode: str = "compact",
     ) -> str:
@@ -91,7 +91,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                   'content' (text extraction)
             max_chars: Truncate tree_text to this many characters (0 = no limit).
             max_nodes: Truncate after N nodes. Default (-1) applies
-                config.snapshot_max_nodes (80) in compact mode to keep
+                config.browser.snapshot_max_nodes (80) in compact mode to keep
                 busy pages within the token budget. Pass 0 for the full
                 tree, or N > 0 for an explicit cap. Node-level
                 truncation is more precise than char truncation;
@@ -136,7 +136,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
     async def agentcloak_screenshot(
         full_page: bool = False,
         format: str = "jpeg",
-        quality: int = cfg.mcp_screenshot_quality,
+        quality: int = cfg.browser.mcp_screenshot_quality,
     ) -> list[ImageContent | TextContent]:
         """Take a screenshot of the current page.
 
@@ -150,8 +150,8 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         Args:
             full_page: Capture the full scrollable page instead of viewport
             format: Image format — 'jpeg' (default, smaller) or 'png' (lossless)
-            quality: JPEG quality 0-100 (default from config.mcp_screenshot_quality,
-                ignored for png)
+            quality: JPEG quality 0-100 (defaults to
+                ``config.browser.mcp_screenshot_quality``, ignored for png)
 
         Returns:
             A list with one ``ImageContent`` (the multimodal LLM reads the

@@ -30,7 +30,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
     async def agentcloak_evaluate(
         js: str,
         world: str = "main",
-        max_return_size: int = cfg.max_return_size,
+        max_return_size: int = cfg.browser.max_return_size,
     ) -> str:
         """Execute JavaScript in the browser page context. Can modify page state.
 
@@ -47,7 +47,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             world: Execution context — 'main' (page globals visible)
                 or 'utility' (isolated)
             max_return_size: Max bytes of serialized result to return
-                (default from config.max_return_size). Large objects are
+                (default from config.browser.max_return_size). Large objects are
                 truncated with a [truncated] marker.
 
         Returns:
@@ -89,7 +89,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         method: str = "GET",
         body: str | None = None,
         headers_json: str | None = None,
-        timeout: float = float(cfg.navigation_timeout),
+        timeout: float = float(cfg.browser.navigation_timeout),
     ) -> str:
         """HTTP fetch using the browser's cookies and user agent.
 

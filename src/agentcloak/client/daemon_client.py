@@ -120,10 +120,10 @@ class DaemonClient:
     Parameters
     ----------
     host:
-        Daemon bind host. ``None`` reads ``cfg.daemon_host`` (env
+        Daemon bind host. ``None`` reads ``cfg.daemon.host`` (env
         ``AGENTCLOAK_HOST`` or config file).
     port:
-        Daemon bind port. ``None`` reads ``cfg.daemon_port``.
+        Daemon bind port. ``None`` reads ``cfg.daemon.port``.
     auto_start:
         When ``True`` (default), the first request after a
         ``daemon_unreachable`` error spawns the daemon as a background
@@ -140,8 +140,8 @@ class DaemonClient:
     ) -> None:
         _, cfg = load_config()
         self._cfg: AgentcloakConfig = cfg
-        self._host = host or cfg.daemon_host
-        self._port = port or cfg.daemon_port
+        self._host = host or cfg.daemon.host
+        self._port = port or cfg.daemon.port
         self._base = f"http://{self._host}:{self._port}"
         self._auto_start = auto_start
         # Once we have spawned the daemon (or detected one was reachable), we
@@ -150,9 +150,9 @@ class DaemonClient:
         self._auto_started = False
         # Per-instance copies so users can tweak them on the fly (or via env)
         # without restarting the process.
-        self._request_timeout_s = float(cfg.http_client_timeout)
-        self._startup_budget_s = float(cfg.auto_start_timeout)
-        self._poll_interval_s = float(cfg.auto_start_poll_interval)
+        self._request_timeout_s = float(cfg.daemon.http_client_timeout)
+        self._startup_budget_s = float(cfg.daemon.auto_start_timeout)
+        self._poll_interval_s = float(cfg.daemon.auto_start_poll_interval)
 
     @property
     def config(self) -> AgentcloakConfig:
@@ -727,7 +727,9 @@ class DaemonClient:
                 full_page=full_page,
                 format=format,
                 quality=(
-                    quality if quality is not None else self._cfg.screenshot_quality
+                    quality
+                    if quality is not None
+                    else self._cfg.browser.screenshot_quality
                 ),
             ),
         )
@@ -751,7 +753,7 @@ class DaemonClient:
                 headers=headers,
                 timeout=float(timeout)
                 if timeout is not None
-                else float(self._cfg.navigation_timeout),
+                else float(self._cfg.browser.navigation_timeout),
             ),
         )
 
@@ -814,7 +816,7 @@ class DaemonClient:
             timeout=(
                 float(timeout)
                 if timeout is not None
-                else float(self._cfg.navigation_timeout)
+                else float(self._cfg.browser.navigation_timeout)
             ),
             include_snapshot=include_snapshot,
             snapshot_mode=snapshot_mode,
@@ -838,7 +840,7 @@ class DaemonClient:
                 format=format,
                 quality=quality
                 if quality is not None
-                else self._cfg.mcp_screenshot_quality,
+                else self._cfg.browser.mcp_screenshot_quality,
             ),
         )
 
@@ -884,7 +886,7 @@ class DaemonClient:
                 "world": world,
                 "max_return_size": max_return_size
                 if max_return_size is not None
-                else self._cfg.max_return_size,
+                else self._cfg.browser.max_return_size,
             },
         )
 
@@ -942,7 +944,7 @@ class DaemonClient:
                 headers=headers,
                 timeout=float(timeout)
                 if timeout is not None
-                else float(self._cfg.navigation_timeout),
+                else float(self._cfg.browser.navigation_timeout),
             ),
         )
 
@@ -1061,7 +1063,9 @@ class DaemonClient:
             json_body={
                 "condition": condition,
                 "value": value,
-                "timeout": timeout if timeout is not None else self._cfg.action_timeout,
+                "timeout": timeout
+                if timeout is not None
+                else self._cfg.browser.action_timeout,
                 "state": state,
             },
         )
@@ -1173,7 +1177,7 @@ def _build_snapshot_params(
     if max_chars:
         params["max_chars"] = str(max_chars)
     # ``max_nodes`` uses a tri-state sentinel: ``-1`` means "caller didn't
-    # specify, let the daemon apply ``config.snapshot_max_nodes`` in compact
+    # specify, let the daemon apply ``config.browser.snapshot_max_nodes`` in compact
     # mode"; ``0`` means "explicit no limit"; ``>0`` is the explicit cap. We
     # forward ``0`` so the daemon can tell it apart from the default — a plain
     # truthiness check would swallow ``0`` and let the daemon auto-cap it.

@@ -11,8 +11,12 @@ from typing import Any, cast
 __all__ = [
     "FIELD_SCHEMA",
     "AgentcloakConfig",
+    "BridgeConfig",
+    "BrowserConfig",
     "ConfigError",
+    "DaemonConfig",
     "Paths",
+    "SecurityConfig",
     "dump_config",
     "ensure_bridge_token",
     "load_config",
@@ -63,29 +67,39 @@ def _default_root() -> Path:
 
 
 @dataclass
-class AgentcloakConfig:
-    """Merged configuration from all sources."""
+class DaemonConfig:
+    """HTTP server + daemon process settings."""
 
-    daemon_host: str = "127.0.0.1"
-    daemon_port: int = 18765
-    default_tier: str = "auto"
-    default_profile: str = ""
-    viewport_width: int = 1280
-    viewport_height: int = 720
-    navigation_timeout: int = 30
-    idle_timeout_min: int = 30
-    stop_on_exit: bool = False
+    host: str = "127.0.0.1"
+    port: int = 18765
     log_level: str = "warning"
     log_to_file: bool = False
     log_max_bytes: int = 10_000_000  # 10 MB
     log_backup_count: int = 3
-    headless: bool = True
-    humanize: bool = True
-    action_timeout: int = 30000
-    batch_settle_timeout: int = 2000
     # HTTP client (CLI/MCP ↔ daemon) request timeout. Browser work can be slow
     # (page load, full-page screenshot) so we lean generous here.
     http_client_timeout: int = 90
+    # Auto-start: total budget for waiting on /health after spawning daemon,
+    # and the poll interval between health probes.
+    auto_start_timeout: float = 15.0
+    auto_start_poll_interval: float = 0.5
+
+
+@dataclass
+class BrowserConfig:
+    """Browser launch options + interaction defaults."""
+
+    default_tier: str = "auto"
+    default_profile: str = ""
+    headless: bool = True
+    humanize: bool = True
+    viewport_width: int = 1280
+    viewport_height: int = 720
+    navigation_timeout: int = 30
+    action_timeout: int = 30000
+    batch_settle_timeout: int = 2000
+    idle_timeout_min: int = 30
+    stop_on_exit: bool = False
     # Maximum bytes of serialized result returned from /evaluate. Larger values
     # are truncated with a marker — prevents MCP token blow-up.
     max_return_size: int = 50_000
@@ -101,23 +115,6 @@ class AgentcloakConfig:
     # applied in ``compact`` mode — ``accessible``/``dom``/``content`` are
     # explicit asks for the full payload and stay uncapped.
     snapshot_max_nodes: int = 80
-    # Auto-start: total budget for waiting on /health after spawning daemon,
-    # and the poll interval between health probes.
-    auto_start_timeout: float = 15.0
-    auto_start_poll_interval: float = 0.5
-    domain_whitelist: list[str] = field(default_factory=list[str])
-    domain_blacklist: list[str] = field(default_factory=list[str])
-    content_scan: bool = False
-    content_scan_patterns: list[str] = field(default_factory=list[str])
-    # Persistent bridge auth token for Chrome extension <-> daemon. Empty
-    # string means "not yet provisioned" — the daemon generates one on
-    # first start and writes it back to config.toml via
-    # :func:`ensure_bridge_token`.
-    bridge_token: str = ""
-    # When in remote_bridge mode, close the local browser after it sits
-    # idle for this many seconds (0 = keep it warm forever). 30 min
-    # default matches the daemon idle timeout.
-    local_idle_timeout: int = 1800
     # Upstream proxy for the browser itself (Chromium ``--proxy-server``).
     # Empty string means "no proxy". Supports any scheme Chromium accepts:
     # ``http://``, ``https://``, ``socks4://``, ``socks5://``. Distinct
@@ -133,6 +130,50 @@ class AgentcloakConfig:
     # contents. Common uses include ``--lang=ja-JP`` or
     # ``--disable-blink-features=AutomationControlled``.
     extra_args: list[str] = field(default_factory=list[str])
+
+
+@dataclass
+class SecurityConfig:
+    """IDPI safety layer — domain allow/deny lists + content scan."""
+
+    domain_whitelist: list[str] = field(default_factory=list[str])
+    domain_blacklist: list[str] = field(default_factory=list[str])
+    content_scan: bool = False
+    content_scan_patterns: list[str] = field(default_factory=list[str])
+
+
+@dataclass
+class BridgeConfig:
+    """Remote bridge (Chrome extension) settings."""
+
+    # Persistent bridge auth token for Chrome extension <-> daemon. Empty
+    # string means "not yet provisioned" — the daemon generates one on
+    # first start and writes it back to config.toml via
+    # :func:`ensure_bridge_token`.
+    token: str = ""
+    # When in remote_bridge mode, close the local browser after it sits
+    # idle for this many seconds (0 = keep it warm forever). 30 min
+    # default matches the daemon idle timeout.
+    local_idle_timeout: int = 1800
+
+
+@dataclass
+class AgentcloakConfig:
+    """Aggregation root holding all configuration sub-sections.
+
+    Pre-v0.3.x this was a flat 33-field dataclass; Phase 6d split it into
+    four section-scoped sub-configs (:class:`DaemonConfig`,
+    :class:`BrowserConfig`, :class:`SecurityConfig`, :class:`BridgeConfig`)
+    so each layer only sees the knobs it actually consumes. The TOML
+    schema, env-var names, and ``cloak config`` CLI surface are unchanged;
+    only Python attribute paths moved from ``cfg.daemon_host`` to
+    ``cfg.daemon.host``.
+    """
+
+    daemon: DaemonConfig = field(default_factory=DaemonConfig)
+    browser: BrowserConfig = field(default_factory=BrowserConfig)
+    security: SecurityConfig = field(default_factory=SecurityConfig)
+    bridge: BridgeConfig = field(default_factory=BridgeConfig)
 
 
 def _read_toml(path: Path) -> dict[str, Any]:
@@ -151,168 +192,187 @@ def load_config(*, root: Path | None = None) -> tuple[Paths, AgentcloakConfig]:
     paths = Paths(root=root or _default_root())
     raw = _read_toml(paths.config_file)
 
-    daemon = raw.get("daemon", {})
-    browser = raw.get("browser", {})
-    security = raw.get("security", {})
-    bridge = raw.get("bridge", {})
+    # Section table aliases — names avoid shadowing ``cfg.daemon`` etc.
+    daemon_tbl: dict[str, Any] = raw.get("daemon", {})
+    browser_tbl: dict[str, Any] = raw.get("browser", {})
+    security_tbl: dict[str, Any] = raw.get("security", {})
+    bridge_tbl: dict[str, Any] = raw.get("bridge", {})
 
     cfg = AgentcloakConfig()
 
-    cfg.daemon_host = _env("HOST") or daemon.get("host", cfg.daemon_host)
-    cfg.daemon_port = int(_env("PORT") or daemon.get("port", cfg.daemon_port))
-    cfg.default_tier = (
+    # ---------- [daemon] ----------
+    cfg.daemon.host = _env("HOST") or daemon_tbl.get("host", cfg.daemon.host)
+    cfg.daemon.port = int(_env("PORT") or daemon_tbl.get("port", cfg.daemon.port))
+    # Log settings belong in [daemon]; fall back to [browser] for compat with
+    # pre-v0.2.0 configs where they lived there.
+    cfg.daemon.log_level = _env("LOG_LEVEL") or daemon_tbl.get(
+        "log_level", browser_tbl.get("log_level", cfg.daemon.log_level)
+    )
+    log_to_file_env = _env("LOG_TO_FILE")
+    if log_to_file_env is not None:
+        cfg.daemon.log_to_file = log_to_file_env.lower() in ("true", "1", "yes")
+    else:
+        cfg.daemon.log_to_file = bool(
+            daemon_tbl.get(
+                "log_to_file", browser_tbl.get("log_to_file", cfg.daemon.log_to_file)
+            )
+        )
+    cfg.daemon.log_max_bytes = int(
+        _env("LOG_MAX_BYTES")
+        or daemon_tbl.get(
+            "log_max_bytes",
+            browser_tbl.get("log_max_bytes", cfg.daemon.log_max_bytes),
+        )
+    )
+    cfg.daemon.log_backup_count = int(
+        _env("LOG_BACKUP_COUNT")
+        or daemon_tbl.get(
+            "log_backup_count",
+            browser_tbl.get("log_backup_count", cfg.daemon.log_backup_count),
+        )
+    )
+    cfg.daemon.http_client_timeout = int(
+        _env("HTTP_CLIENT_TIMEOUT")
+        or daemon_tbl.get("http_client_timeout", cfg.daemon.http_client_timeout)
+    )
+    cfg.daemon.auto_start_timeout = float(
+        _env("AUTO_START_TIMEOUT")
+        or daemon_tbl.get("auto_start_timeout", cfg.daemon.auto_start_timeout)
+    )
+    cfg.daemon.auto_start_poll_interval = float(
+        _env("AUTO_START_POLL_INTERVAL")
+        or daemon_tbl.get(
+            "auto_start_poll_interval", cfg.daemon.auto_start_poll_interval
+        )
+    )
+
+    # ---------- [browser] ----------
+    cfg.browser.default_tier = (
         _env("DEFAULT_TIER")
         or _env("TIER")
-        or browser.get("default_tier", cfg.default_tier)
+        or browser_tbl.get("default_tier", cfg.browser.default_tier)
     )
-    cfg.default_profile = (
+    cfg.browser.default_profile = (
         _env("DEFAULT_PROFILE")
         or _env("PROFILE")
-        or browser.get("default_profile", cfg.default_profile)
+        or browser_tbl.get("default_profile", cfg.browser.default_profile)
     )
-    cfg.viewport_width = int(
-        _env("VIEWPORT_WIDTH") or browser.get("viewport_width", cfg.viewport_width)
+    headless_env = _env("HEADLESS")
+    if headless_env is not None:
+        cfg.browser.headless = headless_env.lower() in ("true", "1", "yes")
+    else:
+        cfg.browser.headless = bool(browser_tbl.get("headless", cfg.browser.headless))
+    humanize_env = _env("HUMANIZE")
+    if humanize_env is not None:
+        cfg.browser.humanize = humanize_env.lower() in ("true", "1", "yes")
+    else:
+        cfg.browser.humanize = bool(browser_tbl.get("humanize", cfg.browser.humanize))
+    cfg.browser.viewport_width = int(
+        _env("VIEWPORT_WIDTH")
+        or browser_tbl.get("viewport_width", cfg.browser.viewport_width)
     )
-    cfg.viewport_height = int(
-        _env("VIEWPORT_HEIGHT") or browser.get("viewport_height", cfg.viewport_height)
+    cfg.browser.viewport_height = int(
+        _env("VIEWPORT_HEIGHT")
+        or browser_tbl.get("viewport_height", cfg.browser.viewport_height)
     )
-    cfg.navigation_timeout = int(
+    cfg.browser.navigation_timeout = int(
         _env("NAVIGATION_TIMEOUT_SEC")
         or _env("NAVIGATION_TIMEOUT")
-        or browser.get("navigation_timeout", cfg.navigation_timeout)
+        or browser_tbl.get("navigation_timeout", cfg.browser.navigation_timeout)
     )
-    cfg.idle_timeout_min = int(
+    cfg.browser.action_timeout = int(
+        _env("ACTION_TIMEOUT")
+        or browser_tbl.get("action_timeout", cfg.browser.action_timeout)
+    )
+    cfg.browser.batch_settle_timeout = int(
+        _env("BATCH_SETTLE_TIMEOUT")
+        or browser_tbl.get("batch_settle_timeout", cfg.browser.batch_settle_timeout)
+    )
+    cfg.browser.idle_timeout_min = int(
         _env("IDLE_TIMEOUT_MIN")
-        or browser.get("idle_timeout_min", cfg.idle_timeout_min)
+        or browser_tbl.get("idle_timeout_min", cfg.browser.idle_timeout_min)
     )
     stop_on_exit_env = _env("STOP_ON_EXIT")
     if stop_on_exit_env is not None:
-        cfg.stop_on_exit = stop_on_exit_env.lower() in ("true", "1", "yes")
+        cfg.browser.stop_on_exit = stop_on_exit_env.lower() in ("true", "1", "yes")
     else:
-        cfg.stop_on_exit = bool(browser.get("stop_on_exit", cfg.stop_on_exit))
-    # Log settings belong in [daemon] (they control daemon process logging).
-    # Fall back to [browser] for backward compat with pre-v0.2.0 configs.
-    cfg.log_level = _env("LOG_LEVEL") or daemon.get(
-        "log_level", browser.get("log_level", cfg.log_level)
-    )
-
-    log_to_file_env = _env("LOG_TO_FILE")
-    if log_to_file_env is not None:
-        cfg.log_to_file = log_to_file_env.lower() in ("true", "1", "yes")
-    else:
-        cfg.log_to_file = bool(
-            daemon.get("log_to_file", browser.get("log_to_file", cfg.log_to_file))
+        cfg.browser.stop_on_exit = bool(
+            browser_tbl.get("stop_on_exit", cfg.browser.stop_on_exit)
         )
-    cfg.log_max_bytes = int(
-        _env("LOG_MAX_BYTES")
-        or daemon.get("log_max_bytes", browser.get("log_max_bytes", cfg.log_max_bytes))
+    cfg.browser.max_return_size = int(
+        _env("MAX_RETURN_SIZE")
+        or browser_tbl.get("max_return_size", cfg.browser.max_return_size)
     )
-    cfg.log_backup_count = int(
-        _env("LOG_BACKUP_COUNT")
-        or daemon.get(
-            "log_backup_count",
-            browser.get("log_backup_count", cfg.log_backup_count),
-        )
-    )
-
-    headless_env = _env("HEADLESS")
-    if headless_env is not None:
-        cfg.headless = headless_env.lower() in ("true", "1", "yes")
-    else:
-        cfg.headless = bool(browser.get("headless", cfg.headless))
-
-    cfg.action_timeout = int(
-        _env("ACTION_TIMEOUT") or browser.get("action_timeout", cfg.action_timeout)
-    )
-    cfg.batch_settle_timeout = int(
-        _env("BATCH_SETTLE_TIMEOUT")
-        or browser.get("batch_settle_timeout", cfg.batch_settle_timeout)
-    )
-    cfg.http_client_timeout = int(
-        _env("HTTP_CLIENT_TIMEOUT")
-        or daemon.get("http_client_timeout", cfg.http_client_timeout)
-    )
-    cfg.max_return_size = int(
-        _env("MAX_RETURN_SIZE") or browser.get("max_return_size", cfg.max_return_size)
-    )
-    cfg.screenshot_quality = int(
+    cfg.browser.screenshot_quality = int(
         _env("SCREENSHOT_QUALITY")
-        or browser.get("screenshot_quality", cfg.screenshot_quality)
+        or browser_tbl.get("screenshot_quality", cfg.browser.screenshot_quality)
     )
-    cfg.mcp_screenshot_quality = int(
+    cfg.browser.mcp_screenshot_quality = int(
         _env("MCP_SCREENSHOT_QUALITY")
-        or browser.get("mcp_screenshot_quality", cfg.mcp_screenshot_quality)
+        or browser_tbl.get("mcp_screenshot_quality", cfg.browser.mcp_screenshot_quality)
     )
-    cfg.snapshot_max_nodes = int(
+    cfg.browser.snapshot_max_nodes = int(
         _env("SNAPSHOT_MAX_NODES")
-        or browser.get("snapshot_max_nodes", cfg.snapshot_max_nodes)
+        or browser_tbl.get("snapshot_max_nodes", cfg.browser.snapshot_max_nodes)
     )
-    cfg.auto_start_timeout = float(
-        _env("AUTO_START_TIMEOUT")
-        or daemon.get("auto_start_timeout", cfg.auto_start_timeout)
-    )
-    cfg.auto_start_poll_interval = float(
-        _env("AUTO_START_POLL_INTERVAL")
-        or daemon.get("auto_start_poll_interval", cfg.auto_start_poll_interval)
-    )
-
-    humanize_env = _env("HUMANIZE")
-    if humanize_env is not None:
-        cfg.humanize = humanize_env.lower() in ("true", "1", "yes")
+    cfg.browser.proxy = _env("PROXY") or browser_tbl.get("proxy", cfg.browser.proxy)
+    doh_env = _env("DNS_OVER_HTTPS")
+    if doh_env is not None:
+        cfg.browser.dns_over_https = doh_env.lower() in ("true", "1", "yes")
     else:
-        cfg.humanize = bool(browser.get("humanize", cfg.humanize))
+        cfg.browser.dns_over_https = bool(
+            browser_tbl.get("dns_over_https", cfg.browser.dns_over_https)
+        )
+    extra_args_env = _env("EXTRA_ARGS")
+    if extra_args_env is not None:
+        cfg.browser.extra_args = [
+            a.strip() for a in extra_args_env.split(",") if a.strip()
+        ]
+    else:
+        cfg.browser.extra_args = browser_tbl.get("extra_args", cfg.browser.extra_args)
 
+    # ---------- [security] ----------
     whitelist_env = _env("DOMAIN_WHITELIST")
     if whitelist_env is not None:
-        cfg.domain_whitelist = [
+        cfg.security.domain_whitelist = [
             d.strip() for d in whitelist_env.split(",") if d.strip()
         ]
     else:
-        cfg.domain_whitelist = security.get("domain_whitelist", cfg.domain_whitelist)
-
-    content_scan_env = _env("CONTENT_SCAN")
-    if content_scan_env is not None:
-        cfg.content_scan = content_scan_env.lower() in ("true", "1", "yes")
-    else:
-        cfg.content_scan = bool(security.get("content_scan", cfg.content_scan))
-
+        cfg.security.domain_whitelist = security_tbl.get(
+            "domain_whitelist", cfg.security.domain_whitelist
+        )
     blacklist_env = _env("DOMAIN_BLACKLIST")
     if blacklist_env is not None:
-        cfg.domain_blacklist = [
+        cfg.security.domain_blacklist = [
             d.strip() for d in blacklist_env.split(",") if d.strip()
         ]
     else:
-        cfg.domain_blacklist = security.get("domain_blacklist", cfg.domain_blacklist)
-
+        cfg.security.domain_blacklist = security_tbl.get(
+            "domain_blacklist", cfg.security.domain_blacklist
+        )
+    content_scan_env = _env("CONTENT_SCAN")
+    if content_scan_env is not None:
+        cfg.security.content_scan = content_scan_env.lower() in ("true", "1", "yes")
+    else:
+        cfg.security.content_scan = bool(
+            security_tbl.get("content_scan", cfg.security.content_scan)
+        )
     patterns_env = _env("CONTENT_SCAN_PATTERNS")
     if patterns_env is not None:
-        cfg.content_scan_patterns = [
+        cfg.security.content_scan_patterns = [
             p.strip() for p in patterns_env.split(",") if p.strip()
         ]
     else:
-        cfg.content_scan_patterns = security.get(
-            "content_scan_patterns", cfg.content_scan_patterns
+        cfg.security.content_scan_patterns = security_tbl.get(
+            "content_scan_patterns", cfg.security.content_scan_patterns
         )
 
-    cfg.bridge_token = _env("BRIDGE_TOKEN") or bridge.get("token", cfg.bridge_token)
-    cfg.local_idle_timeout = int(
+    # ---------- [bridge] ----------
+    cfg.bridge.token = _env("BRIDGE_TOKEN") or bridge_tbl.get("token", cfg.bridge.token)
+    cfg.bridge.local_idle_timeout = int(
         _env("LOCAL_IDLE_TIMEOUT")
-        or bridge.get("local_idle_timeout", cfg.local_idle_timeout)
+        or bridge_tbl.get("local_idle_timeout", cfg.bridge.local_idle_timeout)
     )
-
-    cfg.proxy = _env("PROXY") or browser.get("proxy", cfg.proxy)
-
-    doh_env = _env("DNS_OVER_HTTPS")
-    if doh_env is not None:
-        cfg.dns_over_https = doh_env.lower() in ("true", "1", "yes")
-    else:
-        cfg.dns_over_https = bool(browser.get("dns_over_https", cfg.dns_over_https))
-
-    extra_args_env = _env("EXTRA_ARGS")
-    if extra_args_env is not None:
-        cfg.extra_args = [a.strip() for a in extra_args_env.split(",") if a.strip()]
-    else:
-        cfg.extra_args = browser.get("extra_args", cfg.extra_args)
 
     _validate(cfg)
     return paths, cfg
@@ -328,37 +388,43 @@ _VALID_LOG_LEVELS = {"debug", "info", "warning", "error"}
 
 def _validate(cfg: AgentcloakConfig) -> None:
     """Validate config values; raise :class:`ConfigError` on bad input."""
-    if not 1 <= cfg.daemon_port <= 65535:
-        raise ConfigError(f"daemon.port must be 1-65535, got {cfg.daemon_port}")
-    if cfg.default_tier not in _VALID_TIERS:
+    if not 1 <= cfg.daemon.port <= 65535:
+        raise ConfigError(f"daemon.port must be 1-65535, got {cfg.daemon.port}")
+    if cfg.browser.default_tier not in _VALID_TIERS:
         raise ConfigError(
             f"browser.default_tier must be one of {_VALID_TIERS}, "
-            f"got {cfg.default_tier!r}"
+            f"got {cfg.browser.default_tier!r}"
         )
-    if cfg.log_level not in _VALID_LOG_LEVELS:
+    if cfg.daemon.log_level not in _VALID_LOG_LEVELS:
         raise ConfigError(
-            f"log_level must be one of {_VALID_LOG_LEVELS}, got {cfg.log_level!r}"
+            f"log_level must be one of {_VALID_LOG_LEVELS}, "
+            f"got {cfg.daemon.log_level!r}"
         )
-    if cfg.viewport_width < 1 or cfg.viewport_height < 1:
+    if cfg.browser.viewport_width < 1 or cfg.browser.viewport_height < 1:
         raise ConfigError(
             f"viewport dimensions must be positive, "
-            f"got {cfg.viewport_width}x{cfg.viewport_height}"
+            f"got {cfg.browser.viewport_width}x{cfg.browser.viewport_height}"
         )
-    if cfg.screenshot_quality < 0 or cfg.screenshot_quality > 100:
+    if cfg.browser.screenshot_quality < 0 or cfg.browser.screenshot_quality > 100:
         raise ConfigError(
-            f"screenshot_quality must be 0-100, got {cfg.screenshot_quality}"
+            f"screenshot_quality must be 0-100, got {cfg.browser.screenshot_quality}"
         )
-    if cfg.mcp_screenshot_quality < 0 or cfg.mcp_screenshot_quality > 100:
+    if (
+        cfg.browser.mcp_screenshot_quality < 0
+        or cfg.browser.mcp_screenshot_quality > 100
+    ):
         raise ConfigError(
-            f"mcp_screenshot_quality must be 0-100, got {cfg.mcp_screenshot_quality}"
+            "mcp_screenshot_quality must be 0-100, got "
+            f"{cfg.browser.mcp_screenshot_quality}"
         )
-    if cfg.snapshot_max_nodes < 0:
+    if cfg.browser.snapshot_max_nodes < 0:
         raise ConfigError(
-            f"snapshot_max_nodes must be >= 0, got {cfg.snapshot_max_nodes}"
+            f"snapshot_max_nodes must be >= 0, got {cfg.browser.snapshot_max_nodes}"
         )
-    if cfg.local_idle_timeout < 0:
+    if cfg.bridge.local_idle_timeout < 0:
         raise ConfigError(
-            f"bridge.local_idle_timeout must be >= 0, got {cfg.local_idle_timeout}"
+            "bridge.local_idle_timeout must be >= 0, "
+            f"got {cfg.bridge.local_idle_timeout}"
         )
 
 
@@ -446,6 +512,52 @@ _FIELD_SCHEMA: dict[str, tuple[str, str, type]] = {
 }
 
 
+# Legacy flat field names → ``(sub_config_attr, sub_field_name)``. Used by
+# :func:`dump_config` so the public output format (one row per pre-v0.3.x
+# field name) stays stable for ``cloak config list`` consumers. We have no
+# plans to break that surface, so this stays as the SoT for the legacy keys
+# even after the property shim was dropped.
+_FLAT_FIELD_MAP: list[tuple[str, str, str]] = [
+    # [daemon]
+    ("daemon_host", "daemon", "host"),
+    ("daemon_port", "daemon", "port"),
+    ("log_level", "daemon", "log_level"),
+    ("log_to_file", "daemon", "log_to_file"),
+    ("log_max_bytes", "daemon", "log_max_bytes"),
+    ("log_backup_count", "daemon", "log_backup_count"),
+    ("http_client_timeout", "daemon", "http_client_timeout"),
+    ("auto_start_timeout", "daemon", "auto_start_timeout"),
+    ("auto_start_poll_interval", "daemon", "auto_start_poll_interval"),
+    # [browser]
+    ("default_tier", "browser", "default_tier"),
+    ("default_profile", "browser", "default_profile"),
+    ("headless", "browser", "headless"),
+    ("humanize", "browser", "humanize"),
+    ("viewport_width", "browser", "viewport_width"),
+    ("viewport_height", "browser", "viewport_height"),
+    ("navigation_timeout", "browser", "navigation_timeout"),
+    ("action_timeout", "browser", "action_timeout"),
+    ("batch_settle_timeout", "browser", "batch_settle_timeout"),
+    ("idle_timeout_min", "browser", "idle_timeout_min"),
+    ("stop_on_exit", "browser", "stop_on_exit"),
+    ("max_return_size", "browser", "max_return_size"),
+    ("screenshot_quality", "browser", "screenshot_quality"),
+    ("mcp_screenshot_quality", "browser", "mcp_screenshot_quality"),
+    ("snapshot_max_nodes", "browser", "snapshot_max_nodes"),
+    ("proxy", "browser", "proxy"),
+    ("dns_over_https", "browser", "dns_over_https"),
+    ("extra_args", "browser", "extra_args"),
+    # [security]
+    ("domain_whitelist", "security", "domain_whitelist"),
+    ("domain_blacklist", "security", "domain_blacklist"),
+    ("content_scan", "security", "content_scan"),
+    ("content_scan_patterns", "security", "content_scan_patterns"),
+    # [bridge]
+    ("bridge_token", "bridge", "token"),
+    ("local_idle_timeout", "bridge", "local_idle_timeout"),
+]
+
+
 def dump_config(
     cfg: AgentcloakConfig,
     paths: Paths,
@@ -460,20 +572,23 @@ def dump_config(
                 toml_flat[k] = v
                 toml_flat[f"{section_name}_{k}"] = v
 
-    defaults = AgentcloakConfig()
     result: dict[str, dict[str, object]] = {}
 
-    for field_name in vars(defaults):
-        value = getattr(cfg, field_name)
+    # Walk every legacy flat name so the public output schema (one row per
+    # pre-v0.3.x field) keeps round-tripping. The sub-config attribute
+    # access does the section traversal for us.
+    for flat_name, section_attr, target in _FLAT_FIELD_MAP:
+        sub_cfg = getattr(cfg, section_attr)
+        value = getattr(sub_cfg, target)
         source = "default"
-        env_keys = _ENV_KEYS.get(field_name, [])
+        env_keys = _ENV_KEYS.get(flat_name, [])
         for ek in env_keys:
             if _env(ek) is not None:
                 source = f"env:{_ENV_PREFIX}{ek.upper()}"
                 break
-        if source == "default" and field_name in toml_flat:
+        if source == "default" and flat_name in toml_flat:
             source = "config.toml"
-        result[field_name] = {"value": value, "source": source}
+        result[flat_name] = {"value": value, "source": source}
 
     return result
 
@@ -573,15 +688,15 @@ serialise_toml = _serialise_toml
 def ensure_bridge_token(paths: Paths, cfg: AgentcloakConfig) -> str:
     """Return the persisted bridge token, generating one on first use.
 
-    If ``cfg.bridge_token`` is empty, a fresh URL-safe token is generated
+    If ``cfg.bridge.token`` is empty, a fresh URL-safe token is generated
     and written back to ``config.toml`` under ``[bridge] token``. The
     in-memory config object is mutated so callers don't need to reload.
     """
-    if cfg.bridge_token:
-        return cfg.bridge_token
+    if cfg.bridge.token:
+        return cfg.bridge.token
     token = _generate_bridge_token()
     _write_bridge_token(paths, token)
-    cfg.bridge_token = token
+    cfg.bridge.token = token
     return token
 
 
@@ -594,7 +709,7 @@ def regenerate_bridge_token(paths: Paths, cfg: AgentcloakConfig) -> str:
     """
     token = _generate_bridge_token()
     _write_bridge_token(paths, token)
-    cfg.bridge_token = token
+    cfg.bridge.token = token
     return token
 
 
@@ -664,49 +779,49 @@ def write_example_config(paths: Paths) -> Path:
         [
             (
                 "host",
-                defaults.daemon_host,
+                defaults.daemon.host,
                 "Bind address. Use 0.0.0.0 to accept LAN connections.",
             ),
             (
                 "port",
-                defaults.daemon_port,
+                defaults.daemon.port,
                 "Base port. If busy, daemon probes port+1, port+2, ...",
             ),
             (
                 "log_level",
-                defaults.log_level,
+                defaults.daemon.log_level,
                 "One of: debug, info, warning, error.",
             ),
             (
                 "log_to_file",
-                defaults.log_to_file,
+                defaults.daemon.log_to_file,
                 "When true, daemon log goes to ~/.agentcloak/logs/daemon.log\n"
                 "(otherwise stderr).",
             ),
             (
                 "log_max_bytes",
-                defaults.log_max_bytes,
+                defaults.daemon.log_max_bytes,
                 "Rotation threshold for daemon.log (one-shot at startup).",
             ),
             (
                 "log_backup_count",
-                defaults.log_backup_count,
+                defaults.daemon.log_backup_count,
                 "Number of rotated daemon.log.N files to keep.",
             ),
             (
                 "http_client_timeout",
-                defaults.http_client_timeout,
+                defaults.daemon.http_client_timeout,
                 "Seconds CLI/MCP will wait for a daemon HTTP reply.",
             ),
             (
                 "auto_start_timeout",
-                defaults.auto_start_timeout,
+                defaults.daemon.auto_start_timeout,
                 "Total budget (s) for /health probe when DaemonClient\n"
                 "auto-starts the daemon process.",
             ),
             (
                 "auto_start_poll_interval",
-                defaults.auto_start_poll_interval,
+                defaults.daemon.auto_start_poll_interval,
                 "Poll interval (s) between /health checks during\nauto-start.",
             ),
         ],
@@ -718,97 +833,97 @@ def write_example_config(paths: Paths) -> Path:
         [
             (
                 "default_tier",
-                defaults.default_tier,
+                defaults.browser.default_tier,
                 'Startup backend: "auto" (=cloak), "cloak", "playwright",\n'
                 'or "remote_bridge".',
             ),
             (
                 "default_profile",
-                defaults.default_profile,
+                defaults.browser.default_profile,
                 "Profile directory name under ~/.agentcloak/profiles/ that\n"
                 "the daemon should attach to (empty = no profile).",
             ),
             (
                 "headless",
-                defaults.headless,
+                defaults.browser.headless,
                 "Headless mode is on by default. Set to false to keep the\n"
                 "browser window visible (Xvfb is started automatically on\n"
                 "servers without a display).",
             ),
             (
                 "humanize",
-                defaults.humanize,
+                defaults.browser.humanize,
                 "CloakBrowser-only: Bezier mouse, realistic typing cadence.",
             ),
             (
                 "viewport_width",
-                defaults.viewport_width,
+                defaults.browser.viewport_width,
                 "Initial viewport width in pixels.",
             ),
             (
                 "viewport_height",
-                defaults.viewport_height,
+                defaults.browser.viewport_height,
                 "Initial viewport height in pixels.",
             ),
             (
                 "navigation_timeout",
-                defaults.navigation_timeout,
+                defaults.browser.navigation_timeout,
                 "Default timeout (s) for navigate / wait operations.",
             ),
             (
                 "action_timeout",
-                defaults.action_timeout,
+                defaults.browser.action_timeout,
                 "Per-action timeout (ms) for click/fill/etc.",
             ),
             (
                 "batch_settle_timeout",
-                defaults.batch_settle_timeout,
+                defaults.browser.batch_settle_timeout,
                 "Settle window (ms) after batched mutating actions\n"
                 "before the read-after-write snapshot.",
             ),
             (
                 "idle_timeout_min",
-                defaults.idle_timeout_min,
+                defaults.browser.idle_timeout_min,
                 "Daemon shuts down after this many minutes of inactivity\n(0 = never).",
             ),
             (
                 "stop_on_exit",
-                defaults.stop_on_exit,
+                defaults.browser.stop_on_exit,
                 "When true, CLI exit triggers a daemon shutdown.",
             ),
             (
                 "max_return_size",
-                defaults.max_return_size,
+                defaults.browser.max_return_size,
                 "Cap (bytes) on serialised /evaluate result; longer values\n"
                 "are truncated with a marker.",
             ),
             (
                 "screenshot_quality",
-                defaults.screenshot_quality,
+                defaults.browser.screenshot_quality,
                 "Default JPEG quality (0-100) for /screenshot.",
             ),
             (
                 "mcp_screenshot_quality",
-                defaults.mcp_screenshot_quality,
+                defaults.browser.mcp_screenshot_quality,
                 "Lower quality used by MCP tools to stay within token\nbudgets.",
             ),
             (
                 "snapshot_max_nodes",
-                defaults.snapshot_max_nodes,
+                defaults.browser.snapshot_max_nodes,
                 "Default node cap for compact snapshots when --limit /\n"
                 "max_nodes is unset. 0 disables the cap; explicit\n"
                 "--limit always wins. Only applied in compact mode.",
             ),
             (
                 "proxy",
-                defaults.proxy,
+                defaults.browser.proxy,
                 "Upstream proxy for the browser. Empty = direct.\n"
                 "Examples: 'socks5://user:pass@host:1080',\n"
                 "'http://corp-proxy:3128'. Restart daemon to apply.",
             ),
             (
                 "dns_over_https",
-                defaults.dns_over_https,
+                defaults.browser.dns_over_https,
                 "When false (default), launch Chromium with\n"
                 "--disable-features=DnsOverHttps so DNS goes through\n"
                 "the system resolver (works with transparent proxies).\n"
@@ -816,7 +931,7 @@ def write_example_config(paths: Paths) -> Path:
             ),
             (
                 "extra_args",
-                defaults.extra_args,
+                defaults.browser.extra_args,
                 "Extra Chromium command-line flags appended to every\n"
                 "browser launch. Example: ['--lang=ja-JP'].",
             ),
@@ -829,26 +944,26 @@ def write_example_config(paths: Paths) -> Path:
         [
             (
                 "domain_whitelist",
-                defaults.domain_whitelist,
+                defaults.security.domain_whitelist,
                 "If non-empty, only these glob patterns are reachable;\n"
                 "everything else is wrapped in <untrusted_web_content>.\n"
                 'Example: ["*.example.com", "api.trusted.io"].',
             ),
             (
                 "domain_blacklist",
-                defaults.domain_blacklist,
+                defaults.security.domain_blacklist,
                 "Globs that are always blocked even if whitelisted.\n"
                 "file://, data:, javascript: are always blocked.",
             ),
             (
                 "content_scan",
-                defaults.content_scan,
+                defaults.security.content_scan,
                 "Enable regex scan of returned content for sensitive\n"
                 "patterns (off by default).",
             ),
             (
                 "content_scan_patterns",
-                defaults.content_scan_patterns,
+                defaults.security.content_scan_patterns,
                 "Regexes used when content_scan is true.",
             ),
         ],
@@ -867,7 +982,7 @@ def write_example_config(paths: Paths) -> Path:
             ),
             (
                 "local_idle_timeout",
-                defaults.local_idle_timeout,
+                defaults.bridge.local_idle_timeout,
                 "Seconds before the warm local browser is closed when\n"
                 "the daemon is in remote_bridge mode (0 = keep warm\n"
                 "forever).",

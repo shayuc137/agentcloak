@@ -27,7 +27,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
     async def agentcloak_wait(
         condition: Literal["selector", "url", "load", "js", "ms"],
         value: str = "",
-        timeout: int = cfg.action_timeout,
+        timeout: int = cfg.browser.action_timeout,
         state: str = "visible",
     ) -> str:
         """Wait for a condition before continuing.
@@ -41,7 +41,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                 - ms: Sleep for N milliseconds
             value: The selector/url/state/expression/milliseconds value
             timeout: Max wait time in milliseconds (default from
-                config.action_timeout)
+                config.browser.action_timeout)
             state: Element state for selector condition:
                 visible (default), hidden, attached, detached
 

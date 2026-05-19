@@ -14,7 +14,7 @@ Settings are resolved in this order (highest wins):
 
 Location: `~/.agentcloak/config.toml`
 
-The file uses three sections: `[daemon]`, `[browser]`, and `[security]`.
+The file uses four sections: `[daemon]`, `[browser]`, `[security]`, and `[bridge]`.
 
 ```toml
 [daemon]
@@ -53,6 +53,10 @@ domain_whitelist = []
 domain_blacklist = []
 content_scan = false
 content_scan_patterns = []
+
+[bridge]
+# token is auto-generated on first daemon start; rotate via `cloak bridge token --reset`
+local_idle_timeout = 1800
 ```
 
 > [!NOTE]

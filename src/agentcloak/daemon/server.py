@@ -167,8 +167,8 @@ def _check_stale_pid(paths: Paths) -> bool:
     _, _stale_cfg = load_config()
     try:
         session_data = json.loads(paths.active_session_file.read_text())
-        host = session_data.get("host", _stale_cfg.daemon_host)
-        port = session_data.get("port", _stale_cfg.daemon_port)
+        host = session_data.get("host", _stale_cfg.daemon.host)
+        port = session_data.get("port", _stale_cfg.daemon.port)
         url = f"http://{host}:{port}/health"
         with urllib.request.urlopen(url, timeout=1) as resp:
             data = json.loads(resp.read())
@@ -313,8 +313,8 @@ async def start(
     """Start the daemon server (blocking)."""
     paths, cfg = load_config()
 
-    actual_host = host or cfg.daemon_host
-    actual_port = port or cfg.daemon_port
+    actual_host = host or cfg.daemon.host
+    actual_port = port or cfg.daemon.port
 
     if _check_stale_pid(paths):
         logger.error("daemon_already_running", pid_file=str(_pid_file(paths)))
@@ -322,10 +322,10 @@ async def start(
 
     from agentcloak.core.config import resolve_tier
 
-    resolved = resolve_tier(cfg.default_tier)
+    resolved = resolve_tier(cfg.browser.default_tier)
     tier = StealthTier(resolved)
-    actual_headless = headless if headless is not None else cfg.headless
-    actual_humanize = humanize if humanize is not None else cfg.humanize
+    actual_headless = headless if headless is not None else cfg.browser.headless
+    actual_humanize = humanize if humanize is not None else cfg.browser.humanize
     xvfb_mgr: XvfbManager | None = None
 
     # remote_bridge tier starts with no local browser at all — the
@@ -338,7 +338,9 @@ async def start(
 
     if tier == StealthTier.CLOAK and not skip_local_launch:
         if not actual_headless and not os.environ.get("DISPLAY"):
-            xvfb_mgr = XvfbManager(width=cfg.viewport_width, height=cfg.viewport_height)
+            xvfb_mgr = XvfbManager(
+                width=cfg.browser.viewport_width, height=cfg.browser.viewport_height
+            )
             await xvfb_mgr.ensure_display()
 
         try:
@@ -391,9 +393,11 @@ async def start(
     # size-based rotation at startup; the daemon is long-lived but the log
     # stays bounded across restarts.
     global _file_log_handle
-    if cfg.log_to_file:
+    if cfg.daemon.log_to_file:
         log_path = paths.logs_dir / "daemon.log"
-        _rotate_log_if_needed(log_path, cfg.log_max_bytes, cfg.log_backup_count)
+        _rotate_log_if_needed(
+            log_path, cfg.daemon.log_max_bytes, cfg.daemon.log_backup_count
+        )
         _file_log_handle = open(log_path, "a", encoding="utf-8")  # noqa: SIM115
         log_target = _file_log_handle  # type: ignore[assignment]
 
@@ -407,7 +411,7 @@ async def start(
         logger_factory=structlog.PrintLoggerFactory(file=log_target),
     )
 
-    idle_timeout = cfg.idle_timeout_min * 60
+    idle_timeout = cfg.browser.idle_timeout_min * 60
 
     profile_dir: Path | None = None
     if profile:
@@ -418,8 +422,8 @@ async def start(
     # ``--disable-features=DnsOverHttps`` default keeps split-horizon DNS
     # working with transparent proxies — users who want Chromium's
     # bundled DoH set ``dns_over_https = true``.
-    chromium_args: list[str] = list(cfg.extra_args)
-    if not cfg.dns_over_https:
+    chromium_args: list[str] = list(cfg.browser.extra_args)
+    if not cfg.browser.dns_over_https:
         chromium_args.append("--disable-features=DnsOverHttps")
 
     raw_ctx: Any = None
@@ -430,23 +434,24 @@ async def start(
             headless=actual_headless,
             humanize=actual_humanize,
             profile=profile,
-            browser_proxy=cfg.proxy or None,
+            browser_proxy=cfg.browser.proxy or None,
             extra_args=chromium_args,
         )
         try:
             raw_ctx = await create_context(
                 tier=tier,
                 headless=actual_headless,
-                viewport_width=cfg.viewport_width,
-                viewport_height=cfg.viewport_height,
+                viewport_width=cfg.browser.viewport_width,
+                viewport_height=cfg.browser.viewport_height,
                 profile_dir=profile_dir,
                 humanize=actual_humanize,
                 extensions=[str(TURNSTILE_PATCH_DIR)]
                 if tier == StealthTier.CLOAK
                 else None,
                 proxy_url=proxy_url,
-                browser_proxy=cfg.proxy or None,
+                browser_proxy=cfg.browser.proxy or None,
                 extra_args=chromium_args,
+                browser_config=cfg.browser,
             )
         except Exception as exc:
             # Browser launch failures are the most common first-run problem.
@@ -627,8 +632,8 @@ async def _signal_shutdown(server: uvicorn.Server, app: Any) -> None:
 async def stop(*, host: str | None = None, port: int | None = None) -> bool:
     """Send shutdown request to the daemon."""
     _, cfg = load_config()
-    actual_host = host or cfg.daemon_host
-    actual_port = port or cfg.daemon_port
+    actual_host = host or cfg.daemon.host
+    actual_port = port or cfg.daemon.port
     url = f"http://{actual_host}:{actual_port}/shutdown"
 
     try:
@@ -642,8 +647,8 @@ async def stop(*, host: str | None = None, port: int | None = None) -> bool:
 async def health(*, host: str | None = None, port: int | None = None) -> bool:
     """Check if daemon is reachable."""
     _, cfg = load_config()
-    actual_host = host or cfg.daemon_host
-    actual_port = port or cfg.daemon_port
+    actual_host = host or cfg.daemon.host
+    actual_port = port or cfg.daemon.port
     url = f"http://{actual_host}:{actual_port}/health"
 
     try:

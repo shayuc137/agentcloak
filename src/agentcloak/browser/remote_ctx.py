@@ -15,7 +15,7 @@ import contextlib
 import json
 import time
 import uuid
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import structlog
 
@@ -29,16 +29,14 @@ from agentcloak.browser.base import (
 from agentcloak.browser.state import (
     FrameInfo,
     PageSnapshot,
-    PendingDialog,
     TabInfo,
 )
-from agentcloak.core.capture import (
-    CaptureEntry,
-    is_recordable_content,
-    truncate_body,
-)
+from agentcloak.core.capture import is_recordable_content
 from agentcloak.core.errors import BackendError, BrowserTimeoutError
 from agentcloak.core.types import StealthTier
+
+if TYPE_CHECKING:
+    from agentcloak.core.config import BrowserConfig
 
 __all__ = ["RemoteBridgeContext"]
 
@@ -65,8 +63,13 @@ class _BridgeWS(Protocol):
 class RemoteBridgeContext(BrowserContextBase):
     """BrowserContext backed by a remote Chrome via bridge WebSocket."""
 
-    def __init__(self, *, bridge_ws: _BridgeWS) -> None:
-        super().__init__()
+    def __init__(
+        self,
+        *,
+        bridge_ws: _BridgeWS,
+        browser_config: BrowserConfig | None = None,
+    ) -> None:
+        super().__init__(browser_config=browser_config)
         self._ws = bridge_ws
         self._pending: dict[str, asyncio.Future[dict[str, Any]]] = {}
         # _active_frame is set to a frameId string (or None for main) on this
@@ -790,32 +793,18 @@ class RemoteBridgeContext(BrowserContextBase):
     # ------------------------------------------------------------------
 
     def _handle_dialog_event(self, params: dict[str, Any]) -> None:
-        dialog_type = params.get("type", "alert")
-        message = params.get("message", "")
-        default_prompt = params.get("defaultPrompt", "")
+        # Backend-agnostic dispatch (alert/beforeunload vs confirm/prompt)
+        # lives on the base class; we only normalise the CDP payload into
+        # the four primitive fields the dispatcher expects.
+        self._dispatch_dialog_event(
+            dialog_type=str(params.get("type", "alert")),
+            message=str(params.get("message", "")),
+            default_value=str(params.get("defaultPrompt", "")),
+            url="(remote)",
+        )
 
-        if dialog_type in ("alert", "beforeunload"):
-            _task = asyncio.ensure_future(self._auto_accept_dialog())
-            _task.add_done_callback(lambda t: None)
-            logger.info(
-                "dialog_auto_accepted",
-                dialog_type=dialog_type,
-                message=message[:100],
-            )
-        else:
-            self._pending_dialog = PendingDialog(
-                dialog_type=dialog_type,
-                message=message,
-                default_value=default_prompt,
-                url="(remote)",
-            )
-            logger.info(
-                "dialog_pending",
-                dialog_type=dialog_type,
-                message=message[:100],
-            )
-
-    async def _auto_accept_dialog(self) -> None:
+    async def _auto_accept_dialog_impl(self) -> None:
+        """Auto-accept via CDP ``Page.handleJavaScriptDialog``."""
         try:
             await self._send(
                 "cdp",
@@ -1156,8 +1145,10 @@ class RemoteBridgeContext(BrowserContextBase):
         """Fetch the response body if recordable, then push to the store."""
         from datetime import UTC, datetime
 
-        resp_body: str | None = None
+        from agentcloak.core.capture import build_capture_entry
+
         content_type = str(entry.get("content_type", ""))
+        raw_body: str | None = None
         if fetch_body and is_recordable_content(content_type):
             try:
                 body_result = await self._send(
@@ -1175,23 +1166,27 @@ class RemoteBridgeContext(BrowserContextBase):
                         )
                     except Exception:
                         raw_body = ""
-                resp_body = truncate_body(raw_body)
             except Exception:
                 logger.debug(
                     "get_response_body_failed",
                     request_id=entry.get("request_id"),
                     exc_info=True,
                 )
+                raw_body = None
 
+        # CDP exposes wallTime as seconds-since-epoch; convert to ISO when
+        # available so the entry's timestamp matches the network event the
+        # extension observed. The shared builder falls back to "now" when
+        # we leave timestamp=None.
         wall_time = float(entry.get("wall_time", 0) or 0)
-        if wall_time > 0:
-            timestamp = datetime.fromtimestamp(wall_time, tz=UTC).isoformat()
-        else:
-            timestamp = datetime.now(UTC).isoformat()
+        timestamp = (
+            datetime.fromtimestamp(wall_time, tz=UTC).isoformat()
+            if wall_time > 0
+            else None
+        )
 
-        capture_entry = CaptureEntry(
+        capture_entry = build_capture_entry(
             seq=int(entry.get("request_seq", self._seq_counter.value)),
-            timestamp=timestamp,
             method=str(entry.get("method", "GET")),
             url=str(entry.get("url", "")),
             status=int(entry.get("status", 0)),
@@ -1199,9 +1194,9 @@ class RemoteBridgeContext(BrowserContextBase):
             request_headers=dict(entry.get("request_headers", {})),
             response_headers=dict(entry.get("response_headers", {})),
             request_body=entry.get("request_body"),
-            response_body=resp_body,
+            raw_response_body=raw_body,
             content_type=content_type,
-            duration_ms=0.0,
+            timestamp=timestamp,
         )
         # ``add()`` enforces its own resource-type / extension skip filter,
         # so we don't double-filter here — matches Playwright's behaviour.

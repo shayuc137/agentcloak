@@ -13,6 +13,7 @@ from typer.testing import CliRunner
 from agentcloak.cli.app import app as cli_app
 from agentcloak.core.config import (
     AgentcloakConfig,
+    BridgeConfig,
     Paths,
     ensure_bridge_token,
     load_config,
@@ -37,7 +38,7 @@ class TestBridgeTokenPersistence:
         cfg = AgentcloakConfig()
         token = ensure_bridge_token(paths, cfg)
         assert len(token) >= 32
-        assert cfg.bridge_token == token
+        assert cfg.bridge.token == token
         # File written and contains the token.
         assert paths.config_file.exists()
         contents = paths.config_file.read_text(encoding="utf-8")
@@ -46,7 +47,7 @@ class TestBridgeTokenPersistence:
 
     def test_ensure_returns_existing(self, tmp_path: Path) -> None:
         paths = Paths(root=tmp_path)
-        cfg = AgentcloakConfig(bridge_token="preset-token-value")
+        cfg = AgentcloakConfig(bridge=BridgeConfig(token="preset-token-value"))
         token = ensure_bridge_token(paths, cfg)
         assert token == "preset-token-value"
         # No file should have been written when one already existed in cfg.
@@ -58,7 +59,7 @@ class TestBridgeTokenPersistence:
         token = ensure_bridge_token(paths, cfg)
         # Reload from disk and confirm we get the same value back.
         _, reloaded = load_config(root=tmp_path)
-        assert reloaded.bridge_token == token
+        assert reloaded.bridge.token == token
 
     def test_regenerate_rotates(self, tmp_path: Path) -> None:
         paths = Paths(root=tmp_path)
@@ -66,7 +67,7 @@ class TestBridgeTokenPersistence:
         first = ensure_bridge_token(paths, cfg)
         second = regenerate_bridge_token(paths, cfg)
         assert second != first
-        assert cfg.bridge_token == second
+        assert cfg.bridge.token == second
 
     def test_preserves_other_sections(self, tmp_path: Path) -> None:
         paths = Paths(root=tmp_path)
@@ -79,9 +80,9 @@ class TestBridgeTokenPersistence:
         ensure_bridge_token(paths, cfg)
         # Reload to confirm daemon/browser sections survived.
         _, reloaded = load_config(root=tmp_path)
-        assert reloaded.daemon_port == 9001
-        assert reloaded.headless is False
-        assert reloaded.bridge_token
+        assert reloaded.daemon.port == 9001
+        assert reloaded.browser.headless is False
+        assert reloaded.bridge.token
 
 
 # ---------------------------------------------------------------------------
@@ -104,7 +105,7 @@ class TestBridgeTokenCLI:
         ):
             result = runner.invoke(cli_app, ["bridge", "token"])
         assert result.exit_code == 0
-        assert cfg.bridge_token in result.stdout
+        assert cfg.bridge.token in result.stdout
 
     def test_reset_rotates(self, tmp_path: Path) -> None:
         runner = CliRunner()
@@ -136,7 +137,7 @@ class TestBridgeTokenCLI:
         ):
             result = runner.invoke(cli_app, ["bridge", "token", "--reset"])
         assert result.exit_code == 0
-        assert cfg.bridge_token != first
+        assert cfg.bridge.token != first
 
 
 # ---------------------------------------------------------------------------
@@ -234,7 +235,7 @@ async def test_extension_disconnect_clears_when_remote_active() -> None:
 @pytest.mark.asyncio
 async def test_switch_to_remote_without_extension_clears_browser_ctx() -> None:
     state = _fake_app_state()
-    cfg = AgentcloakConfig(local_idle_timeout=0)  # disable timer
+    cfg = AgentcloakConfig(bridge=BridgeConfig(local_idle_timeout=0))  # disable timer
     mgr = ContextManager(state, cfg)
     mgr.seed_initial(
         active_tier=StealthTier.CLOAK,
@@ -255,7 +256,7 @@ async def test_switch_to_remote_without_extension_clears_browser_ctx() -> None:
 @pytest.mark.asyncio
 async def test_switch_to_remote_with_existing_extension_activates() -> None:
     state = _fake_app_state()
-    cfg = AgentcloakConfig(local_idle_timeout=0)
+    cfg = AgentcloakConfig(bridge=BridgeConfig(local_idle_timeout=0))
     mgr = ContextManager(state, cfg)
     mgr.seed_initial(
         active_tier=StealthTier.CLOAK,
@@ -273,7 +274,7 @@ async def test_switch_to_remote_with_existing_extension_activates() -> None:
 @pytest.mark.asyncio
 async def test_switch_back_to_local_reuses_cache() -> None:
     state = _fake_app_state()
-    cfg = AgentcloakConfig(local_idle_timeout=0)
+    cfg = AgentcloakConfig(bridge=BridgeConfig(local_idle_timeout=0))
     mgr = ContextManager(state, cfg)
     cached_local = _make_fake_local_ctx()
     mgr.seed_initial(
@@ -293,7 +294,7 @@ async def test_switch_back_to_local_reuses_cache() -> None:
 @pytest.mark.asyncio
 async def test_switch_to_different_local_tier_closes_cache() -> None:
     state = _fake_app_state()
-    cfg = AgentcloakConfig(local_idle_timeout=0)
+    cfg = AgentcloakConfig(bridge=BridgeConfig(local_idle_timeout=0))
     mgr = ContextManager(state, cfg)
     cached_local = _make_fake_local_ctx()
     mgr.seed_initial(
@@ -317,7 +318,7 @@ async def test_switch_to_different_local_tier_closes_cache() -> None:
 @pytest.mark.asyncio
 async def test_shutdown_closes_local_only() -> None:
     state = _fake_app_state()
-    cfg = AgentcloakConfig(local_idle_timeout=0)
+    cfg = AgentcloakConfig(bridge=BridgeConfig(local_idle_timeout=0))
     mgr = ContextManager(state, cfg)
     cached_local = _make_fake_local_ctx()
     remote = _make_fake_remote_ctx()
@@ -346,7 +347,7 @@ async def test_shutdown_closes_local_only() -> None:
 def launch_client() -> Any:
     """FastAPI TestClient wired with a real ContextManager and stub locals."""
     app = create_app()
-    cfg = AgentcloakConfig(local_idle_timeout=0)
+    cfg = AgentcloakConfig(bridge=BridgeConfig(local_idle_timeout=0))
     mgr = ContextManager(app.state, cfg)
     cached_local = _make_fake_local_ctx()
     mgr.seed_initial(

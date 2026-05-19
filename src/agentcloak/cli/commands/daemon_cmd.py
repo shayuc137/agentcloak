@@ -91,12 +91,12 @@ def daemon_start(
             humanize=resolved_humanize,
         )
         _, cfg = load_config()
-        resolved_tier = resolve_tier(cfg.default_tier)
+        resolved_tier = resolve_tier(cfg.browser.default_tier)
 
         # Block until daemon is reachable so subsequent CLI/MCP requests don't
         # race the spawn and trigger the auto-start warning path.
-        bind_host = host or cfg.daemon_host
-        bind_port = port or cfg.daemon_port
+        bind_host = host or cfg.daemon.host
+        bind_port = port or cfg.daemon.port
         ready = _wait_for_daemon_ready(f"http://{bind_host}:{bind_port}")
 
         if is_json_mode():

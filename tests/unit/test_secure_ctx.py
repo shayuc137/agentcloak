@@ -40,10 +40,10 @@ def _make_config(
     patterns: list[str] | None = None,
 ) -> AgentcloakConfig:
     cfg = AgentcloakConfig()
-    cfg.domain_whitelist = whitelist or []
-    cfg.domain_blacklist = blacklist or []
-    cfg.content_scan = content_scan
-    cfg.content_scan_patterns = patterns or []
+    cfg.security.domain_whitelist = whitelist or []
+    cfg.security.domain_blacklist = blacklist or []
+    cfg.security.content_scan = content_scan
+    cfg.security.content_scan_patterns = patterns or []
     return cfg
 
 

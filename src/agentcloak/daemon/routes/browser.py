@@ -70,7 +70,7 @@ async def handle_navigate(
             result,
             ctx,
             snapshot_mode=body.snapshot_mode,
-            snapshot_max_nodes=config.snapshot_max_nodes,
+            snapshot_max_nodes=config.browser.snapshot_max_nodes,
         )
 
     return _ok(result, seq=ctx.seq)
@@ -91,7 +91,7 @@ async def handle_screenshot(
     # this unset and inherit the file/env default; MCP tools pass an explicit
     # lower value so screenshots stay under MCP token budgets.
     if quality is None:
-        quality = config.screenshot_quality
+        quality = config.browser.screenshot_quality
     raw = await ctx.screenshot(full_page=full_page, format=format, quality=quality)
     b64 = screenshot_to_base64(raw)
     data = {"base64": b64, "size": len(raw), "format": format}
@@ -115,11 +115,13 @@ async def handle_snapshot(
     frames: bool = False,
     diff: bool = False,
 ) -> dict[str, Any]:
-    # ``-1`` = unspecified → cap compact mode at config.snapshot_max_nodes
+    # ``-1`` = unspecified → cap compact mode at config.browser.snapshot_max_nodes
     # (busy pages exceed agent budgets); ``0`` = explicit full tree; ``>0``
     # = explicit cap. Non-compact modes are always full-payload asks.
     if max_nodes == -1:
-        effective_max_nodes = config.snapshot_max_nodes if mode == "compact" else 0
+        effective_max_nodes = (
+            config.browser.snapshot_max_nodes if mode == "compact" else 0
+        )
     else:
         effective_max_nodes = max_nodes
 
@@ -217,7 +219,7 @@ async def handle_action(
             result,
             ctx,
             snapshot_mode=body.snapshot_mode,
-            snapshot_max_nodes=config.snapshot_max_nodes,
+            snapshot_max_nodes=config.browser.snapshot_max_nodes,
         )
 
     return _ok(result, seq=ctx.seq)
@@ -229,7 +231,7 @@ async def handle_action_batch(
     ctx: BrowserCtxDep,
     config: ConfigDep,
 ) -> dict[str, Any]:
-    settle_timeout = body.settle_timeout or config.batch_settle_timeout
+    settle_timeout = body.settle_timeout or config.browser.batch_settle_timeout
     result = await ActionService().execute_batch(
         ctx, body.actions, sleep_s=body.sleep, settle_timeout=settle_timeout
     )

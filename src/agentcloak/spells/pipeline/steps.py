@@ -102,7 +102,7 @@ async def _step_fetch(params: Any, data: Any, ctx: StepContext) -> Any:
     body: str | None = cfg.get("body")
 
     _, _agent_cfg = load_config()
-    _timeout = float(_agent_cfg.navigation_timeout)
+    _timeout = float(_agent_cfg.browser.navigation_timeout)
 
     if ctx.browser is not None:
         result = await ctx.browser.fetch(

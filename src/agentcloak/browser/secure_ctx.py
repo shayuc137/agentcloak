@@ -47,10 +47,10 @@ class SecureBrowserContext:
 
     def __init__(self, inner: BrowserContextBase, config: AgentcloakConfig) -> None:
         self._inner = inner
-        self._whitelist = config.domain_whitelist
-        self._blacklist = config.domain_blacklist
-        self._content_scan = config.content_scan
-        self._patterns = config.content_scan_patterns
+        self._whitelist = config.security.domain_whitelist
+        self._blacklist = config.security.domain_blacklist
+        self._content_scan = config.security.content_scan
+        self._patterns = config.security.content_scan_patterns
 
     # ------------------------------------------------------------------
     # Layer 1: navigation / fetch / tab_new

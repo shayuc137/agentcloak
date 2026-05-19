@@ -196,7 +196,12 @@ class BridgeService:
 
         await websocket.accept()
         adapter = BridgeWSAdapter(websocket)
-        remote_ctx: RemoteBridgeContext = RemoteBridgeContext(bridge_ws=adapter)  # type: ignore[arg-type]
+        cfg = getattr(self._state, "config", None)
+        browser_cfg = cfg.browser if cfg is not None else None
+        remote_ctx: RemoteBridgeContext = RemoteBridgeContext(  # type: ignore[arg-type]
+            bridge_ws=adapter,
+            browser_config=browser_cfg,
+        )
         self._state.bridge_ws = adapter
         self._notify_extension_connected(remote_ctx)
 
@@ -266,7 +271,12 @@ class BridgeService:
         self._cleanup_dead_remote()
 
         adapter = BridgeWSAdapter(websocket)
-        remote_ctx: RemoteBridgeContext = RemoteBridgeContext(bridge_ws=adapter)  # type: ignore[arg-type]
+        cfg = getattr(self._state, "config", None)
+        browser_cfg = cfg.browser if cfg is not None else None
+        remote_ctx: RemoteBridgeContext = RemoteBridgeContext(  # type: ignore[arg-type]
+            bridge_ws=adapter,
+            browser_config=browser_cfg,
+        )
         self._state.ext_ws = adapter
         self._notify_extension_connected(remote_ctx)
 

@@ -14,7 +14,7 @@ agentcloak 开箱即用，无需任何配置。所有设置都有合理的默认
 
 位置：`~/.agentcloak/config.toml`
 
-配置文件包含三个段：`[daemon]`、`[browser]` 和 `[security]`。
+配置文件包含四个段：`[daemon]`、`[browser]`、`[security]` 和 `[bridge]`。
 
 ```toml
 [daemon]
@@ -53,6 +53,10 @@ domain_whitelist = []
 domain_blacklist = []
 content_scan = false
 content_scan_patterns = []
+
+[bridge]
+# token 在 daemon 首次启动时自动生成；通过 `cloak bridge token --reset` 轮换
+local_idle_timeout = 1800
 ```
 
 > [!NOTE]

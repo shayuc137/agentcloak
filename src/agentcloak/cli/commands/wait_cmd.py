@@ -34,7 +34,7 @@ def do_wait(
     timeout: int | None = typer.Option(
         None,
         "--timeout",
-        help="Timeout in milliseconds (default: config.action_timeout).",
+        help="Timeout in milliseconds (default: config.browser.action_timeout).",
     ),
     state: str = typer.Option(
         "visible",

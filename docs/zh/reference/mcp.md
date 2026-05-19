@@ -218,7 +218,12 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 23 个工具。已包含在�
 
 运行安装诊断检查。
 
-无参数。返回 Python 版本、CloakBrowser 状态、daemon 连通性和配置检查结果。
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `fix` | `bool` | `false` | 尝试进程内修复（下载 binary、创建数据目录） |
+| `detail` | `bool` | `false` | 显示每项检查（详细模式）。默认返回精简 2 行摘要 + 运行状态 |
+
+默认输出：通过数 + 版本 + 浏览器描述、headless/headed、humanize、proxy、profile。
 
 ### agentcloak_resume
 

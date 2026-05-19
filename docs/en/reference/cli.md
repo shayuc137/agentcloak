@@ -364,7 +364,8 @@ See [config reference](config.md) for all available keys and environment variabl
 ## Diagnostics
 
 ```bash
-cloak doctor                       # per-check [ok]/[fail] lines
+cloak doctor                       # concise summary + runtime status (2 lines)
+cloak doctor --detail              # verbose per-check [ok]/[fail] lines
 cloak doctor --fix                 # attempt in-process repair (binary download, data dir)
 cloak doctor --fix --sudo          # also run the synthesised system command via sudo
 

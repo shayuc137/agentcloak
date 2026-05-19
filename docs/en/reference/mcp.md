@@ -219,7 +219,12 @@ Manage browser profiles.
 
 Run diagnostic checks on the installation.
 
-No parameters. Returns Python version, CloakBrowser status, daemon connectivity, and configuration checks.
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `fix` | `bool` | `false` | Attempt in-process repairs (download binary, create data dir) |
+| `detail` | `bool` | `false` | Show every check (verbose). Default returns concise 2-line summary + runtime status |
+
+Default output: pass count + version + browser description, headless/headed, humanize, proxy, profile.
 
 ### agentcloak_resume
 

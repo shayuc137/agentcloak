@@ -361,7 +361,8 @@ key 使用点分格式（如 `browser.proxy`、`browser.extra_args`）。类型�
 ## 诊断
 
 ```bash
-cloak doctor                       # 每项检查输出 [ok]/[fail] 行
+cloak doctor                       # 精简摘要 + 运行状态（2 行）
+cloak doctor --detail              # 详细每项检查 [ok]/[fail] 行
 cloak doctor --fix                 # 尝试进程内修复（binary 下载、数据目录）
 cloak doctor --fix --sudo          # 用 sudo 执行合成的系统命令
 

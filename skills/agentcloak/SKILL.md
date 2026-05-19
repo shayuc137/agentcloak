@@ -147,9 +147,8 @@ $ cloak js evaluate "document.title"
 Example Domain
 
 $ cloak doctor
-[ok] python_version | 3.12.4
-[ok] cloakbrowser | binary v140.0.7339 installed
-[info] daemon | 127.0.0.1:18765 | hint: not running (auto-starts on first command)
+all 17 checks passed | agentcloak 0.2.3
+CloakBrowser 0.3.27 | headless | humanize | no proxy | no profile (ephemeral)
 ```
 
 **Errors go to stderr** with a recovery hint:

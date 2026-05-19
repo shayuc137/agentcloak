@@ -1034,3 +1034,188 @@ class TestProperties:
     def test_stealth_tier(self) -> None:
         ctx = _make_ctx()
         assert ctx.stealth_tier.value == "playwright"
+
+
+class TestPageValid:
+    """Tests for `_page_valid` flag — silent navigate failure prevention.
+
+    The flag flips to False on every ``navigate()`` attempt and back to True
+    only on success. Page-bound ops (screenshot, evaluate, snapshot, action,
+    upload, frame_list/focus, selector/js waits) check the flag and raise
+    ``NavigationError(error="no_valid_page")`` so the agent can't silently
+    keep operating on the previous page after a failed navigate.
+    """
+
+    @pytest.mark.asyncio
+    async def test_initial_page_valid_true(self) -> None:
+        """Fresh context starts with page_valid=True (so first ops work)."""
+        ctx = _make_ctx()
+        assert ctx._page_valid is True
+
+    @pytest.mark.asyncio
+    async def test_navigate_success_keeps_page_valid(self) -> None:
+        """Successful navigate leaves page_valid=True."""
+        ctx = _make_ctx()
+        await ctx.navigate("https://example.com")
+        assert ctx._page_valid is True
+
+    @pytest.mark.asyncio
+    async def test_navigate_failure_marks_page_invalid(self) -> None:
+        """Failed navigate flips page_valid to False."""
+        page = MagicMock()
+        page.on = MagicMock()
+        page.goto = AsyncMock(side_effect=Exception("net::ERR_NAME_NOT_RESOLVED"))
+        ctx = _make_ctx(page=page)
+        with pytest.raises(NavigationError):
+            await ctx.navigate("https://bad.example.com")
+        assert ctx._page_valid is False
+
+    @pytest.mark.asyncio
+    async def test_navigate_timeout_marks_page_invalid(self) -> None:
+        """Navigate timeout flips page_valid to False (same path as failure)."""
+        page = MagicMock()
+        page.on = MagicMock()
+        page.goto = AsyncMock(side_effect=Exception("Timeout 30000ms exceeded"))
+        ctx = _make_ctx(page=page)
+        with pytest.raises(BrowserTimeoutError):
+            await ctx.navigate("https://slow.example.com")
+        assert ctx._page_valid is False
+
+    @pytest.mark.asyncio
+    async def test_screenshot_blocks_when_invalid(self) -> None:
+        """screenshot() must raise no_valid_page when last navigate failed."""
+        ctx = _make_ctx()
+        ctx._page_valid = False
+        with pytest.raises(NavigationError) as exc_info:
+            await ctx.screenshot()
+        assert exc_info.value.error == "no_valid_page"
+        assert "navigate" in exc_info.value.action.lower()
+
+    @pytest.mark.asyncio
+    async def test_evaluate_blocks_when_invalid(self) -> None:
+        """evaluate() must raise no_valid_page when last navigate failed."""
+        ctx = _make_ctx()
+        ctx._page_valid = False
+        with pytest.raises(NavigationError) as exc_info:
+            await ctx.evaluate("document.title")
+        assert exc_info.value.error == "no_valid_page"
+
+    @pytest.mark.asyncio
+    async def test_snapshot_blocks_when_invalid(self) -> None:
+        """snapshot() must raise no_valid_page when last navigate failed."""
+        ctx = _make_ctx()
+        ctx._page_valid = False
+        with pytest.raises(NavigationError) as exc_info:
+            await ctx.snapshot(mode="accessible")
+        assert exc_info.value.error == "no_valid_page"
+
+    @pytest.mark.asyncio
+    async def test_action_blocks_when_invalid(self) -> None:
+        """action() (click/fill/...) must raise no_valid_page when invalid."""
+        ctx = _make_ctx()
+        ctx._page_valid = False
+        with pytest.raises(NavigationError) as exc_info:
+            await ctx.action("click", "1")
+        assert exc_info.value.error == "no_valid_page"
+
+    @pytest.mark.asyncio
+    async def test_successful_navigate_after_failure_recovers(self) -> None:
+        """A successful navigate after a failure restores page_valid=True."""
+        # Build a page that fails the first goto and succeeds on the second.
+        page = _default_page()
+        outcomes = [Exception("net::ERR_NAME_NOT_RESOLVED"), MagicMock(status=200)]
+
+        async def _goto(url: str, **kw: Any) -> Any:
+            value = outcomes.pop(0)
+            if isinstance(value, Exception):
+                raise value
+            return value
+
+        page.goto = AsyncMock(side_effect=_goto)
+        ctx = _make_ctx(page=page)
+
+        with pytest.raises(NavigationError):
+            await ctx.navigate("https://bad.example.com")
+        assert ctx._page_valid is False
+
+        # Page-bound ops are now blocked.
+        with pytest.raises(NavigationError):
+            await ctx.screenshot()
+
+        # Successful retry restores the flag and unblocks downstream ops.
+        await ctx.navigate("https://good.example.com")
+        assert ctx._page_valid is True
+        # Screenshot should now work.
+        result = await ctx.screenshot()
+        assert isinstance(result, bytes)
+
+    @pytest.mark.asyncio
+    async def test_fetch_unaffected_by_invalid_page(self) -> None:
+        """fetch() is HTTP — page_valid flag must not block it."""
+        ctx = _make_ctx()
+        ctx._page_valid = False
+        # The default _fetch_impl on PlaywrightContext uses APIRequestContext
+        # — patch it out to verify the flag itself doesn't gate the call.
+        ctx._fetch_impl = AsyncMock(  # type: ignore[method-assign]
+            return_value={"status": 200, "body": "ok", "headers": {}}
+        )
+        result = await ctx.fetch("https://api.example.com/data")
+        assert result["status"] == 200
+
+    @pytest.mark.asyncio
+    async def test_network_unaffected_by_invalid_page(self) -> None:
+        """network() reads the ring buffer — page_valid flag must not block it."""
+        ctx = _make_ctx()
+        ctx._page_valid = False
+        # Should not raise — ring buffer is independent of page state.
+        entries = await ctx.network(since=0)
+        assert entries == []
+
+    @pytest.mark.asyncio
+    async def test_wait_ms_unaffected_by_invalid_page(self) -> None:
+        """wait --ms is a pure timer — must work even with invalid page."""
+        ctx = _make_ctx()
+        ctx._page_valid = False
+        ctx._wait_impl = AsyncMock(  # type: ignore[method-assign]
+            return_value={"condition": "ms", "value": "10"}
+        )
+        result = await ctx.wait(condition="ms", value="10", timeout=1000)
+        assert result["ok"] is True
+
+    @pytest.mark.asyncio
+    async def test_wait_selector_blocks_when_invalid(self) -> None:
+        """wait --selector evaluates against the live page — must be guarded."""
+        ctx = _make_ctx()
+        ctx._page_valid = False
+        with pytest.raises(NavigationError) as exc_info:
+            await ctx.wait(condition="selector", value="#x", timeout=100)
+        assert exc_info.value.error == "no_valid_page"
+
+    @pytest.mark.asyncio
+    async def test_resume_snapshot_exposes_page_valid(self) -> None:
+        """resume_snapshot() returns page_valid for agent introspection."""
+        ctx = _make_ctx()
+        data = await ctx.resume_snapshot()
+        assert data["page_valid"] is True
+
+        ctx._page_valid = False
+        data = await ctx.resume_snapshot()
+        assert data["page_valid"] is False
+
+    @pytest.mark.asyncio
+    async def test_mark_page_invalid_public_hook(self) -> None:
+        """``mark_page_invalid()`` is the public seam outer wrappers call.
+
+        ``SecureBrowserContext`` uses this when its pre-flight rejects a
+        navigate before the inner backend ever sees it; covered here at the
+        base level so the contract is explicit and pyright doesn't see
+        outside callers poking at the private flag directly.
+        """
+        ctx = _make_ctx()
+        assert ctx._page_valid is True
+        ctx.mark_page_invalid()
+        assert ctx._page_valid is False
+        # Subsequent page-bound ops must now refuse to run.
+        with pytest.raises(NavigationError) as exc_info:
+            await ctx.screenshot()
+        assert exc_info.value.error == "no_valid_page"

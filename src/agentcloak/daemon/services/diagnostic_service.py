@@ -604,6 +604,12 @@ class DiagnosticService:
             data["seq"] = ctx.seq
             data["capture_recording"] = ctx.capture_store.recording
             data["capture_entries"] = len(ctx.capture_store)
+            # ``page_valid`` exposes the navigate-validity flag so agents
+            # can query it directly via ``cloak doctor`` instead of having
+            # to trigger an op and parse the error envelope. The flag lives
+            # on the inner context — SecureBrowserContext forwards it via
+            # ``__getattr__``.
+            data["page_valid"] = bool(getattr(ctx, "_page_valid", True))
 
             # Browser description comes from the backend so we don't hardcode
             # tier → name mapping (and so future backends like Camoufox plug
@@ -614,6 +620,9 @@ class DiagnosticService:
                 data["browser_description"] = None
 
             # Pull the current URL/title best-effort; failures are non-fatal.
+            # When ``page_valid`` is False the snapshot call will raise
+            # ``NavigationError`` — that's expected, we still want the rest
+            # of the health payload to render.
             try:
                 snap = await ctx.snapshot(mode="accessible")
                 data["current_url"] = snap.url
@@ -628,6 +637,7 @@ class DiagnosticService:
             data["current_url"] = None
             data["current_title"] = None
             data["browser_description"] = None
+            data["page_valid"] = False
 
         if config is not None:
             # Runtime status fields the doctor command needs to render its

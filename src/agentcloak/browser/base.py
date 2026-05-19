@@ -40,6 +40,7 @@ from agentcloak.core.errors import (
     BrowserTimeoutError,
     DialogBlockedError,
     ElementNotFoundError,
+    NavigationError,
 )
 from agentcloak.core.seq import RingBuffer, SeqCounter, SeqEvent
 
@@ -207,6 +208,14 @@ class BrowserContextBase(ABC):
         # Track whether the underlying browser has been observed closed so the
         # next request can raise a structured error instead of a raw exception.
         self._browser_closed: bool = False
+
+        # ``_page_valid`` tracks whether the active page reflects the agent's
+        # most recent intent. A failed ``navigate()`` flips this to False so
+        # downstream page-bound operations (screenshot, evaluate, snapshot,
+        # action, upload, wait, frame ops) fail fast with a recovery hint
+        # instead of silently running against the stale previous page. The
+        # next successful navigate restores it.
+        self._page_valid: bool = True
 
     # ------------------------------------------------------------------
     # Public properties
@@ -413,6 +422,34 @@ class BrowserContextBase(ABC):
                 " 'agentcloak daemon start' or reissue from the CLI",
             )
 
+    def _check_page_valid(self) -> None:
+        """Raise if the last ``navigate()`` failed and no successful one has run since.
+
+        Page-bound operations (screenshot, evaluate, snapshot, action,
+        upload, selector/js waits, frame ops) call this so a silent fallback
+        to the stale previous page can never happen. ``navigate()`` itself
+        is exempt — it is the recovery path.
+        """
+        if not self._page_valid:
+            raise NavigationError(
+                error="no_valid_page",
+                hint="Last navigate failed — the browser is still on the previous page",
+                action="run 'cloak navigate <url>' to load a new page first",
+            )
+
+    def mark_page_invalid(self) -> None:
+        """Public hook for outer wrappers (e.g. :class:`SecureBrowserContext`)
+        to invalidate the page when their pre-flight rejects a navigate before
+        it ever reaches the inner backend.
+
+        Without this, an IDPI scheme block (``file://``) or whitelist miss
+        would raise :class:`SecurityError` while leaving ``_page_valid``
+        True — so the very next ``screenshot``/``evaluate`` would silently
+        run on the previous page. This is the exact silent-failure trap PRD
+        05-19 closes.
+        """
+        self._page_valid = False
+
     # ------------------------------------------------------------------
     # navigate / snapshot / evaluate / network / screenshot
     # ------------------------------------------------------------------
@@ -426,11 +463,21 @@ class BrowserContextBase(ABC):
 
             _, _cfg = load_config()
             timeout = float(_cfg.navigation_timeout)
+        # Flag flips on the failure / success edge, not on entry. If we
+        # invalidated *before* awaiting ``_navigate_impl``, a concurrent
+        # ``screenshot`` request could observe ``_page_valid = False`` mid-
+        # navigation and erroneously raise ``no_valid_page`` even though
+        # the previous page is still operable. Settling the flag in the
+        # except/success branches keeps the bug fix tight to its real
+        # cause (navigation actually failing) and avoids accidental
+        # collateral damage to overlapping requests.
         try:
             result = await self._navigate_impl(url, timeout=timeout)
         except Exception as exc:
+            self._page_valid = False
             self._maybe_mark_browser_closed(exc)
             raise
+        self._page_valid = True
 
         new_seq = self._seq_counter.increment_action()
         self._ring_buffer.append(
@@ -453,8 +500,10 @@ class BrowserContextBase(ABC):
         tab; ``tabs`` is the full per-backend tab inventory.
 
         Returns a dict with keys: ``url``, ``title``, ``tabs``,
-        ``capture_active``, ``stealth_tier``. Missing keys default to
-        empty / ``False``.
+        ``capture_active``, ``stealth_tier``, ``page_valid``. Missing keys
+        default to empty / ``False``. ``page_valid`` mirrors
+        :attr:`_page_valid` so agents can query whether subsequent
+        page-bound ops will fail without having to attempt them first.
         """
         return {
             "url": "",
@@ -462,6 +511,7 @@ class BrowserContextBase(ABC):
             "tabs": [],
             "capture_active": self._capture_store.recording,
             "stealth_tier": self.stealth_tier.value,
+            "page_valid": self._page_valid,
         }
 
     async def snapshot(
@@ -475,6 +525,7 @@ class BrowserContextBase(ABC):
         frames: bool = False,
     ) -> PageSnapshot:
         self._check_browser_alive()
+        self._check_page_valid()
         # ``content`` joins ``accessible``/``compact`` on the unified AX-tree
         # path so it picks up StaticText aggregation (proper word spacing) and
         # ``--frames`` iframe merging for free. The old
@@ -547,6 +598,7 @@ class BrowserContextBase(ABC):
 
     async def evaluate(self, js: str, *, world: str = "main") -> Any:
         self._check_browser_alive()
+        self._check_page_valid()
         try:
             result = await self._evaluate_impl(js, world=world)
         except Exception as exc:
@@ -589,6 +641,7 @@ class BrowserContextBase(ABC):
         quality: int | None = None,
     ) -> bytes:
         self._check_browser_alive()
+        self._check_page_valid()
         if quality is None:
             from agentcloak.core.config import load_config
 
@@ -681,6 +734,13 @@ class BrowserContextBase(ABC):
             _, _cfg = load_config()
             timeout = _cfg.action_timeout
         self._check_browser_alive()
+        # Selector and JS conditions evaluate against the live page; if the
+        # last navigate failed, waiting against the stale page is the same
+        # silent-failure trap screenshot/evaluate suffer from. ``url``,
+        # ``load``, and ``ms`` operate on navigation/timer state that may
+        # legitimately settle even when the current page is stale.
+        if condition in ("selector", "js"):
+            self._check_page_valid()
         t0 = time.monotonic()
         try:
             await self._wait_impl(
@@ -729,6 +789,7 @@ class BrowserContextBase(ABC):
         from pathlib import Path
 
         self._check_browser_alive()
+        self._check_page_valid()
         validated: list[str] = []
         for f in files:
             p = Path(f)
@@ -779,6 +840,7 @@ class BrowserContextBase(ABC):
     # ------------------------------------------------------------------
 
     async def frame_list(self) -> list[FrameInfo]:
+        self._check_page_valid()
         return await self._frame_list_impl()
 
     async def frame_focus(
@@ -788,6 +850,7 @@ class BrowserContextBase(ABC):
         url: str | None = None,
         main: bool = False,
     ) -> dict[str, Any]:
+        self._check_page_valid()
         return await self._frame_focus_impl(name=name, url=url, main=main)
 
     # ------------------------------------------------------------------
@@ -920,6 +983,7 @@ class BrowserContextBase(ABC):
         self._raise_if_dialog_blocked()
 
         self._check_browser_alive()
+        self._check_page_valid()
 
         if kind not in _VALID_ACTION_KINDS:
             raise BackendError(

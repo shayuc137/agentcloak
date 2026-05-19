@@ -134,10 +134,13 @@ async def handle_resume(
     # _update_resume). Runtime-mutable fields like ``capture_active`` and
     # ``stealth_tier`` need to be re-read from the live context, otherwise
     # ``resume`` returns stale values when the agent toggled capture between
-    # actions (dogfood F2).
+    # actions (dogfood F2). ``page_valid`` flips on every navigate
+    # attempt so it must always come from the live context, never from
+    # the persisted snapshot.
     data = resume_writer.current_snapshot.to_dict()
     data["capture_active"] = ctx.capture_store.recording
     data["stealth_tier"] = ctx.stealth_tier.value
+    data["page_valid"] = bool(getattr(ctx, "_page_valid", True))
     return _ok(data, seq=ctx.seq)
 
 

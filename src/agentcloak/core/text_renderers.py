@@ -482,6 +482,11 @@ def render_health_text(data: dict[str, Any]) -> str:
     current_url = data.get("current_url")
     if current_url:
         parts.append(f"url: {current_url}")
+    # ``page_valid`` defaults to True; surface only the False case so a
+    # healthy daemon's one-liner stays uncluttered. Agents that see
+    # ``page: invalid`` know to navigate again before screenshot/evaluate.
+    if browser_ready and data.get("page_valid") is False:
+        parts.append("page: invalid")
     if data.get("capture_recording"):
         parts.append(f"capture: recording ({int(data.get('capture_entries', 0) or 0)})")
     return " | ".join(parts)
@@ -722,6 +727,12 @@ def render_resume_text(data: dict[str, Any]) -> str:
     tier = data.get("stealth_tier")
     if tier:
         lines.append(f"tier: {tier}")
+    # ``page_valid`` is True by default — only flag the False case so the
+    # happy-path output stays terse. When the last navigate failed agents
+    # need to see this immediately, hence the explicit "INVALID" rather
+    # than a quiet boolean.
+    if "page_valid" in data and data.get("page_valid") is False:
+        lines.append("page: INVALID (last navigate failed)")
     if data.get("capture_active"):
         lines.append("capture: recording")
     tabs_raw: list[Any] = list(data.get("tabs") or [])

@@ -59,7 +59,20 @@ class SecureBrowserContext:
     async def navigate(
         self, url: str, *, timeout: float | None = None
     ) -> dict[str, Any]:
-        check_domain_allowed(url, whitelist=self._whitelist, blacklist=self._blacklist)
+        try:
+            check_domain_allowed(
+                url, whitelist=self._whitelist, blacklist=self._blacklist
+            )
+        except SecurityError:
+            # Security layer rejects this URL before the inner backend ever
+            # sees it. The inner ``_page_valid`` flag therefore stays True,
+            # which would let a subsequent ``screenshot``/``evaluate``/etc.
+            # silently keep operating on the previous page — the exact bug
+            # PRD 05-19 targets. Flip the inner flag here so the IDPI scheme
+            # block (``file://``, blacklist hit, ...) behaves the same as a
+            # network-level navigation failure from the agent's perspective.
+            self._inner.mark_page_invalid()
+            raise
         # Inner navigate() falls back to its own config if timeout is None.
         return await self._inner.navigate(url, timeout=timeout)
 

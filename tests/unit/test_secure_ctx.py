@@ -128,6 +128,46 @@ class TestNavigateGate:
         assert result["tab_id"] == 1
         inner.tab_new.assert_awaited_once_with(None)
 
+    @pytest.mark.asyncio
+    async def test_security_block_flips_inner_page_valid(self) -> None:
+        """PRD 05-19: ``file://`` rejected by Layer 1 must mark page invalid.
+
+        Before this guard, IDPI's pre-flight ``check_domain_allowed`` raised
+        ``SecurityError`` *before* the inner ``navigate()`` ran, leaving the
+        inner ``_page_valid`` flag at True. A follow-up ``screenshot`` /
+        ``evaluate`` would then silently operate on the previous page — the
+        exact P0 silent-failure bug this PRD targets. The fix flips the inner
+        flag in the wrapper so security-blocked navigates behave like
+        network-blocked navigates from the agent's perspective.
+        """
+        inner = MagicMock()
+        inner.navigate = AsyncMock()
+        inner.mark_page_invalid = MagicMock()
+        cfg = _make_config()  # no whitelist — only blocked schemes apply
+        secure = SecureBrowserContext(inner, cfg)
+
+        with pytest.raises(SecurityError) as exc_info:
+            await secure.navigate("file:///etc/passwd")
+        assert exc_info.value.error == "blocked_scheme"
+        # Inner navigate is never invoked, but the page-valid flag must flip
+        # via the explicit public hook.
+        inner.navigate.assert_not_called()
+        inner.mark_page_invalid.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_security_block_via_whitelist_flips_inner_page_valid(self) -> None:
+        """Whitelist mismatch must also flip ``_page_valid`` for the same reason."""
+        inner = MagicMock()
+        inner.navigate = AsyncMock()
+        inner.mark_page_invalid = MagicMock()
+        cfg = _make_config(whitelist=["example.com"])
+        secure = SecureBrowserContext(inner, cfg)
+
+        with pytest.raises(SecurityError):
+            await secure.navigate("https://other.com/")
+        inner.navigate.assert_not_called()
+        inner.mark_page_invalid.assert_called_once()
+
 
 # ---------------------------------------------------------------------------
 # B3.2: Layer 3 — untrusted content wrapping

@@ -43,6 +43,10 @@ class HealthResponse(BaseModel):
     capture_entries: int | None = None
     current_url: str | None = None
     current_title: str | None = None
+    # ``page_valid`` mirrors :attr:`BrowserContextBase._page_valid`. False
+    # means the last ``navigate()`` failed and subsequent page-bound ops
+    # will raise ``no_valid_page`` until a successful navigate runs again.
+    page_valid: bool | None = None
     local_proxy: dict[str, Any] | None = None
     # Backend self-describes via ``BrowserContextBase.browser_description()``.
     # Doctor renders this verbatim so we don't hardcode tier → name here.

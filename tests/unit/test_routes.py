@@ -118,6 +118,78 @@ class TestRoutes:
         data = resp.json()
         assert data["ok"] is True
 
+    def test_health_includes_page_valid(self, client: TestClient) -> None:
+        """`/health` exposes page_valid so agents can query without an op."""
+        resp = client.get("/health")
+        data = resp.json()
+        # Fresh context starts with page_valid=True
+        assert data.get("page_valid") is True
+
+    def test_screenshot_blocked_after_navigate_failure(
+        self, client: TestClient
+    ) -> None:
+        """navigate failure → screenshot returns no_valid_page (not stale page).
+
+        This is the P0 silent-failure bug guard: agents that batch-execute
+        commands must see the failure propagate, not get a screenshot of the
+        previous successful page.
+        """
+        ctx = client.app.state.browser_ctx  # type: ignore[attr-defined]
+        # Force the next goto to fail.
+        ctx._page.goto = AsyncMock(side_effect=Exception("net::ERR_INVALID_URL"))
+        resp = client.post("/navigate", json={"url": "file:///etc/passwd"})
+        assert resp.status_code == 400
+        # Page must now be marked invalid in the live context.
+        assert ctx._page_valid is False
+
+        # Subsequent screenshot returns the structured no_valid_page error,
+        # not a stale screenshot.
+        resp = client.get("/screenshot")
+        assert resp.status_code == 400
+        data = resp.json()
+        assert data["error"] == "no_valid_page"
+        assert "navigate" in data["action"].lower()
+
+        # Evaluate is also blocked.
+        resp = client.post("/evaluate", json={"js": "document.title"})
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "no_valid_page"
+
+        # /health surfaces the invalid state.
+        health = client.get("/health").json()
+        assert health.get("page_valid") is False
+
+    def test_navigate_failure_then_success_recovers(self, client: TestClient) -> None:
+        """Successful navigate after a failure clears the no_valid_page guard."""
+        ctx = client.app.state.browser_ctx  # type: ignore[attr-defined]
+        # Mock the first navigate to fail.
+        outcomes = [
+            Exception("net::ERR_NAME_NOT_RESOLVED"),
+            MagicMock(status=200),
+        ]
+
+        async def _goto(url: str, **kw: Any) -> Any:
+            value = outcomes.pop(0)
+            if isinstance(value, Exception):
+                raise value
+            return value
+
+        ctx._page.goto = AsyncMock(side_effect=_goto)
+        ctx._page.url = "https://example.com"
+
+        resp = client.post("/navigate", json={"url": "https://bad.invalid"})
+        assert resp.status_code == 400
+        assert ctx._page_valid is False
+
+        # Recovery navigate succeeds.
+        resp = client.post("/navigate", json={"url": "https://example.com"})
+        assert resp.status_code == 200
+        assert ctx._page_valid is True
+
+        # Screenshot now works.
+        resp = client.get("/screenshot")
+        assert resp.status_code == 200
+
     def test_navigate(self, client: TestClient) -> None:
         resp = client.post("/navigate", json={"url": "https://test.com"})
         assert resp.status_code == 200

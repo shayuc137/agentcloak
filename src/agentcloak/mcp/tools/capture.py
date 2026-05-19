@@ -9,6 +9,12 @@ from typing import TYPE_CHECKING, Literal
 
 from mcp.types import ToolAnnotations
 
+from agentcloak.core.text_renderers import (
+    render_capture_analyze_text,
+    render_capture_export_text,
+    render_capture_status_text,
+    render_fetch_text,
+)
 from agentcloak.mcp._format import format_call
 
 if TYPE_CHECKING:
@@ -43,12 +49,17 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             JSON with recording status and entry count, or replay response.
         """
         if action == "clear":
-            return await format_call(client.capture_clear())
+            # ``cleared N entries`` — shared renderer keeps CLI/MCP aligned.
+            from agentcloak.core.text_renderers import render_capture_clear_text
+
+            return await format_call(client.capture_clear(), render_capture_clear_text)
         if action == "stop":
-            return await format_call(client.capture_stop())
+            return await format_call(client.capture_stop(), render_capture_status_text)
         if action == "replay":
-            return await format_call(client.capture_replay(url=url, method=method))
-        return await format_call(client.capture_start())
+            return await format_call(
+                client.capture_replay(url=url, method=method), render_fetch_text
+            )
+        return await format_call(client.capture_start(), render_capture_status_text)
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     async def agentcloak_capture_query(
@@ -74,7 +85,11 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             analyze: detected API patterns with method, path, auth, schema.
         """
         if action == "export":
-            return await format_call(client.capture_export(fmt=format))
+            return await format_call(
+                client.capture_export(fmt=format), render_capture_export_text
+            )
         if action == "analyze":
-            return await format_call(client.capture_analyze(domain=domain))
-        return await format_call(client.capture_status())
+            return await format_call(
+                client.capture_analyze(domain=domain), render_capture_analyze_text
+            )
+        return await format_call(client.capture_status(), render_capture_status_text)

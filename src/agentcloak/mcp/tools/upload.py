@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from mcp.types import ToolAnnotations
 
+from agentcloak.core.text_renderers import render_upload_text
 from agentcloak.mcp._format import format_call
 
 if TYPE_CHECKING:
@@ -36,4 +37,6 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         Returns:
             JSON with upload confirmation and file names.
         """
-        return await format_call(client.upload(index=index, files=files))
+        return await format_call(
+            client.upload(index=index, files=files), render_upload_text
+        )

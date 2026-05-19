@@ -6,6 +6,7 @@ import typer
 
 from agentcloak.cli._dispatch import dispatch_text_or_json
 from agentcloak.client import DaemonClient
+from agentcloak.core.text_renderers import render_upload_text
 
 __all__ = ["app"]
 
@@ -25,4 +26,5 @@ def do_upload(
         "POST",
         "/upload",
         json_body={"index": index, "files": file},
+        renderer=render_upload_text,
     )

@@ -9,6 +9,10 @@ from typing import TYPE_CHECKING, Literal
 
 from mcp.types import ToolAnnotations
 
+from agentcloak.core.text_renderers import (
+    render_dialog_handle_text,
+    render_dialog_status_text,
+)
 from agentcloak.mcp._format import format_call
 
 if TYPE_CHECKING:
@@ -41,6 +45,8 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             JSON with dialog info (type, message) or handled status.
         """
         if kind == "status":
-            return await format_call(client.dialog_status())
+            return await format_call(client.dialog_status(), render_dialog_status_text)
         reply = text if text and kind == "accept" else None
-        return await format_call(client.dialog_handle(kind, text=reply))
+        return await format_call(
+            client.dialog_handle(kind, text=reply), render_dialog_handle_text
+        )

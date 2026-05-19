@@ -8,13 +8,45 @@ next to that group's handlers.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
-__all__ = ["_attach_optional_snapshot", "_ok", "_update_resume", "logger"]
+if TYPE_CHECKING:
+    from fastapi import Request
+
+__all__ = [
+    "_attach_optional_snapshot",
+    "_ok",
+    "_update_resume",
+    "logger",
+    "wants_text",
+]
 
 logger = structlog.get_logger()
+
+
+def wants_text(request: Request) -> bool:
+    """Return ``True`` when the caller asked for ``text/plain``.
+
+    Retained on the daemon side because it depends on the FastAPI
+    :class:`Request` object. As of v0.3.x daemon route handlers no longer
+    negotiate text output (CLI and MCP render locally via
+    :mod:`agentcloak.core.text_renderers`); this helper is kept so future
+    routes can still opt into Accept-header negotiation without re-implementing
+    the parsing.
+    """
+    accept = request.headers.get("accept", "").lower()
+    if not accept or accept == "*/*":
+        return False
+    # ``text/plain, application/json;q=0.9`` style — first hit wins.
+    for chunk in accept.split(","):
+        media = chunk.split(";", 1)[0].strip()
+        if media == "text/plain":
+            return True
+        if media == "application/json":
+            return False
+    return False
 
 
 def _ok(data: Any, *, seq: int) -> dict[str, Any]:

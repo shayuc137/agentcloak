@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Literal
 
 from mcp.types import ToolAnnotations
 
+from agentcloak.core.text_renderers import render_wait_text
 from agentcloak.mcp._format import format_call
 
 if TYPE_CHECKING:
@@ -53,5 +54,6 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                 value=value,
                 timeout=timeout,
                 state=state,
-            )
+            ),
+            render_wait_text,
         )

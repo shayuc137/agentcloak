@@ -9,8 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import PlainTextResponse, Response
+from fastapi import APIRouter, HTTPException
 
 from agentcloak.core.errors import ProfileError
 from agentcloak.daemon.dependencies import (  # noqa: TC001
@@ -31,12 +30,6 @@ from agentcloak.daemon.models import (
 )
 from agentcloak.daemon.routes._helpers import _ok
 from agentcloak.daemon.services import ProfileService
-from agentcloak.daemon.text_renderers import (
-    render_profile_list_text,
-    render_spell_list_text,
-    render_spell_run_text,
-    wants_text,
-)
 
 __all__ = ["router"]
 
@@ -71,9 +64,7 @@ def _profiles_dir():  # type: ignore[no-untyped-def]
 
 
 @router.post("/spell/run", response_model=OkEnvelope[SpellRunResponse])
-async def handle_spell_run(
-    body: SpellRunRequest, ctx: BrowserCtxDep, request: Request
-) -> Response | dict[str, Any]:
+async def handle_spell_run(body: SpellRunRequest, ctx: BrowserCtxDep) -> dict[str, Any]:
     """Run a registered spell with the daemon's live browser context."""
     from agentcloak.spells.discovery import discover_spells
     from agentcloak.spells.executor import execute_spell
@@ -108,15 +99,11 @@ async def handle_spell_run(
 
     result = await execute_spell(entry, args=body.args, browser=ctx)
     data = {"result": result}
-    if wants_text(request):
-        return PlainTextResponse(render_spell_run_text(data))
     return _ok(data, seq=ctx.seq)
 
 
 @router.get("/spell/list", response_model=OkEnvelope[SpellListResponse])
-async def handle_spell_list(
-    ctx: BrowserCtxDep, request: Request
-) -> Response | dict[str, Any]:
+async def handle_spell_list(ctx: BrowserCtxDep) -> dict[str, Any]:
     """List all registered spells."""
     from agentcloak.spells.discovery import discover_spells
     from agentcloak.spells.registry import get_registry
@@ -133,8 +120,6 @@ async def handle_spell_list(
         for e in registry.list_all()
     ]
     data = {"spells": spells, "count": len(spells)}
-    if wants_text(request):
-        return PlainTextResponse(render_spell_list_text(data))
     return _ok(data, seq=ctx.seq)
 
 
@@ -149,8 +134,7 @@ async def handle_profile_create_from_current(
     body: ProfileCreateFromCurrentRequest,
     ctx: BrowserCtxDep,
     remote_ctx: RemoteCtxDep,
-    request: Request,
-) -> Response | dict[str, Any]:
+) -> dict[str, Any]:
     """Create a profile from the current browser session's cookies."""
     service = ProfileService(_profiles_dir())
 
@@ -184,49 +168,36 @@ async def handle_profile_create_from_current(
         result = await service.create_from_cookies(body.name, cookies)
     except ProfileError as exc:
         raise _profile_error_to_http(exc) from exc
-    if wants_text(request):
-        return PlainTextResponse(
-            f'created profile "{result.get("profile", body.name)}" '
-            f"({int(result.get('cookie_count', 0) or 0)} cookies)"
-        )
     return _ok(result, seq=ctx.seq)
 
 
 @router.get("/profile/list", response_model=OkEnvelope[ProfileListResponse])
-async def handle_profile_list(
-    ctx: BrowserCtxDep, request: Request
-) -> Response | dict[str, Any]:
+async def handle_profile_list(ctx: BrowserCtxDep) -> dict[str, Any]:
     service = ProfileService(_profiles_dir())
     names = service.list_profiles()
     data = {"profiles": names, "count": len(names)}
-    if wants_text(request):
-        return PlainTextResponse(render_profile_list_text(data))
     return _ok(data, seq=ctx.seq)
 
 
 @router.post("/profile/create", response_model=OkEnvelope[ProfileCreateResponse])
 async def handle_profile_create(
-    body: ProfileCreateRequest, ctx: BrowserCtxDep, request: Request
-) -> Response | dict[str, Any]:
+    body: ProfileCreateRequest, ctx: BrowserCtxDep
+) -> dict[str, Any]:
     service = ProfileService(_profiles_dir())
     try:
         name = service.create(body.name)
     except ProfileError as exc:
         raise _profile_error_to_http(exc) from exc
-    if wants_text(request):
-        return PlainTextResponse(f'created profile "{name}"')
     return _ok({"created": name}, seq=ctx.seq)
 
 
 @router.post("/profile/delete", response_model=OkEnvelope[ProfileCreateResponse])
 async def handle_profile_delete(
-    body: ProfileDeleteRequest, ctx: BrowserCtxDep, request: Request
-) -> Response | dict[str, Any]:
+    body: ProfileDeleteRequest, ctx: BrowserCtxDep
+) -> dict[str, Any]:
     service = ProfileService(_profiles_dir())
     try:
         name = service.delete(body.name)
     except ProfileError as exc:
         raise _profile_error_to_http(exc) from exc
-    if wants_text(request):
-        return PlainTextResponse(f'deleted profile "{name}"')
     return _ok({"deleted": name}, seq=ctx.seq)

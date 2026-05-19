@@ -6,6 +6,7 @@ import typer
 
 from agentcloak.cli._dispatch import dispatch_text_or_json
 from agentcloak.client import DaemonClient
+from agentcloak.core.text_renderers import render_tab_list_text, render_tab_op_text
 
 __all__ = ["app"]
 
@@ -15,7 +16,7 @@ app = typer.Typer()
 @app.command("list")
 def tab_list() -> None:
     """List all open tabs."""
-    dispatch_text_or_json(DaemonClient(), "GET", "/tabs")
+    dispatch_text_or_json(DaemonClient(), "GET", "/tabs", renderer=render_tab_list_text)
 
 
 @app.command("new")
@@ -26,7 +27,15 @@ def tab_new(
     body: dict[str, object] = {}
     if url:
         body["url"] = url
-    dispatch_text_or_json(DaemonClient(), "POST", "/tab/new", json_body=body)
+    dispatch_text_or_json(
+        DaemonClient(),
+        "POST",
+        "/tab/new",
+        json_body=body,
+        # The verb in the one-liner (``new tab N | url``) is request-side
+        # context, so we pre-bind it via a closure.
+        renderer=lambda d: render_tab_op_text("new", d),
+    )
 
 
 @app.command("close")
@@ -35,7 +44,11 @@ def tab_close(
 ) -> None:
     """Close a tab by ID."""
     dispatch_text_or_json(
-        DaemonClient(), "POST", "/tab/close", json_body={"tab_id": tab_id}
+        DaemonClient(),
+        "POST",
+        "/tab/close",
+        json_body={"tab_id": tab_id},
+        renderer=lambda d: render_tab_op_text("closed", d),
     )
 
 
@@ -45,5 +58,9 @@ def tab_switch(
 ) -> None:
     """Switch the active tab."""
     dispatch_text_or_json(
-        DaemonClient(), "POST", "/tab/switch", json_body={"tab_id": tab_id}
+        DaemonClient(),
+        "POST",
+        "/tab/switch",
+        json_body={"tab_id": tab_id},
+        renderer=lambda d: render_tab_op_text("switched to", d),
     )

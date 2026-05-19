@@ -10,6 +10,10 @@ import typer
 from agentcloak.cli._dispatch import dispatch_text_or_json, emit_envelope
 from agentcloak.cli.output import is_json_mode, value
 from agentcloak.client import DaemonClient
+from agentcloak.core.text_renderers import (
+    render_cookies_export_text,
+    render_cookies_import_text,
+)
 
 __all__ = ["app"]
 
@@ -51,7 +55,13 @@ def cookies_export(
         value(f"saved {output} ({len(data.get('cookies', []))} cookies)")
         return
 
-    dispatch_text_or_json(client, "POST", "/cookies/export", json_body=body)
+    dispatch_text_or_json(
+        client,
+        "POST",
+        "/cookies/export",
+        json_body=body,
+        renderer=render_cookies_export_text,
+    )
 
 
 @app.command("import")
@@ -74,4 +84,5 @@ def cookies_import(
         "POST",
         "/cookies/import",
         json_body={"cookies": cookies},
+        renderer=render_cookies_import_text,
     )

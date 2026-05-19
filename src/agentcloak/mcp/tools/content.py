@@ -12,6 +12,7 @@ import orjson
 from mcp.types import ToolAnnotations
 
 from agentcloak.core.errors import AgentBrowserError
+from agentcloak.core.text_renderers import render_evaluate_text, render_fetch_text
 from agentcloak.mcp._format import error_json, format_call
 
 if TYPE_CHECKING:
@@ -69,7 +70,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         # MCP side often pass JSON.stringify(...) at the end of their snippet
         # (so the page's response is captured as text instead of a host
         # object). Decoding the string here gives them the parsed object in
-        # one tool call instead of forcing a second `orjson.loads(result)`
+        # one tool call instead of forcing a second ``orjson.loads(result)``
         # round-trip through their reasoning loop. The CLI does NOT do this —
         # CLI callers either consume JSON via ``jq`` (where escaping is fine)
         # or pipe through their own parser.
@@ -78,7 +79,9 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             with contextlib.suppress(orjson.JSONDecodeError, ValueError):
                 parsed = orjson.loads(actual)
                 data = {**data, "result": parsed}
-        return orjson.dumps(data).decode()
+        # Hand off to the shared renderer so the formatting (scalar passthrough
+        # vs pretty JSON for objects) is identical to the CLI text-mode path.
+        return render_evaluate_text(data)
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     async def agentcloak_fetch(
@@ -116,5 +119,6 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                 body=body,
                 headers=headers,
                 timeout=timeout,
-            )
+            ),
+            render_fetch_text,
         )

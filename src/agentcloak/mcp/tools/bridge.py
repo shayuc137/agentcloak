@@ -12,6 +12,11 @@ from typing import TYPE_CHECKING, Literal
 import orjson
 from mcp.types import ToolAnnotations
 
+from agentcloak.core.text_renderers import (
+    render_bridge_claim_text,
+    render_bridge_finalize_text,
+    render_token_text,
+)
 from agentcloak.mcp._format import format_call
 
 if TYPE_CHECKING:
@@ -74,7 +79,8 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                 client.bridge_claim(
                     tab_id=tab_id if tab_id >= 0 else None,
                     url_pattern=url_pattern or None,
-                )
+                ),
+                render_bridge_claim_text,
             )
 
         if action == "finalize":
@@ -85,10 +91,15 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                     hint=f"Mode must be one of: {', '.join(valid_modes)}",
                     action="use close, handoff, or deliverable",
                 )
-            return await format_call(client.bridge_finalize(mode=mode))
+            # ``mode`` is request-side context — pre-bind it via a closure
+            # so the renderer can emit ``close 3 tabs`` byte-identical to CLI.
+            return await format_call(
+                client.bridge_finalize(mode=mode),
+                lambda d: render_bridge_finalize_text(d, mode=mode),
+            )
 
         if action == "token_reset":
-            return await format_call(client.bridge_token_reset())
+            return await format_call(client.bridge_token_reset(), render_token_text)
 
         return _error_envelope(
             error="unknown_action",

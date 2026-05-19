@@ -10,6 +10,10 @@ import typer
 
 from agentcloak.cli._dispatch import dispatch_text_or_json, emit_envelope
 from agentcloak.cli.output import error, is_json_mode, value
+from agentcloak.core.text_renderers import (
+    render_bridge_claim_text,
+    render_bridge_finalize_text,
+)
 
 __all__ = ["app"]
 
@@ -137,7 +141,13 @@ def bridge_claim(
         body["tab_id"] = tab_id
     if url is not None:
         body["url_pattern"] = url
-    dispatch_text_or_json(DaemonClient(), "POST", "/bridge/claim", json_body=body)
+    dispatch_text_or_json(
+        DaemonClient(),
+        "POST",
+        "/bridge/claim",
+        json_body=body,
+        renderer=render_bridge_claim_text,
+    )
 
 
 @app.command("finalize")
@@ -152,7 +162,13 @@ def bridge_finalize(
     from agentcloak.client import DaemonClient
 
     dispatch_text_or_json(
-        DaemonClient(), "POST", "/bridge/finalize", json_body={"mode": mode}
+        DaemonClient(),
+        "POST",
+        "/bridge/finalize",
+        json_body={"mode": mode},
+        # ``mode`` lives request-side — close it over so the renderer can
+        # produce ``close 3 tabs`` without re-reading the request.
+        renderer=lambda d: render_bridge_finalize_text(d, mode=mode),
     )
 
 
@@ -191,12 +207,9 @@ def bridge_token(
         new_token = ""
         hot_updated = False
         try:
-            if is_json_mode():
-                result = client.bridge_token_reset_sync()
-                data = result.get("data", result)
-                new_token = str(data.get("token", "") or "")
-            else:
-                new_token = client.request_text_sync("POST", "/bridge/token/reset")
+            result = client.bridge_token_reset_sync()
+            data = result.get("data", result)
+            new_token = str(data.get("token", "") or "")
             hot_updated = bool(new_token)
         except (DaemonConnectionError, AgentBrowserError):
             new_token = ""

@@ -7,6 +7,7 @@ import typer
 from agentcloak.cli._dispatch import dispatch_text_or_json
 from agentcloak.cli.output import error
 from agentcloak.client import DaemonClient
+from agentcloak.core.text_renderers import render_wait_text
 
 __all__ = ["app"]
 
@@ -66,4 +67,6 @@ def do_wait(
     }
     if timeout is not None:
         body["timeout"] = timeout
-    dispatch_text_or_json(DaemonClient(), "POST", "/wait", json_body=body)
+    dispatch_text_or_json(
+        DaemonClient(), "POST", "/wait", json_body=body, renderer=render_wait_text
+    )

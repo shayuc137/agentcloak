@@ -12,6 +12,11 @@ import typer
 from agentcloak.cli._dispatch import dispatch_text_or_json, emit_envelope
 from agentcloak.cli.output import error_from_exception, is_json_mode, value
 from agentcloak.core.errors import DaemonConnectionError
+from agentcloak.core.text_renderers import (
+    render_cdp_endpoint_text,
+    render_health_text,
+    render_shutdown_text,
+)
 
 __all__ = ["app"]
 
@@ -145,9 +150,11 @@ def daemon_stop(
         return
     # Text path tolerates the daemon-already-gone case (shutdown drops the
     # listener mid-handler so the response is often empty/connection-reset).
+    # We still invoke shutdown for its side effect and emit the fixed
+    # ``stopped`` token from the shared renderer so CLI/MCP stay aligned.
     with contextlib.suppress(DaemonConnectionError):
-        client.request_text_sync("POST", "/shutdown")
-    value("stopped")
+        client.shutdown_sync()
+    value(render_shutdown_text({}))
 
 
 @app.command("cdp-endpoint")
@@ -158,7 +165,12 @@ def daemon_cdp_endpoint(
     """Get the CDP WebSocket URL for the current browser."""
     from agentcloak.client import DaemonClient
 
-    dispatch_text_or_json(DaemonClient(host=host, port=port), "GET", "/cdp/endpoint")
+    dispatch_text_or_json(
+        DaemonClient(host=host, port=port),
+        "GET",
+        "/cdp/endpoint",
+        renderer=render_cdp_endpoint_text,
+    )
 
 
 @app.command("status")
@@ -176,15 +188,15 @@ def daemon_status(
 
     client = DaemonClient(host=host, port=port, auto_start=False)
     try:
+        result = client.health_sync()
+        # /health is a flat dict (no OkEnvelope wrap); strip ``ok`` for the
+        # JSON path so we don't double-wrap, and feed the same dict to the
+        # text renderer for symmetric CLI/MCP output.
         if is_json_mode():
-            result = client.health_sync()
-            # /health is a flat dict — strip the redundant ``ok`` and emit
-            # the rest under the envelope.
             seq = int(result.get("seq", 0) or 0)
             payload = {k: v for k, v in result.items() if k != "ok"}
             emit_envelope({"ok": True, "seq": seq, "data": payload})
             return
-        text = client.request_text_sync("GET", "/health")
-        value(text)
+        value(render_health_text(result))
     except DaemonConnectionError as e:
         error_from_exception(e)

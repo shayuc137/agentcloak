@@ -1,23 +1,27 @@
 """Action commands — click, fill, type, scroll, hover, select, press, batch.
 
 All action commands share the same dispatch pattern: assemble a body, call
-``/action`` (or ``/action/batch``), and emit the daemon's text or JSON
-response. The ``--snap`` combo flag asks the daemon to attach a compact
-snapshot to the action result so the agent can observe-and-act in one
-round-trip.
+``/action`` (or ``/action/batch``), and emit either JSON (``--json``) or the
+:func:`agentcloak.core.text_renderers.render_action_text` one-liner. The
+``--snap`` combo flag asks the daemon to attach a compact snapshot to the
+action result so the agent can observe-and-act in one round-trip.
 """
 
 from __future__ import annotations
 
 from pathlib import Path  # noqa: TC003 — Typer needs runtime access
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import orjson
 import typer
 
-from agentcloak.cli._dispatch import dispatch_text_or_json, emit_envelope
-from agentcloak.cli.output import error, is_json_mode
+from agentcloak.cli._dispatch import dispatch_text_or_json
+from agentcloak.cli.output import error
 from agentcloak.client import DaemonClient
+from agentcloak.core.text_renderers import render_action_text, render_batch_text
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 __all__ = ["app"]
 
@@ -45,6 +49,37 @@ def _build_action_body(
         if v is not None:
             body[k] = v
     return body
+
+
+def _action_renderer(body: dict[str, Any]) -> Callable[[dict[str, Any]], str]:
+    """Build a render closure that captures kind/target/text/key from ``body``.
+
+    The CLI knows what action it dispatched; the daemon JSON payload no
+    longer carries that context, so the renderer needs it injected here. We
+    also forward ``text`` / ``key`` extras so ``filled [N] | value: '...'``
+    and ``press Enter`` keep their pre-refactor shape.
+    """
+    kind = str(body.get("kind", ""))
+    if body.get("index") is not None:
+        target = str(body["index"])
+    else:
+        target = str(body.get("target", "") or "")
+    text_extra = body.get("text", "")
+    key_extra = body.get("key", "")
+
+    def render(data: dict[str, Any]) -> str:
+        # ``render_action_text`` reads ``data.text`` for fill output and
+        # ``data.key`` for keyless press output — promote the body extras
+        # into the data dict so the closure produces byte-identical text to
+        # the pre-refactor daemon path.
+        enriched = dict(data)
+        if "text" not in enriched and text_extra:
+            enriched["text"] = text_extra
+        if "key" not in enriched and key_extra:
+            enriched["key"] = key_extra
+        return render_action_text(kind, target, enriched)
+
+    return render
 
 
 @app.command("click")
@@ -76,7 +111,13 @@ def do_click(
         x=x,
         y=y,
     )
-    dispatch_text_or_json(DaemonClient(), "POST", "/action", json_body=body)
+    dispatch_text_or_json(
+        DaemonClient(),
+        "POST",
+        "/action",
+        json_body=body,
+        renderer=_action_renderer(body),
+    )
 
 
 @app.command("fill")
@@ -101,7 +142,13 @@ def do_fill(
     if text is None:
         error("missing text to fill", "pass it as the second positional or --text")
     body = _build_action_body("fill", index=resolved, snap=snap, text=text)
-    dispatch_text_or_json(DaemonClient(), "POST", "/action", json_body=body)
+    dispatch_text_or_json(
+        DaemonClient(),
+        "POST",
+        "/action",
+        json_body=body,
+        renderer=_action_renderer(body),
+    )
 
 
 @app.command("type")
@@ -127,7 +174,13 @@ def do_type(
     if text is None:
         error("missing text to type", "pass it as the second positional or --text")
     body = _build_action_body("type", index=resolved, snap=snap, text=text, delay=delay)
-    dispatch_text_or_json(DaemonClient(), "POST", "/action", json_body=body)
+    dispatch_text_or_json(
+        DaemonClient(),
+        "POST",
+        "/action",
+        json_body=body,
+        renderer=_action_renderer(body),
+    )
 
 
 @app.command("scroll")
@@ -154,7 +207,13 @@ def do_scroll(
     body = _build_action_body(
         "scroll", index=resolved, snap=snap, direction=final_dir, amount=amount
     )
-    dispatch_text_or_json(DaemonClient(), "POST", "/action", json_body=body)
+    dispatch_text_or_json(
+        DaemonClient(),
+        "POST",
+        "/action",
+        json_body=body,
+        renderer=_action_renderer(body),
+    )
 
 
 @app.command("hover")
@@ -173,7 +232,13 @@ def do_hover(
     """Hover over an element or coordinates."""
     resolved = index if index is not None else target
     body = _build_action_body("hover", index=resolved, snap=snap, x=x, y=y)
-    dispatch_text_or_json(DaemonClient(), "POST", "/action", json_body=body)
+    dispatch_text_or_json(
+        DaemonClient(),
+        "POST",
+        "/action",
+        json_body=body,
+        renderer=_action_renderer(body),
+    )
 
 
 @app.command("select")
@@ -196,7 +261,13 @@ def do_select(
     body = _build_action_body(
         "select", index=resolved, snap=snap, value=value_opt, label=label
     )
-    dispatch_text_or_json(DaemonClient(), "POST", "/action", json_body=body)
+    dispatch_text_or_json(
+        DaemonClient(),
+        "POST",
+        "/action",
+        json_body=body,
+        renderer=_action_renderer(body),
+    )
 
 
 @app.command("press")
@@ -220,7 +291,13 @@ def do_press(
     if not final_key:
         error("missing key", "pass it as a positional arg or --key Enter")
     body = _build_action_body("press", index=target, snap=snap, key=final_key)
-    dispatch_text_or_json(DaemonClient(), "POST", "/action", json_body=body)
+    dispatch_text_or_json(
+        DaemonClient(),
+        "POST",
+        "/action",
+        json_body=body,
+        renderer=_action_renderer(body),
+    )
 
 
 @app.command("keydown")
@@ -239,7 +316,13 @@ def do_keydown(
     if not final_key:
         error("missing key", "pass it as a positional arg or --key Shift")
     body = _build_action_body("keydown", snap=snap, key=final_key)
-    dispatch_text_or_json(DaemonClient(), "POST", "/action", json_body=body)
+    dispatch_text_or_json(
+        DaemonClient(),
+        "POST",
+        "/action",
+        json_body=body,
+        renderer=_action_renderer(body),
+    )
 
 
 @app.command("keyup")
@@ -258,7 +341,13 @@ def do_keyup(
     if not final_key:
         error("missing key", "pass it as a positional arg or --key Shift")
     body = _build_action_body("keyup", snap=snap, key=final_key)
-    dispatch_text_or_json(DaemonClient(), "POST", "/action", json_body=body)
+    dispatch_text_or_json(
+        DaemonClient(),
+        "POST",
+        "/action",
+        json_body=body,
+        renderer=_action_renderer(body),
+    )
 
 
 @app.command("batch")
@@ -321,10 +410,6 @@ def do_batch(
 
     body = {"actions": actions, "sleep": sleep}
     client = DaemonClient()
-    if is_json_mode():
-        result = client._send_sync(  # pyright: ignore[reportPrivateUsage]
-            "POST", "/action/batch", json_body=body
-        )
-        emit_envelope(result)
-        return
-    dispatch_text_or_json(client, "POST", "/action/batch", json_body=body)
+    dispatch_text_or_json(
+        client, "POST", "/action/batch", json_body=body, renderer=render_batch_text
+    )

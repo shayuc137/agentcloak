@@ -1,11 +1,11 @@
 """Browser commands — navigate, screenshot, snapshot, resume.
 
-Text-mode rendering happens on the daemon side (see
-:mod:`agentcloak.daemon.text_renderers`). The CLI is responsible for
-choosing the mode (``--json`` flag), assembling the request, and writing
-the daemon's response to stdout. Anything that mutates local state — e.g.
-``screenshot`` decoding base64 and saving a file — also lives here because
-the daemon has no access to the user's filesystem.
+Text-mode rendering lives in :mod:`agentcloak.core.text_renderers` and is
+shared with the MCP surface. The CLI is responsible for choosing the
+mode (``--json`` flag), assembling the request, and routing the daemon's
+JSON payload through the right renderer. Anything that mutates local
+state — e.g. ``screenshot`` decoding base64 and saving a file — also
+lives here because the daemon has no access to the user's filesystem.
 """
 
 from __future__ import annotations
@@ -20,6 +20,11 @@ import typer
 from agentcloak.cli._dispatch import dispatch_text_or_json, emit_envelope
 from agentcloak.cli.output import error, info, is_json_mode, value
 from agentcloak.client import DaemonClient
+from agentcloak.core.text_renderers import (
+    render_navigate_text,
+    render_resume_text,
+    render_snapshot_text,
+)
 
 __all__ = ["app"]
 
@@ -54,7 +59,9 @@ def browser_navigate(
     if snap:
         body["include_snapshot"] = True
         body["snapshot_mode"] = snapshot_mode
-    dispatch_text_or_json(client, "POST", "/navigate", json_body=body)
+    dispatch_text_or_json(
+        client, "POST", "/navigate", json_body=body, renderer=render_navigate_text
+    )
 
 
 @app.command("screenshot")
@@ -188,14 +195,24 @@ def browser_snapshot(
         params["include_selector_map"] = "true"
     else:
         params["include_selector_map"] = "false"
-    dispatch_text_or_json(client, "GET", "/snapshot", params=params)
+    # ``promote_seq`` copies envelope.seq → data.seq so the snapshot header
+    # line ``... | seq=N`` matches the pre-refactor daemon output without
+    # leaking seq into the JSON payload.
+    dispatch_text_or_json(
+        client,
+        "GET",
+        "/snapshot",
+        params=params,
+        renderer=render_snapshot_text,
+        promote_seq=True,
+    )
 
 
 @app.command("resume")
 def browser_resume() -> None:
     """Get the resume snapshot for session recovery."""
     client = DaemonClient()
-    dispatch_text_or_json(client, "GET", "/resume")
+    dispatch_text_or_json(client, "GET", "/resume", renderer=render_resume_text)
 
 
 # Suppress unused-import warning for the ``info`` helper — it's reserved for

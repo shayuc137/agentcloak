@@ -11,7 +11,23 @@ import orjson
 from mcp.types import ToolAnnotations
 
 from agentcloak.core.errors import AgentBrowserError
-from agentcloak.mcp._format import error_json, format_call, format_envelope
+from agentcloak.core.text_renderers import (
+    render_cdp_endpoint_text,
+    render_cookies_export_text,
+    render_cookies_import_text,
+    render_health_text,
+    render_launch_text,
+    render_profile_create_from_current_text,
+    render_profile_create_text,
+    render_profile_delete_text,
+    render_profile_list_text,
+    render_resume_text,
+    render_spell_list_text,
+    render_spell_run_text,
+    render_tab_list_text,
+    render_tab_op_text,
+)
+from agentcloak.mcp._format import error_json, format_call, render_envelope
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
@@ -45,8 +61,8 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             cdp_endpoint: ws_endpoint URL for CDP tools.
         """
         if query == "cdp_endpoint":
-            return await format_call(client.cdp_endpoint())
-        return await format_call(client.health())
+            return await format_call(client.cdp_endpoint(), render_cdp_endpoint_text)
+        return await format_call(client.health(), render_health_text)
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
     async def agentcloak_cookies(
@@ -72,7 +88,9 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             import: count of imported cookies.
         """
         if action == "export":
-            return await format_call(client.cookies_export(url=url or None))
+            return await format_call(
+                client.cookies_export(url=url or None), render_cookies_export_text
+            )
 
         if action == "import":
             if not cookies_json:
@@ -84,7 +102,9 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             # ``cookies_json`` is typed as ``str``; decode it once so the
             # daemon client always receives a list of dicts.
             cookies = orjson.loads(cookies_json)
-            return await format_call(client.cookies_import(cookies=cookies))
+            return await format_call(
+                client.cookies_import(cookies=cookies), render_cookies_import_text
+            )
 
         return _error_envelope(
             error="unknown_action",
@@ -123,7 +143,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             envelope = await client.launch(tier=actual_tier, profile=profile or None)
         except AgentBrowserError as exc:
             return error_json(exc)
-        return format_envelope(envelope)
+        return render_envelope(envelope, render_launch_text)
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
     async def agentcloak_spell_run(
@@ -145,16 +165,19 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             JSON with the spell execution result.
         """
         parsed_args: dict[str, Any] = orjson.loads(args_json)
-        return await format_call(client.spell_run(name=name, args=parsed_args))
+        return await format_call(
+            client.spell_run(name=name, args=parsed_args), render_spell_run_text
+        )
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     async def agentcloak_spell_list() -> str:
         """List all registered spells.
 
         Returns:
-            JSON with spells array (site, name, strategy, description).
+            Plain text: one ``name | strategy | description`` per line, or
+            ``no spells registered`` when none are loaded.
         """
-        return await format_call(client.spell_list())
+        return await format_call(client.spell_list(), render_spell_list_text)
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
     async def agentcloak_profile(
@@ -185,7 +208,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         # traversal guards, and the from-current cookie writer all live in
         # ``ProfileService`` (one implementation, not three).
         if action == "list":
-            return await format_call(client.profile_list())
+            return await format_call(client.profile_list(), render_profile_list_text)
 
         if not name:
             return _error_envelope(
@@ -196,11 +219,18 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
 
         if action == "create":
             if from_current:
-                return await format_call(client.profile_create_from_current(name=name))
-            return await format_call(client.profile_create(name=name))
+                return await format_call(
+                    client.profile_create_from_current(name=name),
+                    render_profile_create_from_current_text,
+                )
+            return await format_call(
+                client.profile_create(name=name), render_profile_create_text
+            )
 
         if action == "delete":
-            return await format_call(client.profile_delete(name=name))
+            return await format_call(
+                client.profile_delete(name=name), render_profile_delete_text
+            )
 
         return _error_envelope(
             error="unknown_action",
@@ -234,10 +264,13 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             switch: new active tab info.
         """
         if action == "list":
-            return await format_call(client.tab_list())
+            return await format_call(client.tab_list(), render_tab_list_text)
 
         if action == "new":
-            return await format_call(client.tab_new(url=url or None))
+            return await format_call(
+                client.tab_new(url=url or None),
+                lambda d: render_tab_op_text("new", d),
+            )
 
         if action == "close":
             if tab_id < 0:
@@ -246,7 +279,10 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                     hint="tab_id is required for close action",
                     action="provide a valid tab_id",
                 )
-            return await format_call(client.tab_close(tab_id))
+            return await format_call(
+                client.tab_close(tab_id),
+                lambda d: render_tab_op_text("closed", d),
+            )
 
         if action == "switch":
             if tab_id < 0:
@@ -255,7 +291,10 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                     hint="tab_id is required for switch action",
                     action="provide a valid tab_id",
                 )
-            return await format_call(client.tab_switch(tab_id))
+            return await format_call(
+                client.tab_switch(tab_id),
+                lambda d: render_tab_op_text("switched to", d),
+            )
 
         return _error_envelope(
             error="unknown_action",
@@ -347,7 +386,9 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         quickly restore working context.
 
         Returns:
-            JSON with url, title, tabs, recent_actions, capture_active,
-            stealth_tier, and timestamp.
+            Plain text key:value block (``url:``, ``title:``, ``tier:``, tab
+            count, last action). Use the CLI ``--json`` flag or call
+            :meth:`DaemonClient.resume_sync` directly for the structured
+            payload.
         """
-        return await format_call(client.resume())
+        return await format_call(client.resume(), render_resume_text)

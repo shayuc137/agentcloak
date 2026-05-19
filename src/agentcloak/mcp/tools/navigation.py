@@ -7,9 +7,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from mcp.types import ToolAnnotations
+from mcp.types import ImageContent, TextContent, ToolAnnotations
 
-from agentcloak.mcp._format import format_call
+from agentcloak.core.errors import AgentBrowserError
+from agentcloak.core.text_renderers import (
+    render_navigate_text,
+    render_snapshot_text,
+)
+from agentcloak.mcp._format import error_json, format_call
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
@@ -45,9 +50,9 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                 'accessible' (full a11y tree).
 
         Returns:
-            JSON with page title, final URL, and seq number.
-            When include_snapshot=true, includes a 'snapshot' object with
-            tree_text, mode, total_nodes, and total_interactive.
+            Plain text ``url | title``; when ``include_snapshot`` is true a
+            snapshot tree follows on the next paragraph (same shape as the
+            CLI ``cloak navigate --snap`` output).
         """
         return await format_call(
             client.navigate(
@@ -55,7 +60,8 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                 timeout=timeout,
                 include_snapshot=include_snapshot,
                 snapshot_mode=snapshot_mode,
-            )
+            ),
+            render_navigate_text,
         )
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
@@ -102,8 +108,10 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                 Useful for seeing what changed after an action.
 
         Returns:
-            JSON with url, title, tree_text, tree_size, truncated,
-            total_nodes, total_interactive, and diff (bool, when requested).
+            Plain text starting with a header line
+            ``# title | url | N nodes (M interactive) | seq=K | ~T tok``
+            followed by the indented accessibility tree. Same shape as
+            ``cloak snapshot``.
         """
         return await format_call(
             client.snapshot(
@@ -117,7 +125,11 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                 # MCP omits selector_map by default to save tokens — agents
                 # work with [N] refs from the tree, not the raw map.
                 include_selector_map=False,
-            )
+            ),
+            render_snapshot_text,
+            # ``seq`` is envelope-only in the daemon response; the header
+            # renderer reads ``data.seq`` so we promote it here.
+            promote_seq=True,
         )
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
@@ -125,7 +137,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         full_page: bool = False,
         format: str = "jpeg",
         quality: int = cfg.mcp_screenshot_quality,
-    ) -> str:
+    ) -> list[ImageContent | TextContent]:
         """Take a screenshot of the current page.
 
         For understanding page layout or verifying visual state.
@@ -142,8 +154,24 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                 ignored for png)
 
         Returns:
-            JSON with base64-encoded screenshot, size in bytes, and format.
+            A list with one ``ImageContent`` (the multimodal LLM reads the
+            bytes directly) and a short ``TextContent`` carrying size/format
+            metadata. On error the tool returns the JSON error envelope as a
+            single ``TextContent`` so the MCP error-handling contract stays
+            uniform across tools.
         """
-        return await format_call(
-            client.screenshot(full_page=full_page, format=format, quality=quality)
-        )
+        try:
+            envelope = await client.screenshot(
+                full_page=full_page, format=format, quality=quality
+            )
+        except AgentBrowserError as exc:
+            return [TextContent(type="text", text=error_json(exc))]
+
+        data: dict[str, object] = envelope.get("data", envelope) or {}  # type: ignore[assignment]
+        b64 = str(data.get("base64", "") or "")
+        size = int(data.get("size", 0) or 0)  # type: ignore[arg-type]
+        mime = "image/png" if format == "png" else "image/jpeg"
+        return [
+            ImageContent(type="image", data=b64, mimeType=mime),
+            TextContent(type="text", text=f"screenshot {size} bytes | format={format}"),
+        ]

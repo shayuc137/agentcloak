@@ -10,6 +10,7 @@ import typer
 
 from agentcloak.cli._dispatch import dispatch_text_or_json
 from agentcloak.client import DaemonClient
+from agentcloak.core.text_renderers import render_network_text
 
 __all__ = ["app"]
 
@@ -43,5 +44,9 @@ def network_list(
             f"--since must be an integer or 'last_action' (got {since!r})"
         )
     dispatch_text_or_json(
-        DaemonClient(), "GET", "/network", params={"since": str(since)}
+        DaemonClient(),
+        "GET",
+        "/network",
+        params={"since": str(since)},
+        renderer=render_network_text,
     )

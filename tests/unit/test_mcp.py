@@ -6,16 +6,29 @@ import orjson
 import pytest
 
 from agentcloak.core.errors import AgentBrowserError
-from agentcloak.mcp._format import error_json, format_envelope
+from agentcloak.mcp._format import error_json, render_envelope
 
 
 class TestFormatHelpers:
-    """The MCP format helpers replace the old DaemonBridge.format_result."""
+    """The MCP format helpers route the daemon envelope through shared renderers."""
 
-    def test_format_envelope_unwraps_data(self) -> None:
-        data = {"ok": True, "seq": 1, "data": {"title": "Test"}}
-        rendered = format_envelope(data)
-        assert orjson.loads(rendered) == {"title": "Test"}
+    def test_render_envelope_unwraps_data_and_calls_renderer(self) -> None:
+        envelope = {
+            "ok": True,
+            "seq": 1,
+            "data": {"url": "https://example.com", "title": "Example"},
+        }
+        rendered = render_envelope(envelope, lambda d: f"{d['url']} | {d['title']}")
+        assert rendered == "https://example.com | Example"
+
+    def test_render_envelope_promote_seq_copies_envelope_seq(self) -> None:
+        # ``/snapshot`` keeps ``seq`` in the envelope only; ``promote_seq=True``
+        # injects it into the data dict so the header renderer can see it.
+        envelope = {"ok": True, "seq": 42, "data": {"tree_text": "ok"}}
+        rendered = render_envelope(
+            envelope, lambda d: f"seq={d['seq']}", promote_seq=True
+        )
+        assert rendered == "seq=42"
 
     def test_error_json_renders_three_field_envelope(self) -> None:
         exc = AgentBrowserError(

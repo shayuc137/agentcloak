@@ -7,7 +7,7 @@ this file focuses on the bits other suites don't already cover transitively
 
 from __future__ import annotations
 
-from agentcloak.daemon.text_renderers import (
+from agentcloak.core.text_renderers import (
     _format_tok_estimate,  # pyright: ignore[reportPrivateUsage]
     _render_snapshot_header,  # pyright: ignore[reportPrivateUsage]
 )

@@ -14,8 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Request, WebSocket
-from fastapi.responses import PlainTextResponse, Response
+from fastapi import APIRouter, WebSocket
 
 from agentcloak.daemon.dependencies import (  # noqa: TC001
     BridgeServiceDep,
@@ -29,7 +28,6 @@ from agentcloak.daemon.models import (
     OkEnvelope,
 )
 from agentcloak.daemon.routes._helpers import _ok
-from agentcloak.daemon.text_renderers import wants_text
 
 __all__ = ["router"]
 
@@ -76,8 +74,8 @@ async def handle_ext_ws(websocket: WebSocket) -> None:
 
 @router.post("/bridge/claim", response_model=OkEnvelope[BridgeOpResponse])
 async def handle_bridge_claim(
-    body: BridgeClaimRequest, remote_ctx: RequiredRemoteCtxDep, request: Request
-) -> Response | dict[str, Any]:
+    body: BridgeClaimRequest, remote_ctx: RequiredRemoteCtxDep
+) -> dict[str, Any]:
     params: dict[str, Any] = {}
     if body.tab_id is not None:
         params["tabId"] = body.tab_id
@@ -85,28 +83,18 @@ async def handle_bridge_claim(
         params["urlPattern"] = body.url_pattern
 
     result = await remote_ctx.send_command("claim", params)
-    if wants_text(request):
-        if isinstance(result, dict):
-            claim: dict[str, Any] = dict(result)  # type: ignore[arg-type]
-            tab_id: Any = claim.get("tab_id") or claim.get("tabId") or "?"
-            url: Any = claim.get("url", "")
-            return PlainTextResponse(f"claimed [{tab_id}] {url}".rstrip())
-        return PlainTextResponse(str(result))
     return _ok(result, seq=0)
 
 
 @router.post("/bridge/finalize", response_model=OkEnvelope[BridgeOpResponse])
 async def handle_bridge_finalize(
-    body: BridgeFinalizeRequest, remote_ctx: RequiredRemoteCtxDep, request: Request
-) -> Response | dict[str, Any]:
+    body: BridgeFinalizeRequest, remote_ctx: RequiredRemoteCtxDep
+) -> dict[str, Any]:
     result = await remote_ctx.send_command("finalize", {"mode": body.mode})
-    if wants_text(request):
-        count = 0
-        if isinstance(result, dict):
-            fin: dict[str, Any] = dict(result)  # type: ignore[arg-type]
-            count_val: Any = fin.get("count", fin.get("tabs", 0))
-            count = int(count_val or 0)
-        return PlainTextResponse(f"{body.mode} {count} tabs")
+    # Echo the finalize mode so JSON consumers and the text renderer can both
+    # build ``close 3 tabs`` without re-reading the request body.
+    if isinstance(result, dict):
+        result.setdefault("mode", body.mode)  # type: ignore[arg-type]
     return _ok(result, seq=0)
 
 
@@ -114,9 +102,7 @@ async def handle_bridge_finalize(
     "/bridge/token/reset",
     response_model=OkEnvelope[BridgeTokenResetResponse],
 )
-async def handle_bridge_token_reset(
-    request: Request, bridge: BridgeServiceDep
-) -> Response | dict[str, Any]:
+async def handle_bridge_token_reset(bridge: BridgeServiceDep) -> dict[str, Any]:
     """Rotate the persistent bridge auth token and hot-update the daemon.
 
     Persists the new token to ``~/.agentcloak/config.toml`` *and* replaces
@@ -132,6 +118,4 @@ async def handle_bridge_token_reset(
     new_token = regenerate_bridge_token(paths, cfg)
     bridge.set_token(new_token)
     logger.info("bridge_token_rotated", token_suffix=new_token[-4:])
-    if wants_text(request):
-        return PlainTextResponse(new_token)
     return _ok({"token": new_token, "rotated": True}, seq=0)

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from mcp.types import ToolAnnotations
 
+from agentcloak.core.text_renderers import render_network_text
 from agentcloak.mcp._format import format_call
 
 if TYPE_CHECKING:
@@ -33,4 +34,4 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         Returns:
             JSON with requests array (method, url, status, resource_type) and count.
         """
-        return await format_call(client.network(since=since))
+        return await format_call(client.network(since=since), render_network_text)

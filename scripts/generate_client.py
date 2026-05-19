@@ -102,10 +102,6 @@ def find_drift() -> tuple[list[str], list[str]]:
         "launch_daemon",
         "spawn_background",
         "config",  # property, exposed for downstream access
-        # Low-level transport helper: CLI text-mode goes through it instead of
-        # the per-route typed methods (which always serialize to JSON). Doesn't
-        # represent a route — every route can use it.
-        "request_text_sync",
     }
 
     missing: list[str] = []

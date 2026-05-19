@@ -1,18 +1,21 @@
-"""Text renderers for daemon routes — Accept: text/plain output shape.
+"""Text renderers shared by CLI and MCP — agent-first one-liner output.
 
-Why daemon-side rendering?
---------------------------
-The CLI used to render JSON envelopes into human-readable strings itself,
-duplicating logic for snapshot truncation, proactive feedback, and tab
-listings. v0.3.0 collapses that surface: each route negotiates content type
-via the ``Accept`` header and the daemon emits text directly when asked.
+Why a shared core module?
+-------------------------
+The CLI default mode and the MCP tool surface both speak to AI agents.
+Returning raw JSON wastes tokens (key names, quotes, braces), and having
+two different render paths invites format drift between surfaces. v0.3.x
+collapses the rendering into one module under :mod:`agentcloak.core` so
+both surfaces produce byte-identical text for the same daemon payload.
 
-Two consequences:
-
-1. MCP keeps the structured JSON envelope it already needed (it sends
-   ``Accept: application/json`` explicitly).
-2. CLI commands in text mode call :func:`wants_text` on the request, dispatch
-   to the matching renderer, and return ``PlainTextResponse``.
+Consumers
+---------
+* :mod:`agentcloak.cli._dispatch` — receives JSON from the daemon, calls
+  the matching ``render_xxx_text`` on the inner ``data`` dict, prints to
+  stdout. ``--json`` mode skips the renderer and emits the envelope verbatim.
+* :mod:`agentcloak.mcp._format` — same call, but returns the rendered string
+  to FastMCP. Screenshot responses bypass this and return ``ImageContent``
+  directly (multimodal LLMs read the image, not the metadata).
 
 Renderer contract
 -----------------
@@ -21,17 +24,14 @@ inner ``data`` dict, not the full envelope) and returns a plain string.
 Renderers must be pure: they may read from ``data`` but must not mutate it,
 log anything, or touch global state. Each renderer is unit-testable in
 isolation, which is the main reason they all live in one module rather than
-being scattered across the route handlers.
+being scattered across the call sites.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 import orjson
-
-if TYPE_CHECKING:
-    from fastapi import Request
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -47,7 +47,12 @@ def _as_dict(value: Any) -> dict[str, Any]:
 
 __all__ = [
     "render_action_text",
+    "render_batch_text",
+    "render_bridge_claim_text",
+    "render_bridge_finalize_text",
     "render_capture_analyze_text",
+    "render_capture_clear_text",
+    "render_capture_export_text",
     "render_capture_status_text",
     "render_cdp_endpoint_text",
     "render_cookies_export_text",
@@ -62,43 +67,27 @@ __all__ = [
     "render_launch_text",
     "render_navigate_text",
     "render_network_text",
+    "render_profile_create_from_current_text",
+    "render_profile_create_text",
+    "render_profile_delete_text",
     "render_profile_list_text",
     "render_resume_text",
     "render_screenshot_text",
+    "render_shutdown_text",
     "render_snapshot_text",
     "render_spell_list_text",
     "render_spell_run_text",
     "render_tab_list_text",
     "render_tab_op_text",
+    "render_token_text",
     "render_upload_text",
     "render_wait_text",
-    "wants_text",
 ]
 
 
 # Title-line truncation budget. Long page titles still happen (e.g. e-commerce
 # breadcrumb lists) and uncapped output is hostile to grep/awk pipelines.
 _TITLE_MAX = 80
-
-
-def wants_text(request: Request) -> bool:
-    """Return True when the caller asked for ``text/plain``.
-
-    A missing or ``*/*`` Accept header defaults to JSON — we don't want to
-    accidentally serve plain text to a curl-style client that omitted the
-    header. CLI explicitly sends ``Accept: text/plain``.
-    """
-    accept = request.headers.get("accept", "").lower()
-    if not accept or accept == "*/*":
-        return False
-    # ``text/plain, application/json;q=0.9`` style — first hit wins.
-    for chunk in accept.split(","):
-        media = chunk.split(";", 1)[0].strip()
-        if media == "text/plain":
-            return True
-        if media == "application/json":
-            return False
-    return False
 
 
 # ---------------------------------------------------------------------------
@@ -767,3 +756,95 @@ def render_fetch_text(data: dict[str, Any]) -> str:
     status = data.get("status")
     ctype = data.get("content_type", "")
     return f"status={status} content_type={ctype}"
+
+
+# ---------------------------------------------------------------------------
+# One-liners previously inlined into route handlers
+# ---------------------------------------------------------------------------
+
+
+def render_shutdown_text(_data: dict[str, Any]) -> str:
+    """Render ``POST /shutdown`` — fixed ``stopped`` token."""
+    return "stopped"
+
+
+def render_batch_text(data: dict[str, Any]) -> str:
+    """Render ``POST /action/batch`` as ``batch: N/M completed`` plus optional abort."""
+    completed = int(data.get("completed", 0) or 0)
+    total = int(data.get("total", 0) or 0)
+    line = f"batch: {completed}/{total} completed"
+    if data.get("aborted_reason"):
+        line += f" | aborted: {data['aborted_reason']}"
+    return line
+
+
+def render_capture_export_text(data: dict[str, Any]) -> str:
+    """Render ``GET /capture/export`` — pretty-print the HAR/JSON body.
+
+    The export endpoint returns structured data; emitting it as indented JSON
+    keeps the existing pipe-to-file UX (``cloak capture export > out.har``).
+    """
+    return orjson.dumps(data, option=orjson.OPT_INDENT_2).decode()
+
+
+def render_capture_clear_text(data: dict[str, Any]) -> str:
+    """Render ``POST /capture/clear`` — ``cleared N entries``."""
+    n = int(data.get("entries", 0) or 0)
+    return f"cleared {n} entries"
+
+
+def render_profile_create_text(data: dict[str, Any]) -> str:
+    """Render ``POST /profile/create`` — ``created profile "name"``.
+
+    The daemon returns ``{"created": "<name>"}``; we read the same field so
+    the text path stays in sync with the persisted profile name (rather than
+    echoing the user's request before name validation may have suffixed it).
+    """
+    name = str(data.get("created", "") or "")
+    return f'created profile "{name}"'
+
+
+def render_profile_delete_text(data: dict[str, Any]) -> str:
+    """Render ``POST /profile/delete`` — ``deleted profile "name"``."""
+    name = str(data.get("deleted", "") or "")
+    return f'deleted profile "{name}"'
+
+
+def render_profile_create_from_current_text(data: dict[str, Any]) -> str:
+    """Render ``POST /profile/create-from-current`` with cookie count.
+
+    ``created profile "<name>" (<N> cookies)`` — name is whatever the
+    service persisted (suffix-renamed when ``--name`` collided).
+    """
+    name = str(data.get("profile", "") or "")
+    cookies = int(data.get("cookie_count", 0) or 0)
+    return f'created profile "{name}" ({cookies} cookies)'
+
+
+def render_bridge_claim_text(data: dict[str, Any]) -> str:
+    """Render ``POST /bridge/claim`` — ``claimed [tab_id] url``.
+
+    The daemon route always wraps the response in ``_ok(...)`` so the inner
+    payload is a dict — but Chrome Extension older builds sometimes return
+    a bare string under ``data``; in that case ``data.get`` returns ``None``
+    and we fall back to a ``claimed`` placeholder rather than crashing.
+    """
+    tab_id: Any = data.get("tab_id") or data.get("tabId") or "?"
+    url: Any = data.get("url", "")
+    return f"claimed [{tab_id}] {url}".rstrip()
+
+
+def render_bridge_finalize_text(data: dict[str, Any], *, mode: str) -> str:
+    """Render ``POST /bridge/finalize`` — ``<mode> <N> tabs``.
+
+    ``mode`` is the caller-supplied finalize mode (close / handoff / deliverable);
+    the count comes from the response (``count`` preferred, ``tabs`` fallback).
+    """
+    count_val: Any = data.get("count", data.get("tabs", 0))
+    count = int(count_val or 0)
+    return f"{mode} {count} tabs"
+
+
+def render_token_text(data: dict[str, Any]) -> str:
+    """Render ``POST /bridge/token/reset`` — bare token string for pipe usage."""
+    return str(data.get("token", "") or "")

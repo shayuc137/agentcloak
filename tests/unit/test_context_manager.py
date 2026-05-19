@@ -112,9 +112,27 @@ class TestBridgeTokenCLI:
         cfg = AgentcloakConfig()
         first = ensure_bridge_token(paths, cfg)
 
-        with patch(
-            "agentcloak.core.config.load_config",
-            return_value=(paths, cfg),
+        # The CLI talks to a daemon over HTTP when one is available. The test
+        # cares about the *fallback* path that updates the local cfg, so force
+        # the daemon call to look unreachable. Without this guard the test is
+        # racy: a dev who already has a real daemon listening on the default
+        # port watches the daemon-side reset succeed (updating *its* cfg) and
+        # the test's cfg stays untouched.
+        from agentcloak.core.errors import DaemonConnectionError
+
+        with (
+            patch(
+                "agentcloak.core.config.load_config",
+                return_value=(paths, cfg),
+            ),
+            patch(
+                "agentcloak.client.DaemonClient.bridge_token_reset_sync",
+                side_effect=DaemonConnectionError(
+                    error="daemon_unreachable",
+                    hint="forced for test",
+                    action="n/a",
+                ),
+            ),
         ):
             result = runner.invoke(cli_app, ["bridge", "token", "--reset"])
         assert result.exit_code == 0

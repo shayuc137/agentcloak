@@ -6,6 +6,7 @@ import typer
 
 from agentcloak.cli._dispatch import dispatch_text_or_json
 from agentcloak.client import DaemonClient
+from agentcloak.core.text_renderers import render_evaluate_text
 
 __all__ = ["app"]
 
@@ -25,4 +26,5 @@ def js_evaluate(
         "POST",
         "/evaluate",
         json_body={"js": code, "world": world},
+        renderer=render_evaluate_text,
     )

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from mcp.types import ToolAnnotations
 
+from agentcloak.core.text_renderers import render_action_text
 from agentcloak.mcp._format import format_call
 
 if TYPE_CHECKING:
@@ -93,11 +94,26 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             extras["value"] = value
         if kind == "scroll":
             extras["direction"] = direction
+
+        # ``render_action_text`` needs the action kind/target plus the
+        # ``text``/``key`` extras we supplied to format ``filled [3] | value:
+        # 'hello'`` / ``press Enter``. Close over them so the daemon JSON
+        # payload (which no longer carries that context) can be rendered
+        # byte-identically to the CLI text output.
+        def render(data: dict[str, Any]) -> str:
+            enriched = dict(data)
+            if "text" not in enriched and "text" in extras:
+                enriched["text"] = extras["text"]
+            if "key" not in enriched and "key" in extras:
+                enriched["key"] = extras["key"]
+            return render_action_text(kind, target, enriched)
+
         return await format_call(
             client.action(
                 kind,
                 target=target,
                 include_snapshot=include_snapshot,
                 **extras,
-            )
+            ),
+            render,
         )

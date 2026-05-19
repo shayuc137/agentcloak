@@ -9,6 +9,10 @@ from typing import TYPE_CHECKING, Literal
 
 from mcp.types import ToolAnnotations
 
+from agentcloak.core.text_renderers import (
+    render_frame_focus_text,
+    render_frame_list_text,
+)
 from agentcloak.mcp._format import format_call
 
 if TYPE_CHECKING:
@@ -43,11 +47,12 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             JSON with frame list or focus confirmation.
         """
         if kind == "list":
-            return await format_call(client.frame_list())
+            return await format_call(client.frame_list(), render_frame_list_text)
         return await format_call(
             client.frame_focus(
                 name=name or None,
                 url=url or None,
                 main=main,
-            )
+            ),
+            render_frame_focus_text,
         )

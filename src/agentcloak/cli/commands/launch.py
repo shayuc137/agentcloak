@@ -11,6 +11,7 @@ import typer
 
 from agentcloak.cli._dispatch import dispatch_text_or_json
 from agentcloak.client import DaemonClient
+from agentcloak.core.text_renderers import render_launch_text
 
 __all__ = ["app", "launch"]
 
@@ -39,4 +40,6 @@ def launch(
     body: dict[str, object] = {"tier": tier}
     if profile is not None:
         body["profile"] = profile
-    dispatch_text_or_json(DaemonClient(), "POST", "/launch", json_body=body)
+    dispatch_text_or_json(
+        DaemonClient(), "POST", "/launch", json_body=body, renderer=render_launch_text
+    )

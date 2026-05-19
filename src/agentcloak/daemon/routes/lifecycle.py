@@ -10,8 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import PlainTextResponse, Response
+from fastapi import APIRouter, HTTPException
 
 from agentcloak.daemon.dependencies import (  # noqa: TC001
     ActiveTierDep,
@@ -34,13 +33,6 @@ from agentcloak.daemon.models import (
 )
 from agentcloak.daemon.routes._helpers import _ok
 from agentcloak.daemon.services import DiagnosticService
-from agentcloak.daemon.text_renderers import (
-    render_cdp_endpoint_text,
-    render_health_text,
-    render_launch_text,
-    render_resume_text,
-    wants_text,
-)
 
 __all__ = ["router"]
 
@@ -53,11 +45,10 @@ router = APIRouter()
 @router.get("/health", response_model=HealthResponse)
 async def handle_health(
     ctx: OptionalBrowserCtxDep,
-    request: Request,
     local_proxy: LocalProxyDep,
     active_tier: ActiveTierDep,
     remote_ctx: RemoteCtxDep,
-) -> Response | dict[str, Any]:
+) -> dict[str, Any]:
     diagnostic = DiagnosticService()
     data = await diagnostic.health(
         ctx,
@@ -65,8 +56,6 @@ async def handle_health(
         active_tier=active_tier,
         remote_connected=remote_ctx is not None,
     )
-    if wants_text(request):
-        return PlainTextResponse(render_health_text(data))
     return data
 
 
@@ -74,13 +63,9 @@ async def handle_health(
 
 
 @router.post("/shutdown", response_model=OkEnvelope[ShutdownResponse])
-async def handle_shutdown(
-    request: Request, event: ShutdownEventDep
-) -> Response | dict[str, Any]:
+async def handle_shutdown(event: ShutdownEventDep) -> dict[str, Any]:
     if event is not None:
         event.set()
-    if wants_text(request):
-        return PlainTextResponse("stopped")
     return _ok({}, seq=0)
 
 
@@ -91,8 +76,7 @@ async def handle_shutdown(
 async def handle_launch(
     body: LaunchRequest,
     manager: ContextManagerDep,
-    request: Request,
-) -> Response | dict[str, Any]:
+) -> dict[str, Any]:
     """Hot-switch the active browser tier without restarting the daemon.
 
     ``cloak``/``playwright`` create or re-use a local browser; remote_bridge
@@ -116,8 +100,6 @@ async def handle_launch(
         ) from exc
 
     result = await manager.switch_tier(tier_enum, profile=body.profile)
-    if wants_text(request):
-        return PlainTextResponse(render_launch_text(result))
     return _ok(result, seq=0)
 
 
@@ -128,8 +110,7 @@ async def handle_launch(
 async def handle_resume(
     ctx: BrowserCtxDep,
     resume_writer: ResumeWriterDep,
-    request: Request,
-) -> Response | dict[str, Any]:
+) -> dict[str, Any]:
     if resume_writer is None:
         raise HTTPException(
             status_code=503,
@@ -148,8 +129,6 @@ async def handle_resume(
     data = resume_writer.current_snapshot.to_dict()
     data["capture_active"] = ctx.capture_store.recording
     data["stealth_tier"] = ctx.stealth_tier.value
-    if wants_text(request):
-        return PlainTextResponse(render_resume_text(data))
     return _ok(data, seq=ctx.seq)
 
 
@@ -157,9 +136,7 @@ async def handle_resume(
 
 
 @router.get("/cdp/endpoint", response_model=OkEnvelope[CDPEndpointResponse])
-async def handle_cdp_endpoint(
-    ctx: BrowserCtxDep, request: Request
-) -> Response | dict[str, Any]:
+async def handle_cdp_endpoint(ctx: BrowserCtxDep) -> dict[str, Any]:
     """Return the CDP WebSocket URL for jshookmcp browser_attach."""
     import httpx
 
@@ -193,6 +170,4 @@ async def handle_cdp_endpoint(
         ) from exc
 
     data = {"ws_endpoint": ws_endpoint, "http_url": http_url, "port": cdp_port}
-    if wants_text(request):
-        return PlainTextResponse(render_cdp_endpoint_text(data))
     return _ok(data, seq=ctx.seq)

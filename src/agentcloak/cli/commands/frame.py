@@ -7,6 +7,10 @@ import typer
 from agentcloak.cli._dispatch import dispatch_text_or_json
 from agentcloak.cli.output import error
 from agentcloak.client import DaemonClient
+from agentcloak.core.text_renderers import (
+    render_frame_focus_text,
+    render_frame_list_text,
+)
 
 __all__ = ["app"]
 
@@ -16,7 +20,9 @@ app = typer.Typer()
 @app.command("list")
 def frame_list() -> None:
     """List all frames on the current page."""
-    dispatch_text_or_json(DaemonClient(), "GET", "/frame/list")
+    dispatch_text_or_json(
+        DaemonClient(), "GET", "/frame/list", renderer=render_frame_list_text
+    )
 
 
 @app.command("focus")
@@ -35,4 +41,10 @@ def frame_focus(
         body["name"] = name
     if url is not None:
         body["url"] = url
-    dispatch_text_or_json(DaemonClient(), "POST", "/frame/focus", json_body=body)
+    dispatch_text_or_json(
+        DaemonClient(),
+        "POST",
+        "/frame/focus",
+        json_body=body,
+        renderer=render_frame_focus_text,
+    )

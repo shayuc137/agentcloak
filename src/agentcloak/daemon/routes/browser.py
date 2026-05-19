@@ -9,8 +9,7 @@ from typing import Any
 
 import orjson
 import structlog
-from fastapi import APIRouter, Request
-from fastapi.responses import PlainTextResponse, Response
+from fastapi import APIRouter
 
 # ``screenshot_to_base64`` lives on the abstract base module so daemon code
 # stays backend-agnostic (layer isolation: daemon → BrowserContextBase).
@@ -43,16 +42,6 @@ from agentcloak.daemon.routes._helpers import (
     _update_resume,
 )
 from agentcloak.daemon.services import ActionService, SnapshotService
-from agentcloak.daemon.text_renderers import (
-    render_action_text,
-    render_evaluate_text,
-    render_fetch_text,
-    render_navigate_text,
-    render_network_text,
-    render_screenshot_text,
-    render_snapshot_text,
-    wants_text,
-)
 
 __all__ = ["router"]
 
@@ -70,8 +59,7 @@ async def handle_navigate(
     ctx: BrowserCtxDep,
     config: ConfigDep,
     resume_writer: ResumeWriterDep,
-    request: Request,
-) -> Response | dict[str, Any]:
+) -> dict[str, Any]:
     result = await ctx.navigate(body.url, timeout=body.timeout)
     await _update_resume(
         resume_writer, ctx, action_summary={"kind": "navigate", "url": body.url}
@@ -85,8 +73,6 @@ async def handle_navigate(
             snapshot_max_nodes=config.snapshot_max_nodes,
         )
 
-    if wants_text(request):
-        return PlainTextResponse(render_navigate_text(result))
     return _ok(result, seq=ctx.seq)
 
 
@@ -96,12 +82,11 @@ async def handle_navigate(
 @router.get("/screenshot", response_model=OkEnvelope[ScreenshotResponse])
 async def handle_screenshot(
     ctx: BrowserCtxDep,
-    request: Request,
     config: ConfigDep,
     full_page: bool = False,
     format: str = "jpeg",
     quality: int | None = None,
-) -> Response | dict[str, Any]:
+) -> dict[str, Any]:
     # ``quality=None`` resolves to the configured default. CLI callers leave
     # this unset and inherit the file/env default; MCP tools pass an explicit
     # lower value so screenshots stay under MCP token budgets.
@@ -110,10 +95,6 @@ async def handle_screenshot(
     raw = await ctx.screenshot(full_page=full_page, format=format, quality=quality)
     b64 = screenshot_to_base64(raw)
     data = {"base64": b64, "size": len(raw), "format": format}
-    if wants_text(request):
-        # Daemon can't see the user's filesystem; the CLI wrapper composes the
-        # final "saved to PATH" message.
-        return PlainTextResponse(render_screenshot_text(data))
     return _ok(data, seq=ctx.seq)
 
 
@@ -123,7 +104,6 @@ async def handle_screenshot(
 @router.get("/snapshot", response_model=OkEnvelope[SnapshotResponse])
 async def handle_snapshot(
     ctx: BrowserCtxDep,
-    request: Request,
     config: ConfigDep,
     snapshot_cache: SnapshotCacheDep,
     mode: str = "compact",
@@ -134,7 +114,7 @@ async def handle_snapshot(
     include_selector_map: bool = False,
     frames: bool = False,
     diff: bool = False,
-) -> Response | dict[str, Any]:
+) -> dict[str, Any]:
     # ``-1`` = unspecified → cap compact mode at config.snapshot_max_nodes
     # (busy pages exceed agent budgets); ``0`` = explicit full tree; ``>0``
     # = explicit cap. Non-compact modes are always full-payload asks.
@@ -159,12 +139,9 @@ async def handle_snapshot(
     if cur_cache is not None:
         snapshot_cache.prev_lines = cur_cache
 
-    # ``seq=N`` is needed by the text-mode header; JSON callers get it from
-    # the envelope, so pop it back out before returning JSON.
-    data["seq"] = ctx.seq
-    if wants_text(request):
-        return PlainTextResponse(render_snapshot_text(data))
-    data.pop("seq", None)
+    # ``seq`` only goes in the envelope — CLI/MCP renderers reconstruct
+    # the seq for the header line by promoting envelope.seq → data.seq
+    # at render time, keeping the daemon JSON shape identical to before.
     return _ok(data, seq=ctx.seq)
 
 
@@ -172,9 +149,7 @@ async def handle_snapshot(
 
 
 @router.post("/evaluate", response_model=OkEnvelope[EvaluateResponse])
-async def handle_evaluate(
-    body: EvaluateRequest, ctx: BrowserCtxDep, request: Request
-) -> Response | dict[str, Any]:
+async def handle_evaluate(body: EvaluateRequest, ctx: BrowserCtxDep) -> dict[str, Any]:
     result = await ctx.evaluate(body.js, world=body.world)
 
     # Truncate large results before they exceed MCP token limits.
@@ -186,13 +161,9 @@ async def handle_evaluate(
             + "\n[...truncated...]"
         )
         data = {"result": result_repr, "truncated": True, "total_size": total_size}
-        if wants_text(request):
-            return PlainTextResponse(render_evaluate_text(data))
         return _ok(data, seq=ctx.seq)
 
     data = {"result": result, "truncated": False, "total_size": total_size}
-    if wants_text(request):
-        return PlainTextResponse(render_evaluate_text(data))
     return _ok(data, seq=ctx.seq)
 
 
@@ -200,14 +171,10 @@ async def handle_evaluate(
 
 
 @router.get("/network", response_model=OkEnvelope[NetworkResponse])
-async def handle_network(
-    ctx: BrowserCtxDep, request: Request, since: str = "0"
-) -> Response | dict[str, Any]:
+async def handle_network(ctx: BrowserCtxDep, since: str = "0") -> dict[str, Any]:
     since_value: int | str = int(since) if since.isdigit() else since
     reqs = await ctx.network(since=since_value)
     data = {"requests": reqs, "count": len(reqs)}
-    if wants_text(request):
-        return PlainTextResponse(render_network_text(data))
     return _ok(data, seq=ctx.seq)
 
 
@@ -220,8 +187,7 @@ async def handle_action(
     ctx: BrowserCtxDep,
     config: ConfigDep,
     resume_writer: ResumeWriterDep,
-    request: Request,
-) -> Response | dict[str, Any]:
+) -> dict[str, Any]:
     target = str(body.index) if body.index is not None else body.target
     extra = body.model_dump(exclude_unset=True)
     for known in ("kind", "index", "target", "include_snapshot", "snapshot_mode"):
@@ -254,11 +220,6 @@ async def handle_action(
             snapshot_max_nodes=config.snapshot_max_nodes,
         )
 
-    if wants_text(request):
-        # Surface renderer params without polluting the JSON envelope.
-        result["text"] = extra.get("text", result.get("text", ""))
-        result["key"] = extra.get("key", result.get("key", ""))
-        return PlainTextResponse(render_action_text(body.kind, target, result))
     return _ok(result, seq=ctx.seq)
 
 
@@ -267,17 +228,11 @@ async def handle_action_batch(
     body: BatchActionRequest,
     ctx: BrowserCtxDep,
     config: ConfigDep,
-    request: Request,
-) -> Response | dict[str, Any]:
+) -> dict[str, Any]:
     settle_timeout = body.settle_timeout or config.batch_settle_timeout
     result = await ActionService().execute_batch(
         ctx, body.actions, sleep_s=body.sleep, settle_timeout=settle_timeout
     )
-    if wants_text(request):
-        line = f"batch: {result.get('completed', 0)}/{result.get('total', 0)} completed"
-        if result.get("aborted_reason"):
-            line += f" | aborted: {result['aborted_reason']}"
-        return PlainTextResponse(line)
     return _ok(result, seq=ctx.seq)
 
 
@@ -285,9 +240,7 @@ async def handle_action_batch(
 
 
 @router.post("/fetch", response_model=OkEnvelope[FetchResponse])
-async def handle_fetch(
-    body: FetchRequest, ctx: BrowserCtxDep, request: Request
-) -> Response | dict[str, Any]:
+async def handle_fetch(body: FetchRequest, ctx: BrowserCtxDep) -> dict[str, Any]:
     result = await ctx.fetch(
         body.url,
         method=body.method,
@@ -295,6 +248,4 @@ async def handle_fetch(
         headers=body.headers,
         timeout=body.timeout,
     )
-    if wants_text(request):
-        return PlainTextResponse(render_fetch_text(result))
     return _ok(result, seq=ctx.seq)

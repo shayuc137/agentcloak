@@ -499,7 +499,6 @@ async def start(
         resume_writer=resume_writer,
         bridge_token=bridge_token,
         config=cfg,
-        idle_timeout=idle_timeout,
     )
     # Seed ContextManager with whatever the startup tier created so
     # hot-switches see the live state. For remote_bridge startup the

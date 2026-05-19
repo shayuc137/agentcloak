@@ -31,6 +31,27 @@ class ActionService:
     Instances are cheap — the route layer creates one per request.
     """
 
+    @staticmethod
+    def build_resume_summary(
+        kind: str, target: str, extra: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Compose the per-action summary written into the resume snapshot.
+
+        Each action kind contributes one extra field on top of ``kind`` and
+        ``target`` so the persisted snapshot has enough context to describe
+        what the previous step did (used by ``cloak resume``).
+        """
+        summary: dict[str, Any] = {"kind": kind, "target": target}
+        if kind in ("fill", "type"):
+            summary["text"] = extra.get("text", "")
+        elif kind in ("press", "keydown", "keyup"):
+            summary["key"] = extra.get("key", "")
+        elif kind == "scroll":
+            summary["direction"] = extra.get("direction", "down")
+        elif kind == "select":
+            summary["value"] = extra.get("value", "")
+        return summary
+
     async def execute(
         self,
         ctx: Any,

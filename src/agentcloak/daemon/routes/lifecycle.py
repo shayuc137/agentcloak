@@ -1,0 +1,198 @@
+"""Daemon-lifecycle routes: health, shutdown, launch, resume, cdp/endpoint.
+
+These endpoints are about the daemon itself rather than browser actions.
+``/health`` is unique in that it returns a flat ``HealthResponse`` instead
+of going through ``OkEnvelope`` — the CLI/MCP doctor flows shipped before
+the envelope was uniform and we keep the shape stable for compatibility.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import PlainTextResponse, Response
+
+from agentcloak.daemon.dependencies import (  # noqa: TC001
+    ActiveTierDep,
+    BrowserCtxDep,
+    ContextManagerDep,
+    LocalProxyDep,
+    OptionalBrowserCtxDep,
+    RemoteCtxDep,
+    ResumeWriterDep,
+    ShutdownEventDep,
+)
+from agentcloak.daemon.models import (
+    CDPEndpointResponse,
+    HealthResponse,
+    LaunchRequest,
+    LaunchResponse,
+    OkEnvelope,
+    ResumeResponse,
+    ShutdownResponse,
+)
+from agentcloak.daemon.routes._helpers import _ok
+from agentcloak.daemon.services import DiagnosticService
+from agentcloak.daemon.text_renderers import (
+    render_cdp_endpoint_text,
+    render_health_text,
+    render_launch_text,
+    render_resume_text,
+    wants_text,
+)
+
+__all__ = ["router"]
+
+router = APIRouter()
+
+
+# --- Health -----------------------------------------------------------------
+
+
+@router.get("/health", response_model=HealthResponse)
+async def handle_health(
+    ctx: OptionalBrowserCtxDep,
+    request: Request,
+    local_proxy: LocalProxyDep,
+    active_tier: ActiveTierDep,
+    remote_ctx: RemoteCtxDep,
+) -> Response | dict[str, Any]:
+    diagnostic = DiagnosticService()
+    data = await diagnostic.health(
+        ctx,
+        local_proxy=local_proxy,
+        active_tier=active_tier,
+        remote_connected=remote_ctx is not None,
+    )
+    if wants_text(request):
+        return PlainTextResponse(render_health_text(data))
+    return data
+
+
+# --- Shutdown ---------------------------------------------------------------
+
+
+@router.post("/shutdown", response_model=OkEnvelope[ShutdownResponse])
+async def handle_shutdown(
+    request: Request, event: ShutdownEventDep
+) -> Response | dict[str, Any]:
+    if event is not None:
+        event.set()
+    if wants_text(request):
+        return PlainTextResponse("stopped")
+    return _ok({}, seq=0)
+
+
+# --- Launch (tier hot-switch) -----------------------------------------------
+
+
+@router.post("/launch", response_model=OkEnvelope[LaunchResponse])
+async def handle_launch(
+    body: LaunchRequest,
+    manager: ContextManagerDep,
+    request: Request,
+) -> Response | dict[str, Any]:
+    """Hot-switch the active browser tier without restarting the daemon.
+
+    ``cloak``/``playwright`` create or re-use a local browser; remote_bridge
+    waits for the Chrome extension to connect (if it isn't already).
+    """
+    from agentcloak.core.config import resolve_tier
+    from agentcloak.core.types import StealthTier
+
+    resolved = resolve_tier(body.tier)
+    try:
+        tier_enum = StealthTier(resolved)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "ok": False,
+                "error": "invalid_tier",
+                "hint": f"Unknown tier: {body.tier!r}",
+                "action": "use one of: auto, cloak, playwright, remote_bridge",
+            },
+        ) from exc
+
+    result = await manager.switch_tier(tier_enum, profile=body.profile)
+    if wants_text(request):
+        return PlainTextResponse(render_launch_text(result))
+    return _ok(result, seq=0)
+
+
+# --- Resume -----------------------------------------------------------------
+
+
+@router.get("/resume", response_model=OkEnvelope[ResumeResponse])
+async def handle_resume(
+    ctx: BrowserCtxDep,
+    resume_writer: ResumeWriterDep,
+    request: Request,
+) -> Response | dict[str, Any]:
+    if resume_writer is None:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "ok": False,
+                "error": "resume_unavailable",
+                "hint": "Resume writer not initialized",
+                "action": "restart the daemon",
+            },
+        )
+    # Persisted resume snapshot only updates on navigate/action (via
+    # _update_resume). Runtime-mutable fields like ``capture_active`` and
+    # ``stealth_tier`` need to be re-read from the live context, otherwise
+    # ``resume`` returns stale values when the agent toggled capture between
+    # actions (dogfood F2).
+    data = resume_writer.current_snapshot.to_dict()
+    data["capture_active"] = ctx.capture_store.recording
+    data["stealth_tier"] = ctx.stealth_tier.value
+    if wants_text(request):
+        return PlainTextResponse(render_resume_text(data))
+    return _ok(data, seq=ctx.seq)
+
+
+# --- CDP --------------------------------------------------------------------
+
+
+@router.get("/cdp/endpoint", response_model=OkEnvelope[CDPEndpointResponse])
+async def handle_cdp_endpoint(
+    ctx: BrowserCtxDep, request: Request
+) -> Response | dict[str, Any]:
+    """Return the CDP WebSocket URL for jshookmcp browser_attach."""
+    import httpx
+
+    cdp_port: int | None = getattr(ctx, "_cdp_port", None)
+    if not cdp_port:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "ok": False,
+                "error": "no_cdp_port",
+                "hint": "No CDP port available",
+                "action": "restart daemon — CDP port is allocated at browser launch",
+            },
+        )
+
+    http_url = f"http://127.0.0.1:{cdp_port}"
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(f"{http_url}/json/version")
+            info = resp.json()
+        ws_endpoint: str = info.get("webSocketDebuggerUrl", "")
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "ok": False,
+                "error": "cdp_unreachable",
+                "hint": f"DevTools HTTP API at port {cdp_port} unreachable: {exc}",
+                "action": "ensure browser is running and CDP port is open",
+            },
+        ) from exc
+
+    data = {"ws_endpoint": ws_endpoint, "http_url": http_url, "port": cdp_port}
+    if wants_text(request):
+        return PlainTextResponse(render_cdp_endpoint_text(data))
+    return _ok(data, seq=ctx.seq)

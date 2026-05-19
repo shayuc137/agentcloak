@@ -34,9 +34,9 @@ def create_app() -> FastAPI:
     )
 
     # app.state default slots — dependency providers expect these to exist.
-    # ``configure_app_state()`` overwrites the runtime-meaningful ones (config,
-    # idle_timeout) after the browser is up. Defaults here are only consumed
-    # if a test forgets to call configure_app_state().
+    # ``configure_app_state()`` overwrites the runtime-meaningful ones (config
+    # etc.) after the browser is up. Defaults here are only consumed if a
+    # test forgets to call configure_app_state().
     app.state.browser_ctx = None
     app.state.remote_ctx = None
     app.state.bridge_ws = None
@@ -47,7 +47,6 @@ def create_app() -> FastAPI:
     app.state.config = None
     app.state.shutdown_event = asyncio.Event()
     app.state.last_request_time = 0.0
-    app.state.idle_timeout = 0.0
     app.state.prev_snapshot_lines = None
     # ContextManager-owned slots — populated by ``server.start()`` after
     # the initial browser launch. Routes that only need the active tier
@@ -78,16 +77,19 @@ def configure_app_state(
     resume_writer: Any = None,
     bridge_token: str | None = None,
     config: Any = None,
-    idle_timeout: float = 0.0,
 ) -> None:
     """Attach runtime resources to an existing app.
 
     Called by `server.start()` after the browser is launched. Keeping this
     separate from `create_app()` makes the factory test-friendly.
+
+    The watchdog timeout is driven by a local variable in
+    :func:`agentcloak.daemon.server.start` — there's no
+    ``app.state.idle_timeout`` slot because nothing reads it after this
+    function returns.
     """
     app.state.browser_ctx = browser_ctx
     app.state.local_proxy = local_proxy
     app.state.resume_writer = resume_writer
     app.state.bridge_token = bridge_token
     app.state.config = config
-    app.state.idle_timeout = idle_timeout

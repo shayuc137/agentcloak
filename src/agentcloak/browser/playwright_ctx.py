@@ -9,7 +9,12 @@ What stays here:
 - Playwright-specific event listeners (network, dialog, framenavigated, etc.)
 - Multi-tab bookkeeping (pages keyed by tab_id)
 - CDP-driven element resolution (backendDOMNodeId → data-cloak-ref marker)
-- Backend factory ``launch_playwright`` and the ``screenshot_to_base64`` helper
+- Backend factory ``launch_playwright``
+
+``screenshot_to_base64`` lives on :mod:`agentcloak.browser.base` so daemon
+routes can call it without depending on a specific backend module. Older
+versions duplicated the helper here too; the duplicate was a layering hazard
+(daemon code accidentally pulled in Playwright internals) and was removed.
 """
 
 from __future__ import annotations
@@ -48,15 +53,11 @@ from agentcloak.core.errors import (
 from agentcloak.core.seq import RingBuffer, SeqCounter, SeqEvent
 from agentcloak.core.types import StealthTier
 
-__all__ = ["PlaywrightContext", "launch_playwright", "screenshot_to_base64"]
+__all__ = ["PlaywrightContext", "launch_playwright"]
 
 logger = structlog.get_logger()
 
 _SNAP_CHROMIUM = "/snap/chromium/current/usr/lib/chromium-browser/chrome"
-
-
-def screenshot_to_base64(data: bytes) -> str:
-    return base64.b64encode(data).decode("ascii")
 
 
 def find_free_port() -> int:

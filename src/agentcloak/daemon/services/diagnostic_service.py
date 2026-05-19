@@ -574,12 +574,19 @@ class DiagnosticService:
         local_proxy: Any = None,
         active_tier: Any = None,
         remote_connected: bool = False,
+        config: Any = None,
+        active_profile: str | None = None,
     ) -> dict[str, Any]:
         """Build a health payload — supports the "no browser yet" state.
 
         When ``ctx`` is ``None`` (typical in ``remote_bridge`` mode while
         we wait for the extension), we still report the configured tier so
         agents know what the daemon is set up for.
+
+        The ``config`` and ``active_profile`` fields populate the runtime
+        status block consumed by ``cloak doctor`` — they describe the agent's
+        environment (which browser, headless or not, proxy, profile) rather
+        than just daemon liveness.
         """
         data: dict[str, Any] = {
             "ok": True,
@@ -598,6 +605,14 @@ class DiagnosticService:
             data["capture_recording"] = ctx.capture_store.recording
             data["capture_entries"] = len(ctx.capture_store)
 
+            # Browser description comes from the backend so we don't hardcode
+            # tier → name mapping (and so future backends like Camoufox plug
+            # in without touching this service).
+            try:
+                data["browser_description"] = ctx.browser_description()
+            except Exception:
+                data["browser_description"] = None
+
             # Pull the current URL/title best-effort; failures are non-fatal.
             try:
                 snap = await ctx.snapshot(mode="accessible")
@@ -612,6 +627,19 @@ class DiagnosticService:
             data["capture_entries"] = 0
             data["current_url"] = None
             data["current_title"] = None
+            data["browser_description"] = None
+
+        if config is not None:
+            # Runtime status fields the doctor command needs to render its
+            # second line. ``headless``/``humanize`` are bool — doctor decides
+            # the textual rendering. ``proxy`` is the user-configured upstream
+            # proxy (browser-level), not the httpcloak local proxy.
+            data["headless"] = bool(getattr(config, "headless", True))
+            data["humanize"] = bool(getattr(config, "humanize", True))
+            data["proxy"] = str(getattr(config, "proxy", "") or "")
+        # ``active_profile`` is None for ephemeral sessions; doctor renders
+        # the difference (``profile: name`` vs ``no profile (ephemeral)``).
+        data["active_profile"] = active_profile or ""
 
         if local_proxy is not None:
             try:

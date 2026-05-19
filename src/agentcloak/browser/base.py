@@ -225,6 +225,21 @@ class BrowserContextBase(ABC):
     @abstractmethod
     def stealth_tier(self) -> StealthTier: ...
 
+    def browser_description(self) -> str:
+        """Return a short human-readable description of this backend.
+
+        Format: ``<Name> <version>`` (e.g. ``CloakBrowser 0.3.5``,
+        ``Playwright Chromium``). Default falls back to ``Unknown`` so missing
+        overrides surface visibly in doctor output rather than silently
+        defaulting to one specific backend's label.
+
+        The method is intentionally a method (not a property) and instance-bound
+        — multi-session deployments will eventually have multiple ``ctx``
+        instances per daemon, each describing its own browser. Hardcoded
+        class-level strings would have made that future awkward.
+        """
+        return "Unknown"
+
     # ------------------------------------------------------------------
     # Atomic methods — subclasses must implement
     # ------------------------------------------------------------------

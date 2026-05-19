@@ -59,6 +59,8 @@ __all__ = [
     "render_cookies_import_text",
     "render_dialog_handle_text",
     "render_dialog_status_text",
+    "render_doctor_detail_text",
+    "render_doctor_text",
     "render_evaluate_text",
     "render_fetch_text",
     "render_frame_focus_text",
@@ -848,3 +850,126 @@ def render_bridge_finalize_text(data: dict[str, Any], *, mode: str) -> str:
 def render_token_text(data: dict[str, Any]) -> str:
     """Render ``POST /bridge/token/reset`` — bare token string for pipe usage."""
     return str(data.get("token", "") or "")
+
+
+# ---------------------------------------------------------------------------
+# Doctor
+# ---------------------------------------------------------------------------
+
+
+def _format_doctor_status_line(runtime: dict[str, Any]) -> str:
+    """Build the doctor runtime status line.
+
+    Returns either a single string ``daemon not running ...`` when the runtime
+    block isn't available, or the pipe-separated environment summary expected
+    by the doctor PRD (browser | display | humanize | proxy | profile).
+
+    The block lives in ``runtime`` so the caller can pass either a real
+    ``/health`` dict or ``{}`` for "daemon not running" rendering.
+    """
+    daemon_ok = bool(runtime.get("daemon_ok", False))
+    if not daemon_ok:
+        return "daemon not running (auto-starts on first command)"
+
+    parts: list[str] = []
+    browser_desc = str(runtime.get("browser_description") or "")
+    if browser_desc:
+        parts.append(browser_desc)
+    parts.append("headless" if runtime.get("headless", True) else "headed")
+    if runtime.get("humanize"):
+        parts.append("humanize")
+    proxy = str(runtime.get("proxy") or "")
+    parts.append(proxy if proxy else "no proxy")
+    profile = str(runtime.get("active_profile") or "")
+    parts.append(f"profile: {profile}" if profile else "no profile (ephemeral)")
+    return " | ".join(parts)
+
+
+def render_doctor_text(data: dict[str, Any]) -> str:
+    """Render ``/doctor`` payload in the agent-first concise format.
+
+    Two-line summary when everything passes:
+
+        all N checks passed | agentcloak X.Y.Z
+        CloakBrowser X.Y.Z | headless | humanize | no proxy | no profile (ephemeral)
+
+    Failure mode lists only the failed checks plus the runtime status:
+
+        M/N checks passed
+        [fail] name | detail | hint
+        [fail] name | detail | hint
+        CloakBrowser ... | ...
+
+    The ``data`` dict is expected to carry the standard doctor envelope keys
+    (``checks``, ``healthy``) plus an optional ``runtime`` block populated by
+    the CLI/MCP caller from the daemon ``/health`` probe. When the runtime
+    block is missing or ``daemon_ok`` is False the second line falls back to
+    "daemon not running (auto-starts on first command)" so the user still
+    gets the agentcloak version on line 1 without a misleading environment
+    summary built from defaults.
+    """
+    from agentcloak import __version__ as ac_version
+
+    checks_raw: list[Any] = list(data.get("checks") or [])
+    checks: list[dict[str, Any]] = [
+        _as_dict(c) for c in checks_raw if isinstance(c, dict)
+    ]
+    failed = [c for c in checks if not c.get("ok")]
+    total = len(checks)
+    passed = total - len(failed)
+
+    # The runtime block is opt-in metadata the caller (CLI/MCP) layers on top
+    # of the DiagnosticService report. We render whatever it contains; the
+    # service itself stays pure.
+    raw_runtime = data.get("runtime")
+    runtime = _as_dict(raw_runtime) if isinstance(raw_runtime, dict) else {}
+    status_line = _format_doctor_status_line(runtime)
+
+    lines: list[str] = []
+    if not failed:
+        lines.append(f"all {total} checks passed | agentcloak {ac_version}")
+        lines.append(status_line)
+        return "\n".join(lines)
+
+    lines.append(f"{passed}/{total} checks passed")
+    for check in failed:
+        name = str(check.get("name", "") or "")
+        detail = str(check.get("detail", "") or "")
+        hint = str(check.get("hint", "") or "")
+        # Layout matches the PRD example: ``[fail] name | detail | hint``.
+        # An empty hint collapses cleanly — better than printing ``| ``.
+        line = f"[fail] {name} | {detail}"
+        if hint:
+            line += f" | {hint}"
+        lines.append(line)
+    lines.append(status_line)
+    return "\n".join(lines)
+
+
+def render_doctor_detail_text(data: dict[str, Any]) -> str:
+    """Render the full per-check ``--detail`` view (backward-compatible).
+
+    Mirrors the pre-v0.3.x layout — one ``[ok] / [info] / [fail]`` line per
+    check, derived from ``check["level"]`` or ``ok`` when ``level`` is absent.
+    Failure / info lines append the hint inline so the user can act on it.
+    Doctor's ``--detail`` mode is the safety net for advanced debugging; new
+    code should default to :func:`render_doctor_text`.
+    """
+    checks_raw: list[Any] = list(data.get("checks") or [])
+    lines: list[str] = []
+    for raw in checks_raw:
+        if not isinstance(raw, dict):
+            continue
+        check = _as_dict(raw)
+        ok = bool(check.get("ok"))
+        level = str(check.get("level") or ("ok" if ok else "fail"))
+        name = str(check.get("name", "") or "")
+        detail = str(check.get("detail", "") or "")
+        line = f"[{level}] {name} | {detail}"
+        # Same display rule as the legacy renderer: only suffix the hint for
+        # non-ok rows so the happy path stays clean.
+        hint = str(check.get("hint", "") or "")
+        if level != "ok" and hint:
+            line += f" | hint: {hint}"
+        lines.append(line)
+    return "\n".join(lines)

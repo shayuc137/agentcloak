@@ -3,16 +3,38 @@
 import json
 import tempfile
 from pathlib import Path
+from typing import Any
 
+import pytest
 from typer.testing import CliRunner
 
+from agentcloak.cli import output as cli_output
 from agentcloak.cli.app import app
+from agentcloak.core.text_renderers import (
+    render_doctor_detail_text,
+    render_doctor_text,
+)
 from agentcloak.daemon.services.diagnostic_service import (
     DiagnosticService,
     _detect_linux_distro,
 )
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _reset_cli_mode() -> Any:
+    """Reset module-level json/pretty flags between tests.
+
+    ``cli.output`` keeps the ``--json`` toggle in a module global; once any
+    test flips it the next text-mode invocation still sees JSON output unless
+    we reset. Without the fixture test order silently determines outcomes.
+    """
+    cli_output.set_json_mode(enabled=False)
+    cli_output.set_pretty(enabled=False)
+    yield
+    cli_output.set_json_mode(enabled=False)
+    cli_output.set_pretty(enabled=False)
 
 
 class TestDoctorCommand:
@@ -85,6 +107,176 @@ class TestDoctorCommand:
         result = runner.invoke(app, ["doctor", "--help"])
         assert "--fix" in result.stdout
         assert "--sudo" in result.stdout
+
+    def test_detail_help_present(self) -> None:
+        # ``--detail`` is the new escape hatch for the legacy verbose layout
+        # — preflight relies on its presence so older scripts keep working.
+        result = runner.invoke(app, ["doctor", "--help"])
+        assert "--detail" in result.stdout
+
+    def test_detail_outputs_per_check_lines(self) -> None:
+        # Sanity: the detail mode keeps the legacy per-check layout so users
+        # debugging individual probes still get the same view they had pre-
+        # v0.3.x. Each check shows up as a single ``[level] name | detail``
+        # line; the python_version probe is always present so we anchor on it.
+        result = runner.invoke(app, ["doctor", "--detail"])
+        assert "[ok] python_version" in result.stdout
+        # Concise mode would only print a single "all N checks passed" line —
+        # the detail view has many lines.
+        assert result.stdout.count("\n") > 5
+
+
+class TestDoctorTextRenderers:
+    """Pure-function tests for the doctor renderers — no CLI dispatch."""
+
+    def test_concise_all_pass_with_runtime(self) -> None:
+        # All checks green + daemon up: two-line summary with the runtime
+        # status describing browser/headless/humanize/proxy/profile.
+        data = {
+            "healthy": True,
+            "checks": [
+                {"name": "python_version", "ok": True, "detail": "3.12", "hint": ""},
+                {"name": "daemon", "ok": True, "detail": "...", "hint": ""},
+            ],
+            "runtime": {
+                "daemon_ok": True,
+                "browser_description": "CloakBrowser 0.3.27",
+                "headless": True,
+                "humanize": True,
+                "proxy": "",
+                "active_profile": "",
+            },
+        }
+        out = render_doctor_text(data)
+        lines = out.split("\n")
+        assert len(lines) == 2
+        assert lines[0].startswith("all 2 checks passed | agentcloak ")
+        expected_status = (
+            "CloakBrowser 0.3.27 | headless | humanize "
+            "| no proxy | no profile (ephemeral)"
+        )
+        assert lines[1] == expected_status
+
+    def test_concise_humanize_off_omits_humanize_token(self) -> None:
+        # Humanize disabled: the status line drops the ``humanize`` segment
+        # rather than rendering ``no humanize`` — matches the PRD example.
+        data = {
+            "healthy": True,
+            "checks": [{"name": "x", "ok": True, "detail": "", "hint": ""}],
+            "runtime": {
+                "daemon_ok": True,
+                "browser_description": "CloakBrowser 0.3.27",
+                "headless": True,
+                "humanize": False,
+                "proxy": "",
+                "active_profile": "",
+            },
+        }
+        out = render_doctor_text(data)
+        assert "humanize" not in out.split("\n")[1]
+        assert "headless" in out.split("\n")[1]
+
+    def test_concise_failure_only_lists_failed_checks(self) -> None:
+        # Failures: header reports M/N, then one line per failure, then the
+        # runtime status. Successful checks must not appear.
+        data = {
+            "healthy": False,
+            "checks": [
+                {"name": "python_version", "ok": True, "detail": "3.12", "hint": ""},
+                {
+                    "name": "cloakbrowser_binary",
+                    "ok": False,
+                    "detail": "not found",
+                    "hint": "run 'cloak doctor --fix'",
+                },
+            ],
+            "runtime": {
+                "daemon_ok": True,
+                "browser_description": "CloakBrowser 0.3.27",
+                "headless": True,
+                "humanize": False,
+                "proxy": "",
+                "active_profile": "",
+            },
+        }
+        out = render_doctor_text(data)
+        lines = out.split("\n")
+        # Header + 1 failure line + status line = 3 lines, regardless of how
+        # many checks passed.
+        assert lines[0] == "1/2 checks passed"
+        expected_fail = (
+            "[fail] cloakbrowser_binary | not found | run 'cloak doctor --fix'"
+        )
+        assert expected_fail in out
+        assert "[ok]" not in out
+        assert "python_version" not in out
+
+    def test_concise_daemon_down_replaces_status_line(self) -> None:
+        # No daemon → can't introspect browser/proxy/profile, so the second
+        # line tells the user the daemon isn't running rather than a stale
+        # default-rendered status.
+        data = {
+            "healthy": True,
+            "checks": [{"name": "x", "ok": True, "detail": "", "hint": ""}],
+            "runtime": {"daemon_ok": False},
+        }
+        out = render_doctor_text(data)
+        lines = out.split("\n")
+        assert lines[1] == "daemon not running (auto-starts on first command)"
+
+    def test_concise_profile_set(self) -> None:
+        # Active profile renders ``profile: <name>`` rather than the
+        # ephemeral fallback.
+        data = {
+            "healthy": True,
+            "checks": [{"name": "x", "ok": True, "detail": "", "hint": ""}],
+            "runtime": {
+                "daemon_ok": True,
+                "browser_description": "CloakBrowser 0.3.27",
+                "headless": True,
+                "humanize": False,
+                "proxy": "",
+                "active_profile": "github",
+            },
+        }
+        out = render_doctor_text(data)
+        assert "profile: github" in out
+        assert "ephemeral" not in out
+
+    def test_concise_proxy_set(self) -> None:
+        # Proxy renders verbatim — the renderer doesn't interpret the URL.
+        data = {
+            "healthy": True,
+            "checks": [{"name": "x", "ok": True, "detail": "", "hint": ""}],
+            "runtime": {
+                "daemon_ok": True,
+                "browser_description": "CloakBrowser 0.3.27",
+                "headless": True,
+                "humanize": True,
+                "proxy": "socks5://host:1080",
+                "active_profile": "",
+            },
+        }
+        out = render_doctor_text(data)
+        assert "socks5://host:1080" in out
+        assert "no proxy" not in out
+
+    def test_detail_renderer_lists_every_check(self) -> None:
+        # The detail renderer is the backward-compat path — every check
+        # produces exactly one line.
+        data = {
+            "checks": [
+                {"name": "a", "ok": True, "detail": "1", "hint": ""},
+                {"name": "b", "ok": False, "detail": "2", "hint": "fix it"},
+                {"name": "c", "ok": True, "level": "info", "detail": "3", "hint": "x"},
+            ]
+        }
+        out = render_doctor_detail_text(data)
+        lines = out.split("\n")
+        assert len(lines) == 3
+        assert lines[0] == "[ok] a | 1"
+        assert lines[1] == "[fail] b | 2 | hint: fix it"
+        assert lines[2] == "[info] c | 3 | hint: x"
 
 
 class TestDiagnosticServiceDirect:

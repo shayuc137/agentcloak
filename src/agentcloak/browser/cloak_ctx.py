@@ -46,6 +46,25 @@ class CloakContext(PlaywrightContext):
     def stealth_tier(self) -> StealthTier:
         return StealthTier.CLOAK
 
+    def browser_description(self) -> str:
+        """CloakBrowser + bundled patched Chromium version.
+
+        The ``cloakbrowser`` package exposes ``__version__`` and ``binary_info()``
+        — we prefer the package version since it's stable across runs (the
+        bundled Chromium binary tracks the patch set, not the package). If the
+        package isn't importable we fall back to a bare label so doctor stays
+        usable on a half-configured machine.
+        """
+        try:
+            import cloakbrowser  # pyright: ignore[reportMissingImports,reportMissingTypeStubs]
+
+            ver = getattr(cloakbrowser, "__version__", "")
+            if ver:
+                return f"CloakBrowser {ver}"
+            return "CloakBrowser"
+        except ImportError:
+            return "CloakBrowser"
+
 
 async def launch_cloak(
     *,

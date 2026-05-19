@@ -229,6 +229,10 @@ class SecureBrowserContext:
     def stealth_tier(self) -> StealthTier:
         return self._inner.stealth_tier
 
+    def browser_description(self) -> str:
+        """Forward to the wrapped backend — the security layer is transparent."""
+        return self._inner.browser_description()
+
     @property
     def capture_store(self) -> Any:
         # The base class always exposes a ``capture_store``, so this is safe

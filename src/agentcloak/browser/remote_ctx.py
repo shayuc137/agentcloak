@@ -85,6 +85,16 @@ class RemoteBridgeContext(BrowserContextBase):
     def stealth_tier(self) -> StealthTier:
         return StealthTier.REMOTE_BRIDGE
 
+    def browser_description(self) -> str:
+        """Bridge backend — actual Chrome lives on the user's machine.
+
+        We don't probe the remote Chrome version here; the bridge handshake
+        doesn't currently surface it, and most agents only need to know
+        "this is the user's real browser" anyway. A future enhancement could
+        carry ``chrome.version`` through the bridge handshake.
+        """
+        return "Bridge (Chrome)"
+
     # ------------------------------------------------------------------
     # Bridge plumbing — send command + read response
     # ------------------------------------------------------------------

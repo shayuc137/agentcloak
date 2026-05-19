@@ -140,6 +140,10 @@ class PlaywrightContext(BrowserContextBase):
     def stealth_tier(self) -> StealthTier:
         return StealthTier.PLAYWRIGHT
 
+    def browser_description(self) -> str:
+        """Plain Playwright Chromium — no stealth patches, version is generic."""
+        return "Playwright Chromium"
+
     async def _get_page_info(self) -> tuple[str, str]:
         try:
             url = str(self._page.url)

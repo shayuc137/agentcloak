@@ -15,6 +15,8 @@ from agentcloak.core.text_renderers import (
     render_cdp_endpoint_text,
     render_cookies_export_text,
     render_cookies_import_text,
+    render_doctor_detail_text,
+    render_doctor_text,
     render_health_text,
     render_launch_text,
     render_profile_create_from_current_text,
@@ -303,7 +305,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         )
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
-    async def agentcloak_doctor(fix: bool = False) -> str:
+    async def agentcloak_doctor(fix: bool = False, detail: bool = False) -> str:
         """Run diagnostic checks on agentcloak installation.
 
         Runs the same probes the CLI ``doctor`` command runs (Python version,
@@ -318,15 +320,21 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         we don't accidentally launch one mid-diagnosis) and report what we
         find.
 
+        Default output is the concise agent-friendly summary (summary line +
+        runtime status). Pass ``detail=True`` for the legacy per-check list.
+
         Args:
             fix: When True, attempt in-process repairs (download CloakBrowser
                  binary, create data dir) and include a shell command for any
                  remaining system-level work. The shell command is *not*
                  executed — MCP doesn't have a way to escalate to sudo, so
                  the user runs it themselves.
+            detail: When True, return the full per-check list instead of the
+                 summary view.
 
         Returns:
-            JSON with diagnostic checks array and optional ``fix`` section.
+            Plain text — concise summary by default, or the legacy list under
+            ``detail=True``. On error, the standard three-field JSON envelope.
         """
         from agentcloak.client import DaemonClient
         from agentcloak.core.config import load_config
@@ -349,8 +357,9 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         probe = DaemonClient(
             host=cfg.daemon_host, port=cfg.daemon_port, auto_start=False
         )
+        runtime: dict[str, Any] = {"daemon_ok": False}
         try:
-            await probe.health()
+            health = await probe.health()
             report["checks"].append(
                 {
                     "name": "daemon",
@@ -360,6 +369,14 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                     "hint": "",
                 }
             )
+            runtime = {
+                "daemon_ok": True,
+                "browser_description": health.get("browser_description"),
+                "headless": health.get("headless"),
+                "humanize": health.get("humanize"),
+                "proxy": health.get("proxy"),
+                "active_profile": health.get("active_profile"),
+            }
         except AgentBrowserError:
             # Daemon-down during a one-off ``doctor`` invocation is the
             # expected fresh-install state — auto-start spins it up on the
@@ -375,7 +392,11 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                 }
             )
         report["healthy"] = all(c["ok"] for c in report["checks"])
-        return orjson.dumps(report).decode()
+        report["runtime"] = runtime
+
+        if detail:
+            return render_doctor_detail_text(report)
+        return render_doctor_text(report)
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     async def agentcloak_resume() -> str:

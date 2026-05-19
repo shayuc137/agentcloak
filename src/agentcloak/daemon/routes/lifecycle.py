@@ -10,11 +10,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from agentcloak.daemon.dependencies import (  # noqa: TC001
     ActiveTierDep,
     BrowserCtxDep,
+    ConfigDep,
     ContextManagerDep,
     LocalProxyDep,
     OptionalBrowserCtxDep,
@@ -44,17 +45,25 @@ router = APIRouter()
 
 @router.get("/health", response_model=HealthResponse)
 async def handle_health(
+    request: Request,
     ctx: OptionalBrowserCtxDep,
     local_proxy: LocalProxyDep,
     active_tier: ActiveTierDep,
     remote_ctx: RemoteCtxDep,
+    config: ConfigDep,
 ) -> dict[str, Any]:
+    # ``local_profile`` is recorded on app.state by ContextManager whenever a
+    # local backend is activated with a profile name. Ephemeral sessions leave
+    # it as None — doctor renders that as ``no profile (ephemeral)``.
+    active_profile = getattr(request.app.state, "local_profile", None)
     diagnostic = DiagnosticService()
     data = await diagnostic.health(
         ctx,
         local_proxy=local_proxy,
         active_tier=active_tier,
         remote_connected=remote_ctx is not None,
+        config=config,
+        active_profile=active_profile,
     )
     return data
 

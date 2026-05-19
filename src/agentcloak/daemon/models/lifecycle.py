@@ -44,6 +44,18 @@ class HealthResponse(BaseModel):
     current_url: str | None = None
     current_title: str | None = None
     local_proxy: dict[str, Any] | None = None
+    # Backend self-describes via ``BrowserContextBase.browser_description()``.
+    # Doctor renders this verbatim so we don't hardcode tier → name here.
+    browser_description: str | None = None
+    # Runtime configuration mirrors — doctor's status line needs these without
+    # making each surface re-read config.toml. ``proxy`` is the upstream
+    # browser-level proxy (Chromium ``--proxy-server``), not the httpcloak
+    # local TLS proxy used by fetch.
+    headless: bool | None = None
+    humanize: bool | None = None
+    proxy: str | None = None
+    # Empty string when no profile is attached (ephemeral mode).
+    active_profile: str | None = None
 
 
 # --- Shutdown ---

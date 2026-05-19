@@ -4,17 +4,27 @@
 For v0.2.0 we keep ``daemon_client.py`` hand-written — it's already typed,
 tested, and carefully tuned for the sync + async dual surface. This script
 is a *verification tool*: it builds the FastAPI app, reads the OpenAPI spec,
-and confirms that every daemon route has a matching pair of typed methods
-on the client. The richer "generate the client from the spec" workflow can
-land in Phase 6 once the surface stabilises.
+and confirms that every daemon route has a matching async method on the
+client. The richer "generate the client from the spec" workflow can land in
+Phase 6 once the surface stabilises.
 
 What it checks
 --------------
-* every route maps to ``<name>`` (async) and ``<name>_sync`` on
-  :class:`DaemonClient`
-* both surfaces actually exist on the class
-* every public client method covers a route (otherwise the client is
-  growing dead code)
+* every route has a typed ``<name>`` async method on :class:`DaemonClient`
+  (used by MCP tools and exercised by tests)
+* the curated sync allow-list — CLI commands that need bespoke handling
+  (base64 decode, custom export formats, etc.) — is present
+* every public client method covers a route or sits in the allow-list
+  (otherwise the client is growing dead code)
+
+Sync vs async surface
+---------------------
+CLI commands dispatch most routes through ``DaemonClient._send_sync(method,
+path, body)`` and render JSON locally, so they don't need a typed sync
+wrapper per route. Only the nine commands in :data:`KEEP_SYNC_METHODS`
+genuinely need their own sync entry point — usually because they reshape
+the daemon's response (base64 decode, custom file output, etc.) before the
+renderer sees it.
 
 Usage
 -----
@@ -47,6 +57,23 @@ EXCLUDED_ROUTES: set[str] = set()
 # ``tab_list`` to stay parallel with ``tab_new``/``tab_close``/``tab_switch``.
 ROUTE_METHOD_OVERRIDES: dict[str, str] = {
     "/tabs": "tab_list",
+}
+
+# CLI commands that need a typed sync wrapper. Everything else goes through
+# the generic ``DaemonClient._send_sync`` dispatch — see the module docstring
+# for the rationale. Keep this list in sync with the CLI commands that touch
+# bespoke sync methods (preflight will fail loudly if a sync method is added
+# or removed without updating the allow-list).
+KEEP_SYNC_METHODS: set[str] = {
+    "screenshot_sync",
+    "health_sync",
+    "shutdown_sync",
+    "bridge_token_reset_sync",
+    "capture_export_sync",
+    "capture_analyze_sync",
+    "cookies_export_sync",
+    "fetch_sync",
+    "profile_create_from_current_sync",
 }
 
 
@@ -88,8 +115,9 @@ def find_drift() -> tuple[list[str], list[str]]:
 
     Returns ``(missing, orphans)``:
 
-    * ``missing`` — route paths whose ``<name>``/``<name>_sync`` pair is
-      incomplete on the client.
+    * ``missing`` — gaps in coverage. Every route must expose an async
+      method; sync wrappers are only required for the curated CLI commands
+      in :data:`KEEP_SYNC_METHODS`.
     * ``orphans`` — public client methods that don't correspond to any route
       (excluding the explicitly allow-listed ones like ``launch_daemon``).
     """
@@ -104,25 +132,30 @@ def find_drift() -> tuple[list[str], list[str]]:
         "config",  # property, exposed for downstream access
     }
 
+    route_bases: set[str] = {route_to_method(path) for _, path in routes}
+
     missing: list[str] = []
     for _verb, path in routes:
         base = route_to_method(path)
-        async_name = base
-        sync_name = f"{base}_sync"
-        gaps: list[str] = []
-        if async_name not in methods:
-            gaps.append(async_name)
-        if sync_name not in methods:
-            gaps.append(sync_name)
-        if gaps:
-            missing.append(f"{path:40s} -> missing {', '.join(gaps)}")
+        if base not in methods:
+            missing.append(f"{path:40s} -> missing async {base}")
 
-    # Build the set of method names every route is expected to claim.
-    expected: set[str] = set()
-    for _verb, path in routes:
-        base = route_to_method(path)
-        expected.add(base)
-        expected.add(f"{base}_sync")
+    # Every entry in the sync allow-list must correspond to a real route and
+    # be present on the client; otherwise the CLI is calling a method that
+    # silently no longer exists.
+    for sync_name in sorted(KEEP_SYNC_METHODS):
+        base = sync_name.removesuffix("_sync")
+        if base not in route_bases:
+            missing.append(
+                f"{sync_name:40s} -> kept in KEEP_SYNC_METHODS but no matching route"
+            )
+        elif sync_name not in methods:
+            missing.append(f"{sync_name:40s} -> kept in allow-list but not implemented")
+
+    # Build the set of method names every route is expected to claim plus the
+    # bespoke sync wrappers we deliberately retained.
+    expected: set[str] = set(route_bases)
+    expected.update(KEEP_SYNC_METHODS)
 
     orphans = sorted(methods - expected - standalone)
     return missing, orphans
@@ -145,7 +178,11 @@ def main() -> int:
         for line in missing:
             print(f"  - {line}")
     else:
-        print(f"OK: all {spec_count} routes have matching async + sync methods.")
+        kept = len(KEEP_SYNC_METHODS)
+        print(
+            f"OK: all {spec_count} routes have a typed async method; "
+            f"{kept} CLI-bespoke sync wrappers in allow-list."
+        )
 
     if orphans:
         print(f"\nWARN: {len(orphans)} client methods have no corresponding route:")

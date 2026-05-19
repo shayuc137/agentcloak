@@ -387,8 +387,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
 
         Returns:
             Plain text key:value block (``url:``, ``title:``, ``tier:``, tab
-            count, last action). Use the CLI ``--json`` flag or call
-            :meth:`DaemonClient.resume_sync` directly for the structured
-            payload.
+            count, last action). Use the CLI ``--json`` flag or await
+            :meth:`DaemonClient.resume` directly for the structured payload.
         """
         return await format_call(client.resume(), render_resume_text)

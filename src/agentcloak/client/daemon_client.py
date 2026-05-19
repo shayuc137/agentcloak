@@ -100,10 +100,22 @@ _HEALTH_PROBE_TIMEOUT_S = 2.0
 class DaemonClient:
     """HTTP client wrapping the agentcloak daemon API.
 
-    Use the ``*_sync`` methods from synchronous code (CLI commands). Use the
-    plain method names from async code (MCP tools, tests). Both paths share
-    the same auto-start logic, the same request envelope parsing, and the
-    same exception types.
+    Surface layout
+    --------------
+    * :meth:`_send_sync` / :meth:`_send_async` — generic dispatch over the
+      daemon HTTP API. The CLI uses ``_send_sync`` directly (via
+      :mod:`agentcloak.cli._dispatch`) for the majority of commands and
+      renders JSON locally, so most routes don't need a typed sync wrapper.
+    * Typed ``*_sync`` methods — only kept for the handful of CLI commands
+      that reshape the response before rendering (base64 decode for
+      screenshots, custom file output for capture export, etc.). The full
+      list lives in :data:`scripts.generate_client.KEEP_SYNC_METHODS`;
+      preflight will fail loudly if it falls out of sync.
+    * Typed async methods (``navigate``, ``snapshot``, ...) — the canonical
+      typed surface used by MCP tools and tests. Every daemon route has one.
+
+    Both code paths share the same auto-start logic, the same envelope
+    parsing, and the same exception hierarchy.
 
     Parameters
     ----------
@@ -684,8 +696,13 @@ class DaemonClient:
             pass
 
     # ------------------------------------------------------------------
-    # Typed sync API (CLI)
+    # Typed sync API (CLI bespoke commands)
     # ------------------------------------------------------------------
+    # The CLI dispatches most routes through ``_send_sync(method, path, body)``
+    # directly and renders the JSON envelope locally. The wrappers below are
+    # only kept for commands that reshape the response before rendering — base64
+    # decode, custom file output, special error handling, and so on. See
+    # ``scripts/generate_client.KEEP_SYNC_METHODS`` for the canonical list.
 
     def health_sync(self) -> dict[str, Any]:
         return self._send_sync("GET", "/health")
@@ -695,35 +712,6 @@ class DaemonClient:
             return self._send_sync("POST", "/shutdown")
         except DaemonConnectionError:
             return {"ok": True}
-
-    def launch_sync(
-        self, *, tier: str = "auto", profile: str | None = None
-    ) -> dict[str, Any]:
-        """Hot-switch the daemon's active browser tier (sync)."""
-        body: dict[str, Any] = {"tier": tier}
-        if profile is not None:
-            body["profile"] = profile
-        return self._send_sync("POST", "/launch", json_body=body)
-
-    def navigate_sync(
-        self,
-        url: str,
-        *,
-        timeout: float | None = None,
-        include_snapshot: bool = False,
-        snapshot_mode: str = "compact",
-    ) -> dict[str, Any]:
-        body = _build_navigate_body(
-            url=url,
-            timeout=(
-                float(timeout)
-                if timeout is not None
-                else float(self._cfg.navigation_timeout)
-            ),
-            include_snapshot=include_snapshot,
-            snapshot_mode=snapshot_mode,
-        )
-        return self._send_sync("POST", "/navigate", json_body=body)
 
     def screenshot_sync(
         self,
@@ -742,87 +730,6 @@ class DaemonClient:
                     quality if quality is not None else self._cfg.screenshot_quality
                 ),
             ),
-        )
-
-    def snapshot_sync(
-        self,
-        *,
-        mode: str = "compact",
-        max_chars: int = 0,
-        max_nodes: int = -1,
-        focus: int = 0,
-        offset: int = 0,
-        frames: bool = False,
-        diff: bool = False,
-        include_selector_map: bool = False,
-    ) -> dict[str, Any]:
-        return self._send_sync(
-            "GET",
-            "/snapshot",
-            params=_build_snapshot_params(
-                mode=mode,
-                max_chars=max_chars,
-                max_nodes=max_nodes,
-                focus=focus,
-                offset=offset,
-                frames=frames,
-                diff=diff,
-                include_selector_map=include_selector_map,
-            ),
-        )
-
-    def evaluate_sync(
-        self,
-        js: str,
-        *,
-        world: str = "main",
-        max_return_size: int | None = None,
-    ) -> dict[str, Any]:
-        return self._send_sync(
-            "POST",
-            "/evaluate",
-            json_body={
-                "js": js,
-                "world": world,
-                "max_return_size": max_return_size
-                if max_return_size is not None
-                else self._cfg.max_return_size,
-            },
-        )
-
-    def network_sync(self, *, since: str | int = 0) -> dict[str, Any]:
-        return self._send_sync("GET", "/network", params={"since": str(since)})
-
-    def action_sync(
-        self,
-        kind: str,
-        *,
-        index: int | None = None,
-        target: str | None = None,
-        include_snapshot: bool = False,
-        snapshot_mode: str = "compact",
-        **kwargs: Any,
-    ) -> dict[str, Any]:
-        body = _build_action_body(
-            kind=kind,
-            index=index,
-            target=target,
-            include_snapshot=include_snapshot,
-            snapshot_mode=snapshot_mode,
-            extras=kwargs,
-        )
-        return self._send_sync("POST", "/action", json_body=body)
-
-    def action_batch_sync(
-        self,
-        actions: list[dict[str, Any]],
-        *,
-        sleep: float = 0.0,
-    ) -> dict[str, Any]:
-        return self._send_sync(
-            "POST",
-            "/action/batch",
-            json_body={"actions": actions, "sleep": sleep},
         )
 
     def fetch_sync(
@@ -848,17 +755,6 @@ class DaemonClient:
             ),
         )
 
-    # --- Capture ---
-
-    def capture_start_sync(self) -> dict[str, Any]:
-        return self._send_sync("POST", "/capture/start")
-
-    def capture_stop_sync(self) -> dict[str, Any]:
-        return self._send_sync("POST", "/capture/stop")
-
-    def capture_status_sync(self) -> dict[str, Any]:
-        return self._send_sync("GET", "/capture/status")
-
     def capture_export_sync(self, *, fmt: str = "har") -> dict[str, Any]:
         return self._send_sync("GET", "/capture/export", params={"format": fmt})
 
@@ -868,56 +764,10 @@ class DaemonClient:
             params["domain"] = domain
         return self._send_sync("GET", "/capture/analyze", params=params)
 
-    def capture_clear_sync(self) -> dict[str, Any]:
-        return self._send_sync("POST", "/capture/clear")
-
-    def capture_replay_sync(self, *, url: str, method: str = "GET") -> dict[str, Any]:
-        return self._send_sync(
-            "POST",
-            "/capture/replay",
-            json_body={"url": url, "method": method},
-        )
-
-    # --- Profile ---
-
-    def profile_list_sync(self) -> dict[str, Any]:
-        return self._send_sync("GET", "/profile/list")
-
-    def profile_create_sync(self, *, name: str) -> dict[str, Any]:
-        return self._send_sync("POST", "/profile/create", json_body={"name": name})
-
-    def profile_delete_sync(self, *, name: str) -> dict[str, Any]:
-        return self._send_sync("POST", "/profile/delete", json_body={"name": name})
-
     def profile_create_from_current_sync(self, *, name: str) -> dict[str, Any]:
         return self._send_sync(
             "POST", "/profile/create-from-current", json_body={"name": name}
         )
-
-    # --- CDP / Tabs ---
-
-    def cdp_endpoint_sync(self) -> dict[str, Any]:
-        return self._send_sync("GET", "/cdp/endpoint")
-
-    def tab_list_sync(self) -> dict[str, Any]:
-        return self._send_sync("GET", "/tabs")
-
-    def tab_new_sync(self, *, url: str | None = None) -> dict[str, Any]:
-        body: dict[str, Any] = {}
-        if url:
-            body["url"] = url
-        return self._send_sync("POST", "/tab/new", json_body=body)
-
-    def tab_close_sync(self, tab_id: int) -> dict[str, Any]:
-        return self._send_sync("POST", "/tab/close", json_body={"tab_id": tab_id})
-
-    def tab_switch_sync(self, tab_id: int) -> dict[str, Any]:
-        return self._send_sync("POST", "/tab/switch", json_body={"tab_id": tab_id})
-
-    # --- Resume / Cookies / Bridge / Dialog / Wait / Upload / Frame ---
-
-    def resume_sync(self) -> dict[str, Any]:
-        return self._send_sync("GET", "/resume")
 
     def cookies_export_sync(self, *, url: str | None = None) -> dict[str, Any]:
         body: dict[str, Any] = {}
@@ -925,96 +775,9 @@ class DaemonClient:
             body["url"] = url
         return self._send_sync("POST", "/cookies/export", json_body=body)
 
-    def cookies_import_sync(self, *, cookies: list[dict[str, Any]]) -> dict[str, Any]:
-        return self._send_sync(
-            "POST", "/cookies/import", json_body={"cookies": cookies}
-        )
-
-    def dialog_status_sync(self) -> dict[str, Any]:
-        return self._send_sync("GET", "/dialog/status")
-
-    def dialog_handle_sync(
-        self, action_type: str, *, text: str | None = None
-    ) -> dict[str, Any]:
-        body: dict[str, Any] = {"action": action_type}
-        if text is not None:
-            body["text"] = text
-        return self._send_sync("POST", "/dialog/handle", json_body=body)
-
-    def wait_sync(
-        self,
-        *,
-        condition: str,
-        value: str = "",
-        timeout: int | None = None,
-        state: str = "visible",
-    ) -> dict[str, Any]:
-        return self._send_sync(
-            "POST",
-            "/wait",
-            json_body={
-                "condition": condition,
-                "value": value,
-                "timeout": timeout if timeout is not None else self._cfg.action_timeout,
-                "state": state,
-            },
-        )
-
-    def upload_sync(self, *, index: int, files: list[str]) -> dict[str, Any]:
-        return self._send_sync(
-            "POST", "/upload", json_body={"index": index, "files": files}
-        )
-
-    def frame_list_sync(self) -> dict[str, Any]:
-        return self._send_sync("GET", "/frame/list")
-
-    def frame_focus_sync(
-        self,
-        *,
-        name: str | None = None,
-        url: str | None = None,
-        main: bool = False,
-    ) -> dict[str, Any]:
-        body: dict[str, Any] = {"main": main}
-        if name is not None:
-            body["name"] = name
-        if url is not None:
-            body["url"] = url
-        return self._send_sync("POST", "/frame/focus", json_body=body)
-
-    def bridge_claim_sync(
-        self,
-        *,
-        tab_id: int | None = None,
-        url_pattern: str | None = None,
-    ) -> dict[str, Any]:
-        body: dict[str, Any] = {}
-        if tab_id is not None:
-            body["tab_id"] = tab_id
-        if url_pattern is not None:
-            body["url_pattern"] = url_pattern
-        return self._send_sync("POST", "/bridge/claim", json_body=body)
-
-    def bridge_finalize_sync(self, *, mode: str = "close") -> dict[str, Any]:
-        return self._send_sync("POST", "/bridge/finalize", json_body={"mode": mode})
-
     def bridge_token_reset_sync(self) -> dict[str, Any]:
         """Hot-rotate the persistent bridge token via the running daemon."""
         return self._send_sync("POST", "/bridge/token/reset")
-
-    # --- Spell ---
-
-    def spell_list_sync(self) -> dict[str, Any]:
-        return self._send_sync("GET", "/spell/list")
-
-    def spell_run_sync(
-        self, *, name: str, args: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
-        return self._send_sync(
-            "POST",
-            "/spell/run",
-            json_body={"name": name, "args": args or {}},
-        )
 
     # ------------------------------------------------------------------
     # Typed async API (MCP)

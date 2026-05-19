@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
@@ -14,7 +15,14 @@ runner = CliRunner()
 
 
 class TestTokenAuth:
-    """Token gating for WS endpoints — adapted to FastAPI WebSocket signature."""
+    """Token gating for WS endpoints — exercises :class:`BridgeService`.
+
+    The helper used to live as ``_check_bridge_token`` on
+    ``daemon/routes.py`` and was extracted along with the rest of the
+    WebSocket lifecycle into :class:`BridgeService` (PRD R3). The
+    behaviour the service implements is identical — these tests just
+    invoke it through the new owning class.
+    """
 
     @staticmethod
     def _mock_ws(
@@ -24,57 +32,57 @@ class TestTokenAuth:
         client = MagicMock()
         client.host = client_host
         ws.client = client
-        state = MagicMock()
-        state.bridge_token = bridge_token
-        ws.app.state = state
         ws.headers = {"Authorization": auth} if auth else {}
         return ws
 
-    def test_check_bridge_token_localhost_bypass(self) -> None:
-        from agentcloak.daemon.routes import _check_bridge_token
+    @staticmethod
+    def _make_service(*, bridge_token: str | None) -> Any:
+        from agentcloak.daemon.services.bridge_service import BridgeService
 
+        state = MagicMock()
+        state.bridge_token = bridge_token
+        return BridgeService(state)
+
+    def test_check_bridge_token_localhost_bypass(self) -> None:
+        svc = self._make_service(bridge_token="secret123")
         ws = self._mock_ws(client_host="127.0.0.1", bridge_token="secret123", auth=None)
-        assert _check_bridge_token(ws) is True
+        assert svc._check_bridge_token(ws) is True
 
     def test_check_bridge_token_valid(self) -> None:
-        from agentcloak.daemon.routes import _check_bridge_token
-
+        svc = self._make_service(bridge_token="secret123")
         ws = self._mock_ws(
             client_host="192.168.1.100",
             bridge_token="secret123",
             auth="Bearer secret123",
         )
-        assert _check_bridge_token(ws) is True
+        assert svc._check_bridge_token(ws) is True
 
     def test_check_bridge_token_invalid(self) -> None:
-        from agentcloak.daemon.routes import _check_bridge_token
-
+        svc = self._make_service(bridge_token="secret123")
         ws = self._mock_ws(
             client_host="192.168.1.100",
             bridge_token="secret123",
             auth="Bearer wrong_token",
         )
-        assert _check_bridge_token(ws) is False
+        assert svc._check_bridge_token(ws) is False
 
     def test_check_bridge_token_missing(self) -> None:
-        from agentcloak.daemon.routes import _check_bridge_token
-
+        svc = self._make_service(bridge_token="secret123")
         ws = self._mock_ws(
             client_host="192.168.1.100",
             bridge_token="secret123",
             auth=None,
         )
-        assert _check_bridge_token(ws) is False
+        assert svc._check_bridge_token(ws) is False
 
     def test_check_bridge_token_no_token_set(self) -> None:
-        from agentcloak.daemon.routes import _check_bridge_token
-
+        svc = self._make_service(bridge_token=None)
         ws = self._mock_ws(
             client_host="192.168.1.100",
             bridge_token=None,
             auth=None,
         )
-        assert _check_bridge_token(ws) is True
+        assert svc._check_bridge_token(ws) is True
 
 
 class TestCookiesCLI:

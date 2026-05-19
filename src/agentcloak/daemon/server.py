@@ -499,7 +499,6 @@ async def start(
         resume_writer=resume_writer,
         bridge_token=bridge_token,
         config=cfg,
-        batch_settle_timeout=cfg.batch_settle_timeout,
         idle_timeout=idle_timeout,
     )
     # Seed ContextManager with whatever the startup tier created so
@@ -513,6 +512,14 @@ async def start(
         local_profile=profile if not skip_local_launch else None,
     )
     app.state.context_manager = context_manager
+
+    # BridgeService owns Chrome Extension WebSocket lifecycle. Created at
+    # startup so route handlers (``/bridge/ws``, ``/ext``, token reset) can
+    # delegate without each one re-implementing the mutex / pump loop.
+    from agentcloak.daemon.services.bridge_service import BridgeService
+
+    app.state.bridge_service = BridgeService(app.state)
+
     app.state.last_request_time = time.monotonic()
 
     logger.info("daemon_starting", host=actual_host, port=actual_port)

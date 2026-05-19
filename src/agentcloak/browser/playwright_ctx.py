@@ -150,6 +150,28 @@ class PlaywrightContext(BrowserContextBase):
             title = ""
         return url, title
 
+    async def resume_snapshot(self) -> dict[str, Any]:
+        """Active tab url/title + full tab inventory keyed by ``tab_id``.
+
+        Wraps :meth:`_get_page_info` for the active tab, then walks
+        ``self._tabs`` for the per-tab URLs the daemon persists to
+        ``resume.json``. Swallowing exceptions keeps the daemon
+        recoverable even when a page or tab is mid-navigation.
+        """
+        data = await super().resume_snapshot()
+        url, title = await self._get_page_info()
+        data["url"] = url
+        data["title"] = title
+
+        tabs: list[dict[str, Any]] = []
+        for tid, pg in self._tabs.items():
+            try:
+                tabs.append({"tab_id": tid, "url": str(pg.url)})
+            except Exception:
+                tabs.append({"tab_id": tid, "url": ""})
+        data["tabs"] = tabs
+        return data
+
     # ------------------------------------------------------------------
     # Event listeners
     # ------------------------------------------------------------------

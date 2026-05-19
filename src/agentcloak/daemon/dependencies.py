@@ -7,26 +7,71 @@ that wiring stays explicit and easy to override during testing.
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Annotated, Any
 
 from fastapi import Depends, HTTPException, Request
 
 from agentcloak.core.config import AgentcloakConfig, load_config
 
+if TYPE_CHECKING:
+    import asyncio
+
+    from agentcloak.core.resume import ResumeWriter
+    from agentcloak.daemon.services.bridge_service import BridgeService
+
 __all__ = [
+    "ActiveTierDep",
+    "BridgeServiceDep",
+    "BridgeTokenDep",
     "BrowserCtxDep",
     "ConfigDep",
     "ContextManagerDep",
+    "LocalProxyDep",
     "OptionalBrowserCtxDep",
     "RemoteCtxDep",
     "RequiredRemoteCtxDep",
+    "ResumeWriterDep",
+    "ShutdownEventDep",
+    "SnapshotCache",
+    "SnapshotCacheDep",
+    "get_active_tier",
+    "get_bridge_service",
+    "get_bridge_token",
     "get_browser_ctx",
     "get_config",
     "get_context_manager",
+    "get_local_proxy",
     "get_optional_browser_ctx",
     "get_remote_ctx",
+    "get_resume_writer",
+    "get_shutdown_event",
+    "get_snapshot_cache",
     "require_remote_ctx",
 ]
+
+
+@dataclass
+class SnapshotCache:
+    """Thin wrapper around ``app.state.prev_snapshot_lines`` read/write.
+
+    Snapshot diff mode needs to compare the current AX tree against the
+    previous one. The previous tree lives on ``app.state`` because diff
+    semantics span across requests, but routes shouldn't poke
+    ``app.state`` directly — they go through :class:`SnapshotCacheDep`
+    so the access is explicit and easy to mock.
+    """
+
+    _state: Any
+
+    @property
+    def prev_lines(self) -> Any:
+        """Return the previously cached snapshot lines, or ``None``."""
+        return getattr(self._state, "prev_snapshot_lines", None)
+
+    @prev_lines.setter
+    def prev_lines(self, value: Any) -> None:
+        self._state.prev_snapshot_lines = value
 
 
 def get_browser_ctx(request: Request) -> Any:
@@ -131,9 +176,99 @@ def get_config(request: Request) -> AgentcloakConfig:
     return cfg
 
 
+def get_resume_writer(request: Request) -> ResumeWriter | None:
+    """Return the daemon's :class:`ResumeWriter`, or ``None`` if uninitialized.
+
+    Routes that touch the resume snapshot file (``_update_resume`` helper,
+    ``GET /resume``) depend on this so tests can inject a stub writer via
+    ``app.dependency_overrides``.
+    """
+    return getattr(request.app.state, "resume_writer", None)
+
+
+def get_local_proxy(request: Request) -> Any:
+    """Return the httpcloak ``LocalProxy`` handle, or ``None`` if disabled.
+
+    The proxy is only created when the daemon launches a local CloakBrowser
+    with httpcloak installed — remote_bridge and Playwright tiers leave this
+    ``None``. Surfaced through ``/health`` so an agent can confirm the TLS
+    fingerprint preset.
+    """
+    return getattr(request.app.state, "local_proxy", None)
+
+
+def get_active_tier(request: Request) -> Any:
+    """Return the current :class:`StealthTier`, or ``None`` if not seeded yet.
+
+    Set by :class:`ContextManager` after the initial launch. Routes that need
+    a strict guarantee should depend on ``ContextManagerDep`` instead.
+    """
+    return getattr(request.app.state, "active_tier", None)
+
+
+def get_snapshot_cache(request: Request) -> SnapshotCache:
+    """Return the snapshot-diff cache for the current daemon.
+
+    The wrapper exposes a single ``prev_lines`` property that reads and
+    writes ``app.state.prev_snapshot_lines``. Routes never touch the raw
+    ``app.state`` attribute — they go through this Depends-provided
+    helper so the access is explicit and unit-testable.
+    """
+    return SnapshotCache(request.app.state)
+
+
+def get_shutdown_event(request: Request) -> asyncio.Event | None:
+    """Return the asyncio Event that signals graceful daemon shutdown.
+
+    ``POST /shutdown`` sets this event; ``server.start()`` watches it to
+    drive uvicorn's shutdown sequence.
+    """
+    return getattr(request.app.state, "shutdown_event", None)
+
+
+def get_bridge_token(request: Request) -> str | None:
+    """Return the active bridge auth token, or ``None`` if unset.
+
+    The token is regenerated on first start and persisted to
+    ``config.toml``. ``POST /bridge/token/reset`` rotates it and updates
+    this slot atomically so already-paired extensions reject on next
+    reconnect.
+    """
+    return getattr(request.app.state, "bridge_token", None)
+
+
+def get_bridge_service(request: Request) -> BridgeService:
+    """Return the :class:`BridgeService` that owns bridge WebSocket lifecycle.
+
+    Created at daemon startup and attached to ``app.state``. Routes that
+    accept Chrome Extension WebSocket connections delegate the entire
+    connect → message-pump → disconnect flow to this service so the
+    route handler stays a thin transport adapter.
+    """
+    svc = getattr(request.app.state, "bridge_service", None)
+    if svc is None:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "ok": False,
+                "error": "bridge_service_not_ready",
+                "hint": "Daemon bridge service is still initialising",
+                "action": "retry after a brief delay",
+            },
+        )
+    return svc
+
+
 BrowserCtxDep = Annotated[Any, Depends(get_browser_ctx)]
 OptionalBrowserCtxDep = Annotated[Any, Depends(get_optional_browser_ctx)]
 RemoteCtxDep = Annotated[Any, Depends(get_remote_ctx)]
 RequiredRemoteCtxDep = Annotated[Any, Depends(require_remote_ctx)]
 ConfigDep = Annotated[AgentcloakConfig, Depends(get_config)]
 ContextManagerDep = Annotated[Any, Depends(get_context_manager)]
+ResumeWriterDep = Annotated[Any, Depends(get_resume_writer)]
+LocalProxyDep = Annotated[Any, Depends(get_local_proxy)]
+ActiveTierDep = Annotated[Any, Depends(get_active_tier)]
+SnapshotCacheDep = Annotated[SnapshotCache, Depends(get_snapshot_cache)]
+ShutdownEventDep = Annotated[Any, Depends(get_shutdown_event)]
+BridgeTokenDep = Annotated[Any, Depends(get_bridge_token)]
+BridgeServiceDep = Annotated[Any, Depends(get_bridge_service)]

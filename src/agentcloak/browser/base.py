@@ -425,6 +425,30 @@ class BrowserContextBase(ABC):
         result.setdefault("seq", new_seq)
         return result
 
+    # ------------------------------------------------------------------
+    # Resume snapshot — backend-agnostic session state probe
+    # ------------------------------------------------------------------
+
+    async def resume_snapshot(self) -> dict[str, Any]:
+        """Return live session data used to update ``resume.json``.
+
+        Subclasses override to surface backend-specific state (active page
+        URL, open tab list, etc.) without forcing the daemon to introspect
+        private attributes. ``url`` and ``title`` represent the *active*
+        tab; ``tabs`` is the full per-backend tab inventory.
+
+        Returns a dict with keys: ``url``, ``title``, ``tabs``,
+        ``capture_active``, ``stealth_tier``. Missing keys default to
+        empty / ``False``.
+        """
+        return {
+            "url": "",
+            "title": "",
+            "tabs": [],
+            "capture_active": self._capture_store.recording,
+            "stealth_tier": self.stealth_tier.value,
+        }
+
     async def snapshot(
         self,
         *,

@@ -199,6 +199,27 @@ class RemoteBridgeContext(BrowserContextBase):
             return "", ""
         return str(result.get("url", "")), str(result.get("title", ""))
 
+    async def resume_snapshot(self) -> dict[str, Any]:
+        """Resume data sourced from the extension's tab inventory.
+
+        Falls back to empty fields if the extension is mid-reconnect — the
+        daemon should not crash because a single tab probe failed.
+        """
+        data = await super().resume_snapshot()
+        try:
+            url, title = await self._get_page_info()
+            data["url"] = url
+            data["title"] = title
+        except Exception:
+            logger.debug("resume_page_info_failed", exc_info=True)
+
+        try:
+            tabs = await self._tab_list_impl()
+            data["tabs"] = [{"tab_id": t.tab_id, "url": t.url} for t in tabs]
+        except Exception:
+            logger.debug("resume_tab_list_failed", exc_info=True)
+        return data
+
     # ------------------------------------------------------------------
     # Atomic: AX tree + DOM/content snapshots
     # ------------------------------------------------------------------

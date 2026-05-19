@@ -35,13 +35,8 @@ def create_app() -> FastAPI:
 
     # app.state default slots — dependency providers expect these to exist.
     # ``configure_app_state()`` overwrites the runtime-meaningful ones (config,
-    # batch_settle_timeout, idle_timeout) after the browser is up. Defaults
-    # here are only consumed if a test forgets to call configure_app_state(),
-    # so we pull them from the config snapshot to stay consistent with the
-    # rest of the daemon.
-    from agentcloak.core.config import load_config
-
-    _, _bootstrap_cfg = load_config()
+    # idle_timeout) after the browser is up. Defaults here are only consumed
+    # if a test forgets to call configure_app_state().
     app.state.browser_ctx = None
     app.state.remote_ctx = None
     app.state.bridge_ws = None
@@ -52,7 +47,6 @@ def create_app() -> FastAPI:
     app.state.config = None
     app.state.shutdown_event = asyncio.Event()
     app.state.last_request_time = 0.0
-    app.state.batch_settle_timeout = _bootstrap_cfg.batch_settle_timeout
     app.state.idle_timeout = 0.0
     app.state.prev_snapshot_lines = None
     # ContextManager-owned slots — populated by ``server.start()`` after
@@ -63,6 +57,11 @@ def create_app() -> FastAPI:
     app.state.local_tier = None
     app.state.local_profile = None
     app.state.active_tier = None
+    # BridgeService is instantiated by ``server.start()`` after the
+    # initial config is loaded; routes that depend on it (``BridgeServiceDep``)
+    # raise 503 if accessed before then. Defaulting to ``None`` here lets
+    # tests construct an app without going through the full startup path.
+    app.state.bridge_service = None
 
     install_middlewares(app)
     register_exception_handlers(app)
@@ -79,26 +78,16 @@ def configure_app_state(
     resume_writer: Any = None,
     bridge_token: str | None = None,
     config: Any = None,
-    batch_settle_timeout: int | None = None,
     idle_timeout: float = 0.0,
 ) -> None:
     """Attach runtime resources to an existing app.
 
     Called by `server.start()` after the browser is launched. Keeping this
     separate from `create_app()` makes the factory test-friendly.
-
-    ``batch_settle_timeout=None`` resolves to ``config.batch_settle_timeout``
-    so callers don't have to repeat the config lookup.
     """
     app.state.browser_ctx = browser_ctx
     app.state.local_proxy = local_proxy
     app.state.resume_writer = resume_writer
     app.state.bridge_token = bridge_token
     app.state.config = config
-    if batch_settle_timeout is None:
-        from agentcloak.core.config import load_config
-
-        _, cfg = load_config()
-        batch_settle_timeout = cfg.batch_settle_timeout
-    app.state.batch_settle_timeout = batch_settle_timeout
     app.state.idle_timeout = idle_timeout

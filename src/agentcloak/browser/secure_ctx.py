@@ -210,6 +210,13 @@ class SecureBrowserContext:
         return {"results": results, "completed": total, "total": total}
 
     # ------------------------------------------------------------------
+    # Resume snapshot — delegate to inner (no security wrapping needed)
+    # ------------------------------------------------------------------
+
+    async def resume_snapshot(self) -> dict[str, Any]:
+        return await self._inner.resume_snapshot()
+
+    # ------------------------------------------------------------------
     # Properties — forward explicitly so type checkers and explicit attribute
     # access work cleanly (``__getattr__`` only fires on miss).
     # ------------------------------------------------------------------

@@ -14,7 +14,6 @@ specifics — when something goes wrong they either raise
 
 from __future__ import annotations
 
-import secrets
 from typing import Any
 
 import orjson
@@ -24,23 +23,32 @@ from fastapi import (
     HTTPException,
     Request,
     WebSocket,
-    WebSocketDisconnect,
 )
 from fastapi.responses import PlainTextResponse, Response
 
-from agentcloak.browser.playwright_ctx import screenshot_to_base64
-from agentcloak.core.errors import BackendError, ProfileError
+# ``screenshot_to_base64`` lives on the base browser module — importing it
+# here keeps daemon code from depending on a specific backend
+# (``playwright_ctx``), which would bypass the layer-isolation rule that
+# ``daemon/`` only talks to the abstract :class:`BrowserContextBase`.
+from agentcloak.browser.base import screenshot_to_base64
+from agentcloak.core.errors import ProfileError
 
 # Annotated dependency aliases (BrowserCtxDep etc.) must be available at
 # runtime so FastAPI can resolve `Depends()` markers when registering routes —
 # placing them under TYPE_CHECKING would break the framework.
 from agentcloak.daemon.dependencies import (  # noqa: TC001
+    ActiveTierDep,
+    BridgeServiceDep,
     BrowserCtxDep,
     ConfigDep,
     ContextManagerDep,
+    LocalProxyDep,
     OptionalBrowserCtxDep,
     RemoteCtxDep,
     RequiredRemoteCtxDep,
+    ResumeWriterDep,
+    ShutdownEventDep,
+    SnapshotCacheDep,
 )
 
 # Pydantic Request *and* Response models must be runtime-resolvable so
@@ -188,44 +196,41 @@ def _profiles_dir():  # type: ignore[no-untyped-def]
 
 
 async def _update_resume(
-    request: Request,
+    writer: Any,
     ctx: Any,
     *,
     action_summary: dict[str, Any] | None = None,
 ) -> None:
-    """Mark resume snapshot dirty (non-blocking, background task flushes)."""
-    writer: Any = getattr(request.app.state, "resume_writer", None)
+    """Mark resume snapshot dirty (non-blocking, background task flushes).
+
+    ``writer`` is the :class:`ResumeWriter` injected via :class:`ResumeWriterDep`
+    by the calling route. ``ctx`` exposes the live session data through
+    :meth:`BrowserContextBase.resume_snapshot`, so this helper never has to
+    introspect backend internals.
+    """
     if writer is None:
         return
 
-    url = ""
-    title = ""
-    tabs: list[dict[str, Any]] = []
+    snap: dict[str, Any]
     try:
-        inner = getattr(ctx, "_inner", ctx)
-        page = getattr(inner, "_page", None)
-        if page is not None:
-            url = str(page.url)
-            try:
-                title = str(await page.title())
-            except Exception:
-                title = ""
-        tab_dict: dict[int, Any] = getattr(inner, "_tabs", {})
-        for tid, pg in tab_dict.items():
-            try:
-                tabs.append({"tab_id": tid, "url": str(pg.url)})
-            except Exception:
-                tabs.append({"tab_id": tid, "url": ""})
+        snap = await ctx.resume_snapshot()
     except Exception:
         logger.debug("resume_state_extraction_failed", exc_info=True)
+        snap = {
+            "url": "",
+            "title": "",
+            "tabs": [],
+            "capture_active": ctx.capture_store.recording,
+            "stealth_tier": ctx.stealth_tier.value,
+        }
 
     writer.mark_dirty(
-        url=url,
-        title=title,
-        tabs=tabs,
+        url=str(snap.get("url", "")),
+        title=str(snap.get("title", "")),
+        tabs=list(snap.get("tabs", []) or []),
         action_summary=action_summary,
-        capture_active=ctx.capture_store.recording,
-        stealth_tier=ctx.stealth_tier.value,
+        capture_active=bool(snap.get("capture_active", False)),
+        stealth_tier=str(snap.get("stealth_tier", "")),
     )
 
 
@@ -234,17 +239,18 @@ async def _update_resume(
 
 @router.get("/health", response_model=HealthResponse)
 async def handle_health(
-    ctx: OptionalBrowserCtxDep, request: Request
+    ctx: OptionalBrowserCtxDep,
+    request: Request,
+    local_proxy: LocalProxyDep,
+    active_tier: ActiveTierDep,
+    remote_ctx: RemoteCtxDep,
 ) -> Response | dict[str, Any]:
     diagnostic = DiagnosticService()
-    local_proxy = getattr(request.app.state, "local_proxy", None)
-    active_tier = getattr(request.app.state, "active_tier", None)
-    remote_connected = getattr(request.app.state, "remote_ctx", None) is not None
     data = await diagnostic.health(
         ctx,
         local_proxy=local_proxy,
         active_tier=active_tier,
-        remote_connected=remote_connected,
+        remote_connected=remote_ctx is not None,
     )
     if wants_text(request):
         return PlainTextResponse(render_health_text(data))
@@ -259,11 +265,12 @@ async def handle_navigate(
     body: NavigateRequest,
     ctx: BrowserCtxDep,
     config: ConfigDep,
+    resume_writer: ResumeWriterDep,
     request: Request,
 ) -> Response | dict[str, Any]:
     result = await ctx.navigate(body.url, timeout=body.timeout)
     await _update_resume(
-        request, ctx, action_summary={"kind": "navigate", "url": body.url}
+        resume_writer, ctx, action_summary={"kind": "navigate", "url": body.url}
     )
 
     if body.include_snapshot:
@@ -323,6 +330,7 @@ async def handle_snapshot(
     ctx: BrowserCtxDep,
     request: Request,
     config: ConfigDep,
+    snapshot_cache: SnapshotCacheDep,
     mode: str = "compact",
     max_nodes: int = -1,
     max_chars: int = 0,
@@ -346,7 +354,6 @@ async def handle_snapshot(
         effective_max_nodes = max_nodes
 
     service = SnapshotService()
-    prev_cache = getattr(request.app.state, "prev_snapshot_lines", None)
 
     data, cur_cache = await service.get(
         ctx,
@@ -358,11 +365,11 @@ async def handle_snapshot(
         include_selector_map=include_selector_map,
         frames=frames,
         diff=diff,
-        prev_cached_lines=prev_cache,
+        prev_cached_lines=snapshot_cache.prev_lines,
     )
 
     if cur_cache is not None:
-        request.app.state.prev_snapshot_lines = cur_cache
+        snapshot_cache.prev_lines = cur_cache
 
     # Surface seq for the text renderer header line ("seq=N"). The JSON
     # envelope already carries it in the wrapper.
@@ -426,6 +433,7 @@ async def handle_action(
     body: ActionRequest,
     ctx: BrowserCtxDep,
     config: ConfigDep,
+    resume_writer: ResumeWriterDep,
     request: Request,
 ) -> Response | dict[str, Any]:
     target = str(body.index) if body.index is not None else body.target
@@ -449,7 +457,7 @@ async def handle_action(
         summary["direction"] = extra.get("direction", "down")
     elif body.kind == "select":
         summary["value"] = extra.get("value", "")
-    await _update_resume(request, ctx, action_summary=summary)
+    await _update_resume(resume_writer, ctx, action_summary=summary)
 
     if body.include_snapshot:
         # When the action caused a navigation, the page is still loading at
@@ -495,11 +503,12 @@ async def handle_action_batch(
     config: ConfigDep,
     request: Request,
 ) -> Response | dict[str, Any]:
-    settle_timeout = body.settle_timeout
-    if not settle_timeout:
-        settle_timeout = getattr(
-            request.app.state, "batch_settle_timeout", config.batch_settle_timeout
-        )
+    # ``batch_settle_timeout`` is just a config knob — the in-process override
+    # used to live on ``app.state.batch_settle_timeout`` (set by
+    # ``configure_app_state``) so tests could tweak it without re-loading the
+    # whole config. Since the override always lands in ``config`` already, read
+    # directly from there and skip the parallel ``app.state`` slot.
+    settle_timeout = body.settle_timeout or config.batch_settle_timeout
 
     service = ActionService()
     result = await service.execute_batch(
@@ -539,8 +548,9 @@ async def handle_fetch(
 
 
 @router.post("/shutdown", response_model=OkEnvelope[ShutdownResponse])
-async def handle_shutdown(request: Request) -> Response | dict[str, Any]:
-    event = getattr(request.app.state, "shutdown_event", None)
+async def handle_shutdown(
+    request: Request, event: ShutdownEventDep
+) -> Response | dict[str, Any]:
     if event is not None:
         event.set()
     if wants_text(request):
@@ -585,228 +595,37 @@ async def handle_launch(
     return _ok(result, seq=0)
 
 
-# --- Bridge auth + WebSocket endpoints --------------------------------------
-
-
-def _check_bridge_token(websocket: WebSocket) -> bool:
-    """Verify bridge auth token. Localhost connections skip auth."""
-    client = websocket.client
-    if client and client.host in ("127.0.0.1", "::1", "localhost"):
-        return True
-
-    expected = getattr(websocket.app.state, "bridge_token", None)
-    if not expected:
-        return True
-
-    auth = websocket.headers.get("Authorization", "")
-    return secrets.compare_digest(auth, f"Bearer {expected}")
-
-
-class _BridgeWSAdapter:
-    """Adapter exposing FastAPI's :class:`WebSocket` under the narrow interface
-    consumed by :class:`agentcloak.browser.remote_ctx.RemoteBridgeContext`.
-
-    The browser layer only needs ``closed`` / ``send_str`` / ``close`` /
-    ``receive_text`` to operate, so we expose just those. Keeping this shim
-    isolates the browser code from any specific HTTP/WS framework — if the
-    daemon transport ever changes we only have to provide a new adapter, not
-    rewrite the remote backend. The contract is documented as the
-    ``_BridgeWS`` Protocol in ``browser/remote_ctx.py``.
-    """
-
-    def __init__(self, ws: WebSocket) -> None:
-        self._ws = ws
-        self._closed = False
-
-    @property
-    def closed(self) -> bool:
-        return self._closed
-
-    async def send_str(self, data: str) -> None:
-        await self._ws.send_text(data)
-
-    async def close(self) -> None:
-        if not self._closed:
-            self._closed = True
-            await self._ws.close()
-
-    async def receive_text(self) -> str:
-        return await self._ws.receive_text()
-
-    def mark_closed(self) -> None:
-        self._closed = True
-
-
-def _existing_remote_alive(app_state: Any) -> bool:
-    """Return True if a remote_ctx is set and its underlying WS is still open."""
-    existing = getattr(app_state, "remote_ctx", None)
-    if existing is None:
-        return False
-    ws = getattr(existing, "_ws", None)
-    if ws is None:
-        return False
-    # _BridgeWSAdapter exposes `closed`; treat unknown shape as alive to be safe.
-    closed = getattr(ws, "closed", False)
-    return not bool(closed)
-
-
-def _cleanup_dead_remote(app_state: Any) -> None:
-    """Drop a stale remote_ctx and its adapter handles before accepting a new one."""
-    manager = getattr(app_state, "context_manager", None)
-    if manager is not None:
-        manager.on_extension_disconnected()
-    else:
-        app_state.remote_ctx = None
-    app_state.bridge_ws = None
-    app_state.ext_ws = None
-
-
-def _notify_extension_connected(app_state: Any, remote_ctx: Any) -> None:
-    """Inform the context manager (or fall back to direct state mutation)."""
-    manager = getattr(app_state, "context_manager", None)
-    if manager is not None:
-        manager.on_extension_connected(remote_ctx)
-    else:
-        app_state.remote_ctx = remote_ctx
-
-
-def _notify_extension_disconnected(app_state: Any) -> None:
-    manager = getattr(app_state, "context_manager", None)
-    if manager is not None:
-        manager.on_extension_disconnected()
-    else:
-        app_state.remote_ctx = None
-
-
-def _fail_pending_remote(remote_ctx: Any, reason: str) -> None:
-    """Resolve every outstanding bridge future with a structured disconnect error.
-
-    Without this, callers (CLI/MCP) wait the full 60s ``bridge_timeout`` after
-    the extension drops the WebSocket. By failing futures eagerly we surface
-    the disconnect on the next response cycle.
-    """
-    pending = getattr(remote_ctx, "_pending", None)
-    if not pending:
-        return
-    err = BackendError(
-        error="extension_disconnected",
-        hint=f"Extension WebSocket closed: {reason}",
-        action="reconnect the Chrome extension, then retry the command",
-    )
-    for fut in list(pending.values()):
-        if not fut.done():
-            fut.set_exception(err)
-    pending.clear()
+# --- Bridge WebSocket endpoints (delegated to BridgeService) ---------------
 
 
 @router.websocket("/bridge/ws")
 async def handle_bridge_ws(websocket: WebSocket) -> None:
-    """WebSocket endpoint for bridge connection."""
-    if not _check_bridge_token(websocket):
-        await websocket.close(code=1008, reason="invalid bridge token")
+    """WebSocket endpoint for legacy bridge connections.
+
+    Looks up :class:`BridgeService` on ``app.state`` (rather than via
+    Depends, which doesn't apply to ``websocket`` routes) and hands the
+    full lifecycle off in one call. Connection-mutex, token verification,
+    message pumping, and disconnect cleanup all live in the service.
+    """
+    bridge = getattr(websocket.app.state, "bridge_service", None)
+    if bridge is None:
+        await websocket.close(code=1011, reason="bridge service not ready")
         return
-
-    # Mutex: only one remote_ctx may be active. Reject when an alive one exists.
-    if _existing_remote_alive(websocket.app.state):
-        await websocket.close(code=4002, reason="remote_ctx_in_use")
-        logger.warning("bridge_ws_rejected", reason="remote_ctx_in_use")
-        return
-
-    _cleanup_dead_remote(websocket.app.state)
-
-    from agentcloak.browser.remote_ctx import RemoteBridgeContext
-
-    await websocket.accept()
-    adapter = _BridgeWSAdapter(websocket)
-    remote_ctx = RemoteBridgeContext(bridge_ws=adapter)  # type: ignore[arg-type]
-    websocket.app.state.bridge_ws = adapter
-    _notify_extension_connected(websocket.app.state, remote_ctx)
-
-    try:
-        while True:
-            data = await websocket.receive_text()
-            remote_ctx.feed_message(data)
-    except WebSocketDisconnect:
-        pass
-    finally:
-        adapter.mark_closed()
-        _fail_pending_remote(remote_ctx, "bridge websocket closed")
-        websocket.app.state.bridge_ws = None
-        _notify_extension_disconnected(websocket.app.state)
+    await bridge.handle_bridge_connection(websocket)
 
 
 @router.websocket("/ext")
 async def handle_ext_ws(websocket: WebSocket) -> None:
-    """Direct WebSocket endpoint for Chrome Extension.
+    """Direct WebSocket endpoint for the Chrome Extension.
 
-    Browser WebSocket API cannot set custom headers, so token auth
-    happens at the message level: accept first, then verify the token
-    in the hello message from the extension.
+    See :class:`BridgeService.handle_ext_connection` for the protocol
+    details — this handler is just the transport adapter.
     """
-    from agentcloak.browser.remote_ctx import RemoteBridgeContext
-
-    client = websocket.client
-    is_local = client is not None and client.host in ("127.0.0.1", "::1", "localhost")
-
-    await websocket.accept()
-
-    # Wait for hello message and verify token (unless localhost).
-    try:
-        first_msg = await websocket.receive_text()
-    except WebSocketDisconnect:
+    bridge = getattr(websocket.app.state, "bridge_service", None)
+    if bridge is None:
+        await websocket.close(code=1011, reason="bridge service not ready")
         return
-
-    try:
-        hello = orjson.loads(first_msg)
-    except Exception:
-        await websocket.close(code=1008, reason="invalid hello message")
-        return
-
-    if not is_local:
-        expected = getattr(websocket.app.state, "bridge_token", None)
-        if expected:
-            ext_token = hello.get("token") or ""
-            # Constant-time comparison to avoid leaking token info via timing.
-            if not secrets.compare_digest(str(ext_token), str(expected)):
-                logger.warning(
-                    "ext_ws_auth_failed",
-                    remote=client.host if client else None,
-                )
-                await websocket.close(code=4001, reason="invalid bridge token")
-                return
-
-    # /ext is exclusively used by the Chrome Extension. MV3 service workers
-    # restart frequently — new connection always replaces old (no reject).
-    if _existing_remote_alive(websocket.app.state):
-        logger.info("ext_ws_replacing", remote=client.host if client else None)
-        old_ws = getattr(websocket.app.state, "ext_ws", None)
-        if old_ws and not getattr(old_ws, "closed", True):
-            old_ws.mark_closed()
-
-    _cleanup_dead_remote(websocket.app.state)
-
-    adapter = _BridgeWSAdapter(websocket)
-    remote_ctx = RemoteBridgeContext(bridge_ws=adapter)  # type: ignore[arg-type]
-    websocket.app.state.ext_ws = adapter
-    _notify_extension_connected(websocket.app.state, remote_ctx)
-
-    logger.info("ext_ws_connected", remote=client.host if client else None)
-
-    # Feed the hello message to remote_ctx in case it carries useful data.
-    remote_ctx.feed_message(first_msg)
-
-    try:
-        while True:
-            data = await websocket.receive_text()
-            remote_ctx.feed_message(data)
-    except WebSocketDisconnect:
-        pass
-    finally:
-        adapter.mark_closed()
-        _fail_pending_remote(remote_ctx, "extension websocket closed")
-        websocket.app.state.ext_ws = None
-        _notify_extension_disconnected(websocket.app.state)
-        logger.info("ext_ws_disconnected")
+    await bridge.handle_ext_connection(websocket)
 
 
 # --- Bridge UX --------------------------------------------------------------
@@ -852,21 +671,23 @@ async def handle_bridge_finalize(
     "/bridge/token/reset",
     response_model=OkEnvelope[BridgeTokenResetResponse],
 )
-async def handle_bridge_token_reset(request: Request) -> Response | dict[str, Any]:
+async def handle_bridge_token_reset(
+    request: Request, bridge: BridgeServiceDep
+) -> Response | dict[str, Any]:
     """Rotate the persistent bridge auth token and hot-update the daemon.
 
     Persists the new token to ``~/.agentcloak/config.toml`` *and* replaces
-    ``app.state.bridge_token`` so the previous value becomes invalid
-    immediately — already-paired extensions will be rejected on their next
-    reconnect (close code 4001). CLI ``agentcloak bridge token --reset``
-    delegates here when a daemon is running so users don't need to restart
-    just to rotate the credential.
+    the active bridge token via :meth:`BridgeService.set_token` so the
+    previous value becomes invalid immediately — already-paired
+    extensions are rejected on their next reconnect (close code 4001).
+    CLI ``agentcloak bridge token --reset`` delegates here when a daemon
+    is running so users don't need to restart just to rotate the credential.
     """
     from agentcloak.core.config import load_config, regenerate_bridge_token
 
     paths, cfg = load_config()
     new_token = regenerate_bridge_token(paths, cfg)
-    request.app.state.bridge_token = new_token
+    bridge.set_token(new_token)
     logger.info("bridge_token_rotated", token_suffix=new_token[-4:])
     if wants_text(request):
         return PlainTextResponse(new_token)
@@ -1117,14 +938,19 @@ async def handle_tab_list(
 
 @router.post("/tab/new", response_model=OkEnvelope[TabOpResponse])
 async def handle_tab_new(
-    body: TabNewRequest, ctx: BrowserCtxDep, request: Request
+    body: TabNewRequest,
+    ctx: BrowserCtxDep,
+    resume_writer: ResumeWriterDep,
+    request: Request,
 ) -> Response | dict[str, Any]:
     result = await ctx.tab_new(body.url)
     # Tab CRUD changes the tab inventory — without this the persisted
     # resume snapshot (last touched by navigate/action) keeps reporting
     # the pre-mutation tab list.
     await _update_resume(
-        request, ctx, action_summary={"kind": "tab_new", "url": body.url or ""}
+        resume_writer,
+        ctx,
+        action_summary={"kind": "tab_new", "url": body.url or ""},
     )
     if wants_text(request):
         return PlainTextResponse(render_tab_op_text("new", result))
@@ -1133,11 +959,14 @@ async def handle_tab_new(
 
 @router.post("/tab/close", response_model=OkEnvelope[TabOpResponse])
 async def handle_tab_close(
-    body: TabCloseRequest, ctx: BrowserCtxDep, request: Request
+    body: TabCloseRequest,
+    ctx: BrowserCtxDep,
+    resume_writer: ResumeWriterDep,
+    request: Request,
 ) -> Response | dict[str, Any]:
     result = await ctx.tab_close(body.tab_id)
     await _update_resume(
-        request,
+        resume_writer,
         ctx,
         action_summary={"kind": "tab_close", "tab_id": body.tab_id},
     )
@@ -1151,11 +980,14 @@ async def handle_tab_close(
 
 @router.post("/tab/switch", response_model=OkEnvelope[TabOpResponse])
 async def handle_tab_switch(
-    body: TabSwitchRequest, ctx: BrowserCtxDep, request: Request
+    body: TabSwitchRequest,
+    ctx: BrowserCtxDep,
+    resume_writer: ResumeWriterDep,
+    request: Request,
 ) -> Response | dict[str, Any]:
     result = await ctx.tab_switch(body.tab_id)
     await _update_resume(
-        request,
+        resume_writer,
         ctx,
         action_summary={"kind": "tab_switch", "tab_id": body.tab_id},
     )
@@ -1170,10 +1002,11 @@ async def handle_tab_switch(
 
 @router.get("/resume", response_model=OkEnvelope[ResumeResponse])
 async def handle_resume(
-    ctx: BrowserCtxDep, request: Request
+    ctx: BrowserCtxDep,
+    resume_writer: ResumeWriterDep,
+    request: Request,
 ) -> Response | dict[str, Any]:
-    writer = getattr(request.app.state, "resume_writer", None)
-    if writer is None:
+    if resume_writer is None:
         raise HTTPException(
             status_code=503,
             detail={
@@ -1188,7 +1021,7 @@ async def handle_resume(
     # ``stealth_tier`` need to be re-read from the live context, otherwise
     # ``resume`` returns stale values when the agent toggled capture between
     # actions (dogfood F2).
-    data = writer.current_snapshot.to_dict()
+    data = resume_writer.current_snapshot.to_dict()
     data["capture_active"] = ctx.capture_store.recording
     data["stealth_tier"] = ctx.stealth_tier.value
     if wants_text(request):

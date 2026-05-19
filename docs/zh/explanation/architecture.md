@@ -46,7 +46,7 @@ graph TD
 
 **CLI**（`src/agentcloak/cli/`）：基于 [typer](https://github.com/fastapi/typer) 构建。每个命令通过共享的 `httpx` 客户端 `DaemonClient` 向 daemon 发送 HTTP 请求，以文本优先的方式输出到 stdout（`--json` 可切回 JSON envelope）。CLI 不接触 browser 内部实现。
 
-**MCP Server**（`src/agentcloak/mcp/`）：基于 [FastMCP](https://github.com/modelcontextprotocol/python-sdk) 构建。作为 stdio MCP server 运行，暴露 23 个映射到 daemon HTTP 端点的工具。MCP server 在首次请求时自动启动 daemon，复用同一个 `DaemonClient`（异步模式，CLI 是同步模式）。
+**MCP Server**（`src/agentcloak/mcp/`）：基于 [FastMCP](https://github.com/modelcontextprotocol/python-sdk) 构建。作为 stdio MCP server 运行，暴露 23 个映射到 daemon HTTP 端点的工具。MCP server 在首次请求时自动启动 daemon，复用同一个 `DaemonClient`（异步模式，CLI 是同步模式）。Tool 响应通过 `core/text_renderers` 渲染 —— 和 CLI 用的是同一份渲染器 —— 所以 MCP 返回 agent 友好的文本而非 JSON 字符串。`agentcloak_screenshot` 返回 MCP `ImageContent`，多模态 LLM 直接读像素。
 
 两种表面共享同一个 daemon 后端。新增一项能力只需添加一个 daemon 路由 —— CLI/MCP 适配层和 Skill 的 `commands-reference.md` 都从 daemon 在 `/openapi.json` 暴露的 OpenAPI 规范自动生成或校验。
 
@@ -66,6 +66,8 @@ daemon（`src/agentcloak/daemon/`）是一个由 uvicorn 服务的 FastAPI 应�
 **生命周期：** daemon 在首次 CLI 或 MCP 命令时自动启动。默认运行在 `127.0.0.1:18765`，持续运行直到被显式停止或空闲超时触发。OpenAPI 规范暴露在 `/openapi.json`，Swagger UI 在 `/docs`。
 
 **Service 层**：业务逻辑（stale-ref 重试、snapshot diff、profile CRUD、capture 导出、doctor 检查）住在 `daemon/services/`。Route handler 退化为薄壳，只做三件事：解析 Pydantic 请求体、调 service 方法、把返回值包成 `OkEnvelope`。
+
+**Wire 格式**：daemon 只说 JSON。Pydantic model 拆分在 `daemon/models/`（一个 surface group 一个文件 —— `browser.py`、`interaction.py`、`capture.py` 等），route handler 拆分在 `daemon/routes/`（相同划分）。CLI 文本模式和 MCP 都在本地从 JSON 信封通过共享的 `core/text_renderers` 模块渲染，所以同一份 daemon 响应在两个表面上的文本输出字节相同。错误两个表面都保持三字段信封（`{"error", "hint", "action"}`）。
 
 ### 浏览器后端
 

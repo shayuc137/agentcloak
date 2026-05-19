@@ -4,6 +4,18 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 23 个工具。已包含在�
 
 配置说明参见 [MCP 配置指南](../guides/mcp-setup.md)。
 
+## 响应格式
+
+工具返回的文本与 CLI 打印的内容一致：daemon 只输出 JSON 信封，CLI 和 MCP 共用
+`core/text_renderers` 在本地渲染，所以同一份 daemon payload 在 MCP 这边输出的
+文本与 `cloak <command>` 字节级相同。错误仍然走三字段 JSON 信封
+（`{"error", "hint", "action"}`）—— 这是 MCP 客户端解析失败时已经使用的 schema，
+和 CLI `--json` 契约保持一致。
+
+`agentcloak_screenshot` 是唯一例外：返回 MCP `ImageContent`，让多模态 LLM 直接读
+像素，省掉 base64 来回转换的开销；再附带一条短 `TextContent` 携带 size/format 元
+数据。
+
 ## 导航
 
 ### agentcloak_navigate
@@ -33,13 +45,13 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 23 个工具。已包含在�
 
 ### agentcloak_screenshot
 
-截取当前页面的屏幕截图。
+截取当前页面的屏幕截图。返回 `ImageContent`（图像字节）加一条带 size/format 元数据的 `TextContent` —— 多模态 LLM 直接读像素，agent 端无需 base64 来回转换。
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|-------|------|
 | `full_page` | `bool` | `false` | 捕获完整可滚动页面 |
 | `format` | `str` | `jpeg` | `jpeg` 或 `png` |
-| `quality` | `int` | `80` | JPEG 质量 0-100 |
+| `quality` | `int` | `config.mcp_screenshot_quality` | JPEG 质量 0-100（默认比 CLI 小，匹配 MCP token 预算） |
 
 ## 交互
 

@@ -46,7 +46,7 @@ The surface layer is how agents and users interact with agentcloak. Both surface
 
 **CLI** (`src/agentcloak/cli/`): Built with [typer](https://github.com/fastapi/typer). Every command sends an HTTP request to the daemon (via the shared `httpx`-based `DaemonClient`) and prints a text-first answer to stdout (JSON envelope available via `--json`). The CLI never touches browser internals.
 
-**MCP Server** (`src/agentcloak/mcp/`): Built with [FastMCP](https://github.com/modelcontextprotocol/python-sdk). Runs as a stdio MCP server, exposing 23 tools that map to daemon HTTP endpoints. The MCP server auto-starts the daemon on the first request, sharing the same `DaemonClient` (async mode) as the CLI uses in sync mode.
+**MCP Server** (`src/agentcloak/mcp/`): Built with [FastMCP](https://github.com/modelcontextprotocol/python-sdk). Runs as a stdio MCP server, exposing 23 tools that map to daemon HTTP endpoints. The MCP server auto-starts the daemon on the first request, sharing the same `DaemonClient` (async mode) as the CLI uses in sync mode. Tool responses are rendered through `core/text_renderers` — the same renderer the CLI uses — so MCP returns agent-readable text instead of JSON strings. `agentcloak_screenshot` returns an MCP `ImageContent` so multimodal LLMs read the pixels directly.
 
 Both surfaces share the same daemon backend. Adding a new capability means adding one daemon route — the CLI/MCP adapters and the Skill `commands-reference.md` are generated or verified from the OpenAPI spec the daemon publishes at `/openapi.json`.
 
@@ -66,6 +66,8 @@ The daemon (`src/agentcloak/daemon/`) is a long-running FastAPI application serv
 **Lifecycle:** The daemon auto-starts on the first CLI or MCP command. It runs on `127.0.0.1:18765` by default and stays alive until explicitly stopped or idle-timeout triggers. OpenAPI spec is served at `/openapi.json`; Swagger UI at `/docs`.
 
 **Service layer**: Business logic (stale-ref retry, snapshot diff, profile CRUD, capture export, doctor checks) lives in `daemon/services/`. Route handlers are thin HTTP shells that parse the Pydantic request body, call a service method, and wrap the return value in the `OkEnvelope` shape.
+
+**Wire format**: The daemon only speaks JSON. Pydantic models live in `daemon/models/` (one file per surface group — `browser.py`, `interaction.py`, `capture.py`, …) and route handlers live in `daemon/routes/` (same split). CLI text mode and MCP both render locally from the JSON envelope using the shared `core/text_renderers` module, so for any given daemon response both surfaces emit byte-identical text. Errors keep the three-field envelope (`{"error", "hint", "action"}`) for both surfaces.
 
 ### Browser backends
 

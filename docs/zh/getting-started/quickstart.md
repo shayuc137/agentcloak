@@ -213,7 +213,7 @@ Error: Element [99] not in selector_map (1 entries)
   -> run 'snapshot' to refresh the selector_map, or re-snapshot if the page changed
 ```
 
-需要旧的 JSON envelope（脚本或 MCP 风格消费方）？加 `--json`，或设 `AGENTCLOAK_OUTPUT=json`：
+需要旧的 JSON envelope（`jq` 流水线或其他结构化消费方）？加 `--json`，或设 `AGENTCLOAK_OUTPUT=json`：
 
 ```bash
 cloak --json snapshot | jq -r '.data.tree_text'

@@ -175,7 +175,7 @@ JSON envelope shape (only when `--json` is active):
 {"ok": false, "error": "element_not_found", "hint": "...", "action": "..."}
 ```
 
-**MCP tools** always return JSON — they strip the envelope to the inner `data` payload and prune `null` fields to save tokens.
+**MCP tools** return the same human/agent-readable text the CLI prints (rendered locally via `core/text_renderers`). `screenshot` returns an `ImageContent` so multimodal LLMs read pixels directly; errors stay as the three-field JSON envelope so failure handling matches the CLI `--json` contract.
 
 ## Smart Behaviors
 

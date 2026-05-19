@@ -4,6 +4,19 @@ agentcloak's MCP server exposes 23 tools via stdio transport. It is included in 
 
 For setup instructions, see the [MCP setup guide](../guides/mcp-setup.md).
 
+## Response shape
+
+Tools return the same human/agent-readable text the CLI prints. The daemon only
+emits JSON envelopes; both surfaces share `core/text_renderers` and render
+locally, so for any given daemon payload the MCP text output is byte-identical
+to `cloak <command>`. Errors stay as the three-field JSON envelope
+(`{"error", "hint", "action"}`) — that's the schema MCP clients already parse
+for failure handling, so the contract matches the CLI `--json` shape.
+
+`agentcloak_screenshot` is the exception: it returns an MCP `ImageContent` so a
+multimodal LLM reads the bytes directly without a base64 round-trip, plus a
+short `TextContent` carrying size/format metadata.
+
 ## Navigation
 
 ### agentcloak_navigate
@@ -33,13 +46,13 @@ Get page content as an accessibility tree with `[N]` element references.
 
 ### agentcloak_screenshot
 
-Take a screenshot of the current page.
+Take a screenshot of the current page. Returns an `ImageContent` (the image bytes) plus a short `TextContent` with size/format metadata — multimodal LLMs read the pixels directly without a base64 round-trip on the agent side.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `full_page` | `bool` | `false` | Capture full scrollable page |
 | `format` | `str` | `jpeg` | `jpeg` or `png` |
-| `quality` | `int` | `80` | JPEG quality 0-100 |
+| `quality` | `int` | `config.mcp_screenshot_quality` | JPEG quality 0-100 (defaults lower than the CLI to fit MCP token budgets) |
 
 ## Interaction
 

@@ -213,7 +213,7 @@ Error: Element [99] not in selector_map (1 entries)
   -> run 'snapshot' to refresh the selector_map, or re-snapshot if the page changed
 ```
 
-Need the legacy JSON envelope (for scripts or MCP-style consumers)? Pass `--json`, or set `AGENTCLOAK_OUTPUT=json`:
+Need the legacy JSON envelope (for `jq` pipelines or other structured consumers)? Pass `--json`, or set `AGENTCLOAK_OUTPUT=json`:
 
 ```bash
 cloak --json snapshot | jq -r '.data.tree_text'

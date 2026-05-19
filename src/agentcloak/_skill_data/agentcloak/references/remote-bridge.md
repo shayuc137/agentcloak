@@ -81,7 +81,7 @@ cloak navigate "https://target-site.com"
 
 # 2. Get CDP endpoint
 cloak cdp endpoint
-# returns: {"ws_endpoint": "ws://127.0.0.1:18765/devtools/browser/..."}
+# prints: ws://127.0.0.1:18765/devtools/browser/...   (raw URL, pipe-friendly)
 
 # 3. In jshookmcp: browser_attach(wsEndpoint)
 # Now: navigation/interaction via agentcloak, JS analysis via jshookmcp

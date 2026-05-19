@@ -1,12 +1,17 @@
 """Shared snapshot builder — builds accessible/compact snapshots from CDP AX tree nodes.
 
 Both PlaywrightContext and RemoteBridgeContext call build_snapshot() with raw CDP nodes.
+
+Architecture: three-phase pipeline.
+  Phase 1 — Build Tree: _visit() constructs a SnapshotNode tree from raw CDP nodes.
+  Phase 2 — Dedup Passes: tree mutations that eliminate redundant content.
+  Phase 3 — Flatten + Render: DFS produces cached_lines, then text output.
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from agentcloak.browser.state import (
@@ -23,6 +28,7 @@ from agentcloak.browser.state import (
 __all__ = [
     "DiffCounts",
     "FrameData",
+    "SnapshotNode",
     "SnapshotResult",
     "build_snapshot",
     "count_diff",
@@ -31,13 +37,6 @@ __all__ = [
     "truncate_diff_lines",
 ]
 
-# Token-budget hint: tree rendering uses 1 space per depth level rather than
-# 2. Combined with compact-mode pruning this drops the byte share spent on
-# leading whitespace from ~13% to ~7% on dense pages (HN front page), which
-# directly translates into fewer tokens for the consuming agent. The same
-# constant feeds ``render_diff_tree`` so accessible / compact / diff renderings
-# stay structurally aligned — divergent indent rules would make the diff view
-# look misnested next to a plain snapshot.
 _INDENT_STEP = " "
 
 _SKIP_ROLES = frozenset({"none", "InlineTextBox", "LineBreak"})
@@ -67,19 +66,12 @@ _VALUE_PROPS = frozenset(
         "level",
         "haspopup",
         "autocomplete",
-        # link href — CDP exposes it as the "url" AX property on link nodes.
-        # Surfacing it lets agents resolve targets without an extra evaluate().
         "url",
     }
 )
 
 _FALSE_MEANINGFUL = frozenset({"expanded"})
 
-# CDP AX props with type=tristate carry string values ("true"/"false"/"mixed")
-# rather than Python booleans. aria-checked + aria-pressed are spec'd as tristate
-# so an indeterminate checkbox or three-state toggle uses "mixed". A naive
-# `val is True` check silently drops every tristate property — including the
-# common case of a freshly-clicked radio button — so we normalise here.
 _TRISTATE_PROPS = frozenset({"checked", "pressed"})
 
 
@@ -94,6 +86,21 @@ class FrameData:
 
 
 @dataclass
+class SnapshotNode:
+    """Intermediate tree node for the three-phase pipeline."""
+
+    role: str
+    name: str
+    ref: int | None = None
+    attrs: dict[str, str] = field(default_factory=lambda: {})
+    children: list[SnapshotNode] = field(default_factory=lambda: [])
+    backend_dom_id: int | None = None
+    is_interactive: bool = False
+    is_context: bool = False
+    pruned: bool = False
+
+
+@dataclass
 class SnapshotResult:
     snapshot: PageSnapshot
     selector_map: dict[int, ElementRef]
@@ -103,13 +110,7 @@ class SnapshotResult:
 
 @dataclass
 class DiffCounts:
-    """Counts of added/changed/removed lines from a :func:`diff_snapshots` call.
-
-    The header renderer surfaces this as ``| diff: +A ~C -R`` so agents see at
-    a glance how much changed without having to scan the tree. Zero counts
-    across the board signal "no changes" so the header can collapse to
-    ``| (no changes)``.
-    """
+    """Counts of added/changed/removed lines from a :func:`diff_snapshots` call."""
 
     added: int = 0
     changed: int = 0
@@ -118,6 +119,11 @@ class DiffCounts:
     @property
     def is_empty(self) -> bool:
         return self.added == 0 and self.changed == 0 and self.removed == 0
+
+
+# ---------------------------------------------------------------------------
+# Helper functions (unchanged)
+# ---------------------------------------------------------------------------
 
 
 def _clean_text(text: str) -> str:
@@ -144,11 +150,6 @@ def _extract_props(node: dict[str, Any]) -> dict[str, str]:
             is_password = True
 
         if pname in _BOOL_PROPS:
-            # tristate props (checked, pressed) arrive as strings per the
-            # CDP/W3C spec ("true"/"false"/"mixed"), while boolean props
-            # arrive as real Python bools. Accept either shape so older
-            # tooling or mocks that pass True/False through tristate fields
-            # still produce the same surface output.
             if pname in _TRISTATE_PROPS:
                 normalised = val
                 if isinstance(val, bool):
@@ -157,7 +158,6 @@ def _extract_props(node: dict[str, Any]) -> dict[str, str]:
                     attrs[pname] = ""
                 elif normalised == "mixed":
                     attrs[pname] = "mixed"
-                # "false" / anything else → drop (clean default).
             else:
                 if val is True:
                     attrs[pname] = ""
@@ -212,7 +212,6 @@ def _format_attrs(attrs: dict[str, str]) -> str:
     ):
         if key in attrs:
             parts.append(f"{key}={attrs[key]}")
-    # Link href — emit last and quoted so the URL stays readable.
     if "url" in attrs:
         parts.append(f'href="{attrs["url"]}"')
     return " ".join(parts)
@@ -226,9 +225,8 @@ def _should_fold(node: dict[str, Any], role: str, name: str) -> bool:
     return False
 
 
-def _is_static_text_like(node: dict[str, Any]) -> bool:
-    role = node.get("role", {}).get("value", "")
-    return role == "StaticText"
+def _norm(text: str) -> str:
+    return " ".join(text.split()).lower()
 
 
 def _extract_focus_subtree(
@@ -266,6 +264,338 @@ def _extract_focus_subtree(
     return [lines[i] for i in result_indices]
 
 
+# ---------------------------------------------------------------------------
+# Phase 1: Build Tree
+# ---------------------------------------------------------------------------
+
+
+def _build_tree(
+    node_by_id: dict[str, dict[str, Any]],
+    root_ids: list[str],
+    *,
+    selector_map: dict[int, ElementRef],
+    backend_node_map: dict[int, int],
+    counter: list[int],
+) -> SnapshotNode:
+    def visit(node_id: str) -> list[SnapshotNode]:
+        node = node_by_id.get(node_id)
+        if node is None:
+            return []
+
+        ignored = node.get("ignored", False)
+        role = node.get("role", {}).get("value", "")
+        name = _clean_text(node.get("name", {}).get("value", ""))
+        child_ids: list[str] = node.get("childIds", [])
+
+        if role in _SKIP_ROLES or ignored or _should_fold(node, role, name):
+            promoted: list[SnapshotNode] = []
+            for cid in child_ids:
+                promoted.extend(visit(cid))
+            return promoted
+
+        role_lower = role.lower()
+        is_interactive = role_lower in _INTERACTIVE_ROLES
+        is_context = role_lower in _CONTEXT_ROLES
+
+        sn = SnapshotNode(
+            role=role,
+            name=name,
+            is_interactive=is_interactive,
+            is_context=is_context,
+        )
+
+        if is_interactive:
+            ref = counter[0]
+            attrs = _extract_props(node)
+            selector_map[ref] = ElementRef(
+                index=ref,
+                tag=role,
+                role=role,
+                text=name,
+                attributes=attrs,
+                depth=0,
+                description=attrs.get("description", ""),
+            )
+            bdid = node.get("backendDOMNodeId")
+            if bdid is not None:
+                backend_node_map[ref] = int(bdid)
+            sn.ref = ref
+            sn.attrs = attrs
+            counter[0] += 1
+        elif is_context or (name and role):
+            sn.attrs = _extract_props(node)
+
+        for cid in child_ids:
+            sn.children.extend(visit(cid))
+
+        return [sn]
+
+    children: list[SnapshotNode] = []
+    for rid in root_ids:
+        children.extend(visit(rid))
+    return SnapshotNode(role="root", name="", children=children)
+
+
+def _index_and_find_roots(
+    raw_nodes: list[dict[str, Any]],
+) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    node_by_id: dict[str, dict[str, Any]] = {}
+    for raw in raw_nodes:
+        nid = raw.get("nodeId", "")
+        if nid:
+            node_by_id[nid] = raw
+    all_child_ids: set[str] = set()
+    for raw in raw_nodes:
+        for cid in raw.get("childIds", []):
+            all_child_ids.add(cid)
+    root_ids: list[str] = []
+    for raw in raw_nodes:
+        nid = raw.get("nodeId", "")
+        if nid and nid not in all_child_ids:
+            root_ids.append(nid)
+    if not root_ids and raw_nodes:
+        root_ids = [raw_nodes[0].get("nodeId", "")]
+    return node_by_id, root_ids
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: Dedup Passes
+# ---------------------------------------------------------------------------
+
+
+def _pass_merge_static_text(node: SnapshotNode) -> None:
+    """Merge consecutive StaticText children into the first one."""
+    for child in node.children:
+        _pass_merge_static_text(child)
+
+    i = 0
+    while i < len(node.children):
+        child = node.children[i]
+        if child.role == "StaticText" and child.name and not child.pruned:
+            texts = [child.name]
+            j = i + 1
+            while j < len(node.children):
+                nxt = node.children[j]
+                if nxt.role == "StaticText" and nxt.name and not nxt.pruned:
+                    texts.append(nxt.name)
+                    nxt.pruned = True
+                    j += 1
+                else:
+                    break
+            if len(texts) > 1:
+                child.name = " ".join(texts)
+            i = j
+        else:
+            i += 1
+
+
+def _pass_dedup_parent_child(node: SnapshotNode) -> None:
+    """Remove redundant text where parent name == child text."""
+    for child in node.children:
+        _pass_dedup_parent_child(child)
+
+    if not node.name or node.pruned:
+        return
+
+    active = [c for c in node.children if not c.pruned]
+
+    if node.is_interactive or node.is_context:
+        if (
+            len(active) == 1
+            and active[0].role == "StaticText"
+            and _norm(active[0].name) == _norm(node.name)
+        ):
+            active[0].pruned = True
+    else:
+        if any(c.is_interactive for c in active):
+            return
+        _try_prune_text_container(node, active)
+
+
+def _try_prune_text_container(node: SnapshotNode, active: list[SnapshotNode]) -> None:
+    """Prune a non-semantic container whose name duplicates its children's text."""
+    child_names: list[str] = []
+    for c in active:
+        if c.name and not c.is_interactive and not c.is_context:
+            child_names.append(c.name)
+
+    if not child_names:
+        return
+
+    merged = " ".join(child_names)
+    if _norm(merged) == _norm(node.name):
+        node.pruned = True
+        return
+
+    if (
+        len(active) == 1
+        and active[0].name
+        and _norm(active[0].name) == _norm(node.name)
+    ):
+        node.pruned = True
+
+
+def _pass_prune_nested_containers(root: SnapshotNode) -> None:
+    """Top-down: prune containers whose name duplicates visible descendant text."""
+
+    def _collect_visible_text(node: SnapshotNode) -> list[str]:
+        texts: list[str] = []
+        for c in node.children:
+            if c.is_interactive:
+                continue
+            if c.pruned:
+                texts.extend(_collect_visible_text(c))
+            elif c.name and not c.is_context:
+                texts.append(c.name)
+            else:
+                texts.extend(_collect_visible_text(c))
+        return texts
+
+    def _has_interactive_descendant(node: SnapshotNode) -> bool:
+        for c in node.children:
+            if c.is_interactive and not c.pruned:
+                return True
+            if _has_interactive_descendant(c):
+                return True
+        return False
+
+    def walk(node: SnapshotNode) -> None:
+        if node.pruned or node.is_interactive or node.is_context:
+            for c in node.children:
+                walk(c)
+            return
+
+        if (
+            node.name
+            and node.role
+            and node.role != "StaticText"
+            and not _has_interactive_descendant(node)
+        ):
+            texts = _collect_visible_text(node)
+            if texts:
+                merged = " ".join(texts)
+                if _norm(merged) == _norm(node.name):
+                    node.pruned = True
+                    return
+
+        for c in node.children:
+            walk(c)
+
+    for c in root.children:
+        walk(c)
+
+
+def _pass_prune_empty(node: SnapshotNode) -> None:
+    """Prune non-interactive nodes with all-pruned children and no name."""
+    for child in node.children:
+        _pass_prune_empty(child)
+
+    if node.pruned or node.is_interactive:
+        return
+
+    if not node.name and node.children and all(c.pruned for c in node.children):
+        node.pruned = True
+
+
+# ---------------------------------------------------------------------------
+# Compact mode: tree pruning
+# ---------------------------------------------------------------------------
+
+
+def _compact_mark(node: SnapshotNode) -> bool:
+    """Mark non-interactive nodes without interactive descendants as pruned.
+
+    Returns True if this subtree contains at least one interactive node.
+    """
+    has_interactive = node.is_interactive and not node.pruned
+
+    for child in node.children:
+        if _compact_mark(child):
+            has_interactive = True
+
+    if not has_interactive and not node.pruned:
+        node.pruned = True
+
+    return has_interactive
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: Flatten + Render
+# ---------------------------------------------------------------------------
+
+
+def _count_all_nodes(root: SnapshotNode) -> int:
+    """Count all non-root nodes (including pruned) for total_nodes stat."""
+    count = 0
+    for c in root.children:
+        count += 1 + _count_all_nodes(c)
+    return count
+
+
+def _flatten(
+    root: SnapshotNode,
+    *,
+    mode: str,
+) -> list[tuple[int, str, int | None]]:
+    content_mode = mode == "content"
+    compact = mode == "compact"
+    lines: list[tuple[int, str, int | None]] = []
+
+    def walk(node: SnapshotNode, depth: int) -> None:
+        if node.pruned:
+            for child in node.children:
+                walk(child, depth)
+            return
+
+        if node.role == "root":
+            for child in node.children:
+                walk(child, depth)
+            return
+
+        if node.role == "frame":
+            lines.append((depth, f'[frame "{node.name}"]', None))
+            for child in node.children:
+                walk(child, depth + 1)
+            return
+
+        if content_mode:
+            if node.name:
+                lines.append((depth, node.name, node.ref))
+        elif node.is_interactive:
+            attr_str = _format_attrs(node.attrs)
+            line = f"[{node.ref}] {node.role}"
+            if node.name:
+                line += f' "{node.name}"'
+            if attr_str:
+                line += f" {attr_str}"
+            lines.append((depth, line, node.ref))
+        elif node.is_context and node.name:
+            attr_str = _format_attrs(node.attrs)
+            line = f'{node.role} "{node.name}"'
+            if attr_str:
+                line += f" {attr_str}"
+            lines.append((depth, line, None))
+        elif node.role == "StaticText" and node.name:
+            lines.append((depth, node.name, None))
+        elif not compact and node.name and node.role:
+            attr_str = _format_attrs(node.attrs)
+            line = f'{node.role} "{node.name}"'
+            if attr_str:
+                line += f" {attr_str}"
+            lines.append((depth, line, None))
+
+        for child in node.children:
+            walk(child, depth + 1)
+
+    walk(root, 0)
+    return lines
+
+
+# ---------------------------------------------------------------------------
+# build_snapshot — main entry point
+# ---------------------------------------------------------------------------
+
+
 def build_snapshot(
     raw_nodes: list[dict[str, Any]],
     *,
@@ -279,222 +609,75 @@ def build_snapshot(
     title: str = "",
     frame_trees: list[FrameData] | None = None,
 ) -> SnapshotResult:
-    # Phase 1: index nodes by nodeId, build child lookup
-    node_by_id: dict[str, dict[str, Any]] = {}
-    root_ids: list[str] = []
-    for raw in raw_nodes:
-        nid = raw.get("nodeId", "")
-        if nid:
-            node_by_id[nid] = raw
-    all_child_ids: set[str] = set()
-    for raw in raw_nodes:
-        for cid in raw.get("childIds", []):
-            all_child_ids.add(cid)
-    for raw in raw_nodes:
-        nid = raw.get("nodeId", "")
-        if nid and nid not in all_child_ids:
-            root_ids.append(nid)
-    if not root_ids and raw_nodes:
-        root_ids = [raw_nodes[0].get("nodeId", "")]
-
-    # Phase 2: recursive tree build with ref assignment
     selector_map: dict[int, ElementRef] = {}
     backend_node_map: dict[int, int] = {}
     counter = [1]
     compact = mode == "compact"
-    # ``content`` mode walks the same AX tree as compact/accessible but emits
-    # plain text only — no ``[N]`` refs, no role labels, no ARIA props. This
-    # gives agents a clean "read the page as a human would" view that inherits
-    # the StaticText aggregation (so inline-element boundaries get spaces
-    # between words instead of running together like ``document.body.innerText``
-    # does).
     content_mode = mode == "content"
 
-    all_lines: list[tuple[int, str, int | None]] = []
+    # Phase 1: Build tree
+    node_by_id, root_ids = _index_and_find_roots(raw_nodes)
+    root = _build_tree(
+        node_by_id,
+        root_ids,
+        selector_map=selector_map,
+        backend_node_map=backend_node_map,
+        counter=counter,
+    )
 
-    def _visit(node_id: str, depth: int) -> None:
-        node = node_by_id.get(node_id)
-        if node is None:
-            return
-
-        ignored = node.get("ignored", False)
-        role = node.get("role", {}).get("value", "")
-        name_raw = node.get("name", {}).get("value", "")
-        name = _clean_text(name_raw)
-        child_ids: list[str] = node.get("childIds", [])
-
-        if role in _SKIP_ROLES or ignored:
-            for cid in child_ids:
-                _visit(cid, depth)
-            return
-
-        if _should_fold(node, role, name):
-            for cid in child_ids:
-                _visit(cid, depth)
-            return
-
-        role_lower = role.lower()
-        is_interactive = role_lower in _INTERACTIVE_ROLES
-        is_context = role_lower in _CONTEXT_ROLES
-
-        if content_mode:
-            # Walk the same tree as compact/accessible but record names only.
-            # We still allocate refs + populate selector_map so a subsequent
-            # ``action`` call against the most recent snapshot can resolve
-            # elements — agents may run ``snapshot --mode content`` then
-            # ``snapshot`` (compact) to switch view styles without losing the
-            # ability to click.
-            if is_interactive:
-                ref = counter[0]
-                attrs = _extract_props(node)
-                selector_map[ref] = ElementRef(
-                    index=ref,
-                    tag=role,
-                    role=role,
-                    text=name,
-                    attributes=attrs,
-                    depth=depth,
-                    description=attrs.get("description", ""),
-                )
-                backend_dom_id = node.get("backendDOMNodeId")
-                if backend_dom_id is not None:
-                    backend_node_map[ref] = int(backend_dom_id)
-                if name:
-                    all_lines.append((depth, name, ref))
-                counter[0] += 1
-            elif name:
-                # Static text, context roles, anything else with a visible name
-                # contributes its bare text — we deliberately drop the role
-                # label so the output reads naturally.
-                all_lines.append((depth, name, None))
-        elif is_interactive:
-            ref = counter[0]
-            attrs = _extract_props(node)
-            selector_map[ref] = ElementRef(
-                index=ref,
-                tag=role,
-                role=role,
-                text=name,
-                attributes=attrs,
-                depth=depth,
-                description=attrs.get("description", ""),
-            )
-            backend_dom_id = node.get("backendDOMNodeId")
-            if backend_dom_id is not None:
-                backend_node_map[ref] = int(backend_dom_id)
-
-            attr_str = _format_attrs(attrs)
-            line = f"[{ref}] {role}"
-            if name:
-                line += f' "{name}"'
-            if attr_str:
-                line += f" {attr_str}"
-            all_lines.append((depth, line, ref))
-            counter[0] += 1
-        elif is_context and name:
-            attrs = _extract_props(node)
-            attr_str = _format_attrs(attrs)
-            line = f'{role} "{name}"'
-            if attr_str:
-                line += f" {attr_str}"
-            all_lines.append((depth, line, None))
-        elif role == "StaticText" and name:
-            all_lines.append((depth, name, None))
-        elif not compact and name and role:
-            attrs = _extract_props(node)
-            attr_str = _format_attrs(attrs)
-            line = f'{role} "{name}"'
-            if attr_str:
-                line += f" {attr_str}"
-            all_lines.append((depth, line, None))
-
-        # Recurse children with StaticText aggregation
-        i = 0
-        while i < len(child_ids):
-            cid = child_ids[i]
-            cnode = node_by_id.get(cid)
-            if cnode and _is_static_text_like(cnode):
-                texts: list[str] = []
-                while i < len(child_ids):
-                    cn = node_by_id.get(child_ids[i])
-                    if cn and _is_static_text_like(cn):
-                        t = _clean_text(cn.get("name", {}).get("value", ""))
-                        if t:
-                            texts.append(t)
-                        i += 1
-                    else:
-                        break
-                merged = " ".join(texts)
-                if merged and merged != name:
-                    all_lines.append((depth + 1, merged, None))
-            else:
-                _visit(cid, depth + 1)
-                i += 1
-
-    for rid in root_ids:
-        _visit(rid, 0)
-
-    # Phase 2b: merge child frame AX trees (one level of iframes)
+    # Phase 1b: Frame merge
     if frame_trees:
         for frame_data in frame_trees:
-            # Build a secondary node index for this frame's AX tree.
-            # Prefix nodeIds with frameId to avoid collisions with main frame.
             frame_prefix = frame_data.frame_id + ":"
-            f_node_by_id: dict[str, dict[str, Any]] = {}
-            f_all_child_ids: set[str] = set()
+            f_raw: list[dict[str, Any]] = []
             for raw in frame_data.nodes:
                 orig_id = raw.get("nodeId", "")
                 if not orig_id:
                     continue
-                prefixed_id = frame_prefix + orig_id
-                # Rewrite nodeId and childIds with prefix
                 patched = dict(raw)
-                patched["nodeId"] = prefixed_id
+                patched["nodeId"] = frame_prefix + orig_id
                 patched["childIds"] = [
                     frame_prefix + c for c in raw.get("childIds", [])
                 ]
-                f_node_by_id[prefixed_id] = patched
-                for c in patched["childIds"]:
-                    f_all_child_ids.add(c)
+                f_raw.append(patched)
 
-            f_root_ids: list[str] = []
-            for nid in f_node_by_id:
-                if nid not in f_all_child_ids:
-                    f_root_ids.append(nid)
-            if not f_root_ids and f_node_by_id:
-                f_root_ids = [next(iter(f_node_by_id))]
+            f_node_by_id, f_root_ids = _index_and_find_roots(f_raw)
+            frame_subtree = _build_tree(
+                f_node_by_id,
+                f_root_ids,
+                selector_map=selector_map,
+                backend_node_map=backend_node_map,
+                counter=counter,
+            )
 
-            # Temporarily extend node_by_id so _visit can resolve frame nodes
-            node_by_id.update(f_node_by_id)
-
-            # Insert a context header line for the frame
             frame_label = frame_data.name or frame_data.url or frame_data.frame_id
-            all_lines.append((0, f'[frame "{frame_label}"]', None))
+            frame_ctx = SnapshotNode(
+                role="frame",
+                name=frame_label,
+                is_context=True,
+                children=frame_subtree.children,
+            )
+            root.children.append(frame_ctx)
 
-            for frid in f_root_ids:
-                _visit(frid, 1)
+    # Phase 2: Dedup passes (all modes benefit)
+    _pass_merge_static_text(root)
+    _pass_dedup_parent_child(root)
+    _pass_prune_nested_containers(root)
+    _pass_prune_empty(root)
 
-    # Phase 3: compact mode tree pruning
-    total_nodes = len(all_lines)
+    # Phase 2b: Compact prune
+    if compact:
+        _compact_mark(root)
+
+    # Phase 3: Flatten
+    total_nodes = _count_all_nodes(root)
     total_interactive = len(selector_map)
 
-    if compact:
-        keep = [False] * total_nodes
-        for idx, (_, _, ref) in enumerate(all_lines):
-            if ref is not None:
-                keep[idx] = True
-                target_depth = all_lines[idx][0]
-                for anc in range(idx - 1, -1, -1):
-                    if all_lines[anc][0] < target_depth:
-                        keep[anc] = True
-                        target_depth = all_lines[anc][0]
-                        if target_depth == 0:
-                            break
-        all_lines = [all_lines[i] for i in range(total_nodes) if keep[i]]
+    all_lines = _flatten(root, mode=mode)
 
     cached_lines = list(all_lines)
 
-    # Phase 4: progressive loading (focus / offset / truncation)
+    # Phase 4: Progressive loading (focus / offset / truncation) — unchanged
     output_lines = all_lines
 
     if focus > 0 and focus in selector_map:
@@ -525,15 +708,7 @@ def build_snapshot(
             )
         output_lines = [*output_lines, (0, summary, None)]
 
-    # Render lines with ``_INDENT_STEP`` per depth level. Content mode skips
-    # the indent because it's optimised for human-readable reading flow, not
-    # tree navigation — the structural depth is irrelevant when the agent just
-    # wants to know what the page says. Adjacent duplicate lines are then
-    # collapsed because a11y parent ``name`` values often repeat their child
-    # text verbatim (Wikipedia article text shows up once on the section
-    # heading and again on the StaticText child); the dedup is intentionally
-    # local to ``content`` so the structured ``[N] role "name"`` lines in
-    # accessible/compact still tolerate legitimate repeats.
+    # Render
     rendered: list[str] = []
     if content_mode:
         prev_text: str | None = None
@@ -571,7 +746,7 @@ def build_snapshot(
 
 
 # ---------------------------------------------------------------------------
-# Snapshot diff
+# Snapshot diff (unchanged)
 # ---------------------------------------------------------------------------
 
 CachedLine = tuple[int, str, int | None]
@@ -579,19 +754,9 @@ DiffLine = tuple[int, str, int | None, str | None]
 
 
 def _line_key(line: CachedLine) -> str:
-    """Build a stable identity key for a snapshot line.
-
-    Interactive elements (ref is not None) use the ref number as key so the
-    same logical element maps across snapshots even if its text changes.
-    Non-interactive lines use a ``role:text`` composite since they have no
-    stable ref.
-    """
     _depth, text, ref = line
     if ref is not None:
         return f"ref:{ref}"
-    # Use the rendered text as a composite key for non-interactive lines.
-    # This is intentionally coarse — we care about structural identity,
-    # not exact character equality.
     return f"ctx:{text}"
 
 
@@ -599,23 +764,10 @@ def diff_snapshots(
     previous: list[CachedLine],
     current: list[CachedLine],
 ) -> list[DiffLine]:
-    """Compare two snapshot cached_lines lists and mark changes.
-
-    Returns lines from *current* with a 4th tuple element indicating
-    the diff status:
-
-    * ``None``  — unchanged
-    * ``"+"``   — added (not present in previous)
-    * ``"~"``   — changed (same identity key but different rendered text)
-
-    A trailing summary line lists removed ref numbers (interactive elements
-    that were in *previous* but absent from *current*).
-    """
+    """Compare two snapshot cached_lines lists and mark changes."""
     if not previous:
-        # First snapshot — everything is new.
         return [(d, t, r, "+") for d, t, r in current]
 
-    # Build lookup from key -> (depth, text) for previous.
     prev_by_key: dict[str, tuple[int, str]] = {}
     prev_refs: set[int] = set()
     for depth, text, ref in previous:
@@ -640,7 +792,6 @@ def diff_snapshots(
         else:
             result.append((depth, text, ref, None))
 
-    # Removed interactive elements summary
     removed = sorted(prev_refs - cur_refs)
     if removed:
         refs_str = " ".join(f"[{r}]" for r in removed)
@@ -650,13 +801,7 @@ def diff_snapshots(
 
 
 def count_diff(diff_lines: list[DiffLine]) -> DiffCounts:
-    """Count added (``+``), changed (``~``), and removed lines in a diff.
-
-    The "# removed: [N] [M]" trailing summary line emitted by
-    :func:`diff_snapshots` is detected by its prefix so the removed total
-    survives a downstream truncation that may have dropped the summary's
-    detail tail.
-    """
+    """Count added, changed, and removed lines in a diff."""
     counts = DiffCounts()
     for _depth, text, _ref, marker in diff_lines:
         if marker == "+":
@@ -664,7 +809,6 @@ def count_diff(diff_lines: list[DiffLine]) -> DiffCounts:
         elif marker == "~":
             counts.changed += 1
         elif marker is None and text.startswith("# removed:"):
-            # Each `[N]` token in the summary corresponds to one removed ref.
             counts.removed += text.count("[")
     return counts
 
@@ -689,13 +833,7 @@ def truncate_diff_lines(
     max_nodes: int,
     offset: int = 0,
 ) -> tuple[list[DiffLine], int]:
-    """Apply node-level truncation to a diff line list.
-
-    Mirrors ``build_snapshot`` phase 4 so ``--diff`` honours ``--max-nodes``
-    in the same shape (ref range, pagination hint) the agent already knows.
-    Returns ``(visible_lines_with_summary, truncated_at)`` where
-    ``truncated_at == 0`` means no truncation happened.
-    """
+    """Apply node-level truncation to a diff line list."""
     if not max_nodes or max_nodes <= 0 or len(diff_lines) <= max_nodes:
         return diff_lines, 0
 

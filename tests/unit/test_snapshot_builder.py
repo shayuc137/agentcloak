@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from agentcloak.browser._snapshot_builder import (
     FrameData,
+    SnapshotNode,
     SnapshotResult,
     build_snapshot,
     count_diff,
@@ -671,3 +672,154 @@ class TestContentModeDedup:
         ]
         result = build_snapshot(nodes, mode="content")
         assert result.snapshot.tree_text.count("Section") == 2
+
+
+class TestDedupStaticTextMerge:
+    """Pass 1: consecutive StaticText children merge into one."""
+
+    def test_consecutive_static_text_merged(self) -> None:
+        nodes = [
+            _make_node("1", "WebArea", child_ids=["2"]),
+            _make_node("2", "heading", "A B", child_ids=["3", "4"]),
+            _make_node("3", "StaticText", "A"),
+            _make_node("4", "StaticText", "B"),
+        ]
+        result = build_snapshot(nodes, mode="accessible")
+        tree = result.snapshot.tree_text
+        assert tree.count("A B") <= 1
+        assert "A\n" not in tree or tree.count("A") <= 1
+
+    def test_static_text_across_linebreak_merged(self) -> None:
+        nodes = [
+            _make_node("1", "heading", "Part1 Part2", child_ids=["2", "3", "4"]),
+            _make_node("2", "StaticText", "Part1"),
+            _make_node("3", "LineBreak", ""),
+            _make_node("4", "StaticText", "Part2"),
+        ]
+        result = build_snapshot(nodes, mode="accessible")
+        tree = result.snapshot.tree_text
+        assert "Part1" in tree
+        assert tree.count("Part1") == 1
+        assert tree.count("Part2") <= 1
+
+    def test_non_consecutive_static_text_not_merged(self) -> None:
+        nodes = [
+            _make_node("1", "WebArea", child_ids=["2"]),
+            _make_node("2", "paragraph", "A Click B", child_ids=["3", "4", "5"]),
+            _make_node("3", "StaticText", "A"),
+            _make_node("4", "button", "Click", backend_dom_id=10),
+            _make_node("5", "StaticText", "B"),
+        ]
+        result = build_snapshot(nodes, mode="accessible")
+        tree = result.snapshot.tree_text
+        assert "A" in tree
+        assert "B" in tree
+        assert "[1] button" in tree
+
+
+class TestDedupParentChild:
+    """Pass 2: parent name == child text → one of them pruned."""
+
+    def test_heading_single_static_child_deduped(self) -> None:
+        nodes = [
+            _make_node("1", "WebArea", child_ids=["2"]),
+            _make_node("2", "heading", "Title", child_ids=["3"]),
+            _make_node("3", "StaticText", "Title"),
+        ]
+        result = build_snapshot(nodes, mode="accessible")
+        tree = result.snapshot.tree_text
+        assert tree.count("Title") == 1
+        assert "heading" in tree
+
+    def test_context_with_different_child_preserved(self) -> None:
+        nodes = [
+            _make_node("1", "WebArea", child_ids=["2"]),
+            _make_node("2", "heading", "Title", child_ids=["3"]),
+            _make_node("3", "StaticText", "Different"),
+        ]
+        result = build_snapshot(nodes, mode="accessible")
+        tree = result.snapshot.tree_text
+        assert "Title" in tree
+        assert "Different" in tree
+
+    def test_paragraph_name_equals_child_text_pruned(self) -> None:
+        nodes = [
+            _make_node("1", "WebArea", child_ids=["2"]),
+            _make_node("2", "paragraph", "Hello", child_ids=["3"]),
+            _make_node("3", "StaticText", "Hello"),
+        ]
+        result = build_snapshot(nodes, mode="accessible")
+        tree = result.snapshot.tree_text
+        assert tree.count("Hello") == 1
+
+    def test_container_with_interactive_child_not_pruned(self) -> None:
+        nodes = [
+            _make_node("1", "WebArea", child_ids=["2"]),
+            _make_node("2", "paragraph", "Click", child_ids=["3"]),
+            _make_node("3", "button", "Click", backend_dom_id=10),
+        ]
+        result = build_snapshot(nodes, mode="accessible")
+        tree = result.snapshot.tree_text
+        assert "[1] button" in tree
+
+
+class TestDedupNestedContainer:
+    """Pass 3: nested containers with same name as descendant text."""
+
+    def test_nested_text_container_pruned(self) -> None:
+        nodes = [
+            _make_node("1", "WebArea", child_ids=["2"]),
+            _make_node("2", "section", "Hello", child_ids=["3"]),
+            _make_node("3", "paragraph", "Hello", child_ids=["4"]),
+            _make_node("4", "StaticText", "Hello"),
+        ]
+        result = build_snapshot(nodes, mode="accessible")
+        tree = result.snapshot.tree_text
+        assert tree.count("Hello") == 1
+
+    def test_container_with_interactive_descendant_kept(self) -> None:
+        nodes = [
+            _make_node("1", "WebArea", child_ids=["2"]),
+            _make_node("2", "section", "Click here", child_ids=["3"]),
+            _make_node("3", "button", "Click here", backend_dom_id=10),
+        ]
+        result = build_snapshot(nodes, mode="accessible")
+        tree = result.snapshot.tree_text
+        assert "[1] button" in tree
+
+
+class TestCompactOnTree:
+    """Compact mode pruning works on the intermediate tree."""
+
+    def test_non_interactive_subtree_pruned(self) -> None:
+        nodes = [
+            _make_node("1", "WebArea", child_ids=["2", "3"]),
+            _make_node("2", "heading", "Title"),
+            _make_node("3", "button", "Click", backend_dom_id=10),
+        ]
+        result = build_snapshot(nodes, mode="compact")
+        tree = result.snapshot.tree_text
+        assert "[1] button" in tree
+        assert "heading" not in tree
+
+    def test_interactive_ancestor_chain_kept(self) -> None:
+        nodes = [
+            _make_node("1", "WebArea", child_ids=["2"]),
+            _make_node("2", "navigation", "Nav", child_ids=["3"]),
+            _make_node("3", "button", "Go", backend_dom_id=10),
+        ]
+        result = build_snapshot(nodes, mode="compact")
+        tree = result.snapshot.tree_text
+        assert "[1] button" in tree
+        assert "navigation" in tree
+
+
+class TestSnapshotNodeExport:
+    """SnapshotNode is importable for testing and extension."""
+
+    def test_snapshot_node_dataclass(self) -> None:
+        node = SnapshotNode(role="button", name="Click")
+        assert node.role == "button"
+        assert node.name == "Click"
+        assert node.children == []
+        assert node.pruned is False

@@ -1587,16 +1587,30 @@ class PlaywrightContext(BrowserContextBase):
         self, method: str, params: dict[str, Any]
     ) -> dict[str, Any]:
         session = await self._get_or_create_cdp_session()
-        # Playwright's ``CDPSession.send`` is typed ``Dict`` and the session is
-        # held as ``Any`` in the cache, so cast the result to the contract's
-        # ``dict[str, Any]`` rather than relying on isinstance narrowing
-        # (which pyright widens back to ``dict[Unknown, Unknown]``).
-        raw: dict[str, Any] | None = await session.send(method, params)
-        return dict(raw) if raw is not None else {}
+        try:
+            raw: dict[str, Any] | None = await session.send(method, params)
+            return dict(raw) if raw is not None else {}
+        except BackendError:
+            raise
+        except Exception as exc:
+            raise BackendError(
+                error="cdp_call_failed",
+                hint=f"{method}: {exc}",
+                action="check CDP method name and parameters",
+            ) from exc
 
     async def _cdp_enable_domain_impl(self, domain: str) -> None:
         session = await self._get_or_create_cdp_session()
-        await session.send(f"{domain}.enable")
+        try:
+            await session.send(f"{domain}.enable")
+        except BackendError:
+            raise
+        except Exception as exc:
+            raise BackendError(
+                error="cdp_domain_enable_failed",
+                hint=f"{domain}.enable: {exc}",
+                action=f"check that the '{domain}' CDP domain is supported",
+            ) from exc
 
     # ------------------------------------------------------------------
     # Header injection (7b T1.2)

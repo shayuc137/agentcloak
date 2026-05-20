@@ -49,6 +49,8 @@ from agentcloak.core.errors import (
 from agentcloak.core.seq import RingBuffer, SeqCounter, SeqEvent
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from agentcloak.core.types import StealthTier
 
 __all__ = [
@@ -255,6 +257,18 @@ class BrowserContextBase(ABC):
         # R5 (7a): clipboard permission is granted lazily on first use and
         # remembered so we don't re-issue ``Browser.grantPermissions`` per call.
         self._clipboard_granted: bool = False
+
+        # 7b: CDP event-stream plumbing for the reverse-engineering managers
+        # (debugger / streaming / sourcemap). ``_cdp_event_handlers`` maps a
+        # CDP method name — or a domain prefix ending in "." such as
+        # ``"Debugger."`` — to the callbacks registered via
+        # :meth:`_on_cdp_event`. ``_dispatch_cdp_event`` (driven by the
+        # backend's persistent CDP session) fans an incoming event out to all
+        # matching callbacks. ``_enabled_domains`` lets
+        # :meth:`_cdp_enable_domain` stay idempotent so two managers asking for
+        # the same domain only issue one ``<Domain>.enable``.
+        self._cdp_event_handlers: dict[str, list[Callable[[dict[str, Any]], None]]] = {}
+        self._enabled_domains: set[str] = set()
 
     # ------------------------------------------------------------------
     # Public properties
@@ -515,6 +529,112 @@ class BrowserContextBase(ABC):
 
         Returns the number of cookies removed.
         """
+
+    # --- CDP transport (7b) ---
+
+    @abstractmethod
+    async def _cdp_send_impl(
+        self, method: str, params: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Send a raw CDP command and return its result.
+
+        Unlike :meth:`_raw_cdp_impl` (a one-shot session that detaches
+        immediately), this routes through whatever persistent CDP channel the
+        backend keeps alive for event streaming — Playwright caches a
+        per-tab ``CDPSession``; RemoteBridge forwards over the bridge
+        WebSocket. The public wrapper :meth:`_cdp_send` owns audit logging and
+        the closed-browser guard, so implementations only translate the call.
+        """
+
+    @abstractmethod
+    async def _cdp_enable_domain_impl(self, domain: str) -> None:
+        """Enable a CDP domain (``<domain>.enable``) on the persistent channel.
+
+        Idempotency is handled by the public :meth:`_cdp_enable_domain`
+        wrapper via :attr:`_enabled_domains`; implementations may assume they
+        are only called once per domain and should just issue the enable.
+        """
+
+    # ------------------------------------------------------------------
+    # CDP event stream (7b) — shared transport for reverse-engineering
+    # managers. Concrete; backends only implement the two ``_impl`` atoms
+    # above plus call :meth:`_dispatch_cdp_event` from their event listener.
+    # ------------------------------------------------------------------
+
+    async def _cdp_send(
+        self, method: str, params: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Send a CDP command through the persistent channel, with guards.
+
+        Centralises the closed-browser check, the failed-navigate guard, and
+        audit logging so every reverse-engineering manager goes through one
+        choke point instead of touching the backend session directly. This is
+        the single security/audit funnel referenced by design decision D-Q3.
+        """
+        self._check_browser_alive()
+        self._check_page_valid()
+        logger.debug("cdp_send", method=method)
+        return await self._cdp_send_impl(method, params or {})
+
+    def _on_cdp_event(
+        self, method: str, callback: Callable[[dict[str, Any]], None]
+    ) -> None:
+        """Register ``callback`` for a CDP event ``method``.
+
+        ``method`` is matched two ways by :meth:`_dispatch_cdp_event`:
+
+        * **exact** — ``"Debugger.paused"`` fires only on that event.
+        * **prefix** — a key ending in ``"."`` (e.g. ``"Network."``) fires for
+          every event in that domain. Managers use this to catch a whole
+          domain without enumerating each event name.
+
+        Callbacks receive the event ``params`` dict. They run synchronously in
+        the event-listener context, so they must stay non-blocking — park a
+        :class:`asyncio.Future` (the debugger pause pattern) rather than
+        awaiting inside the callback.
+        """
+        self._cdp_event_handlers.setdefault(method, []).append(callback)
+
+    def _dispatch_cdp_event(self, method: str, params: dict[str, Any]) -> None:
+        """Fan a CDP event out to every matching registered callback.
+
+        Called by the backend's persistent-session event forwarder
+        (Playwright ``session.on("event", ...)`` / RemoteBridge
+        ``feed_message``). A single dict is iterated as ``list(...)`` so a
+        callback that registers another handler mid-dispatch can't mutate the
+        list we're walking. Callback exceptions are swallowed (logged at
+        debug) so one misbehaving manager can't break event delivery to the
+        others.
+        """
+        for cb in list(self._cdp_event_handlers.get(method, [])):
+            try:
+                cb(params)
+            except Exception:
+                logger.debug("cdp_event_handler_failed", method=method, exc_info=True)
+        for prefix, cbs in list(self._cdp_event_handlers.items()):
+            if prefix.endswith(".") and method.startswith(prefix):
+                for cb in list(cbs):
+                    try:
+                        cb(params)
+                    except Exception:
+                        logger.debug(
+                            "cdp_event_handler_failed", method=method, exc_info=True
+                        )
+
+    async def _cdp_enable_domain(self, domain: str) -> None:
+        """Idempotently enable a CDP domain on the persistent channel.
+
+        Tracks enabled domains in :attr:`_enabled_domains` so repeated calls
+        (e.g. StreamingMonitor and DebuggerManager both wanting ``Network``)
+        only issue one ``<Domain>.enable``. We guard browser liveness but not
+        page validity — enabling a domain is transport setup that should
+        succeed even when the last navigate failed.
+        """
+        if domain in self._enabled_domains:
+            return
+        self._check_browser_alive()
+        await self._cdp_enable_domain_impl(domain)
+        self._enabled_domains.add(domain)
 
     # ------------------------------------------------------------------
     # Browser self-healing

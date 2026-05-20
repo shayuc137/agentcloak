@@ -158,6 +158,17 @@ class PlaywrightContext(BrowserContextBase):
         # Playwright Dialog object retained so dialog_handle can accept/dismiss.
         self._dialog_object: Any = None
 
+        # 7b: persistent CDP sessions keyed by tab_id, for the reverse-
+        # engineering managers that need long-lived event streams (debugger,
+        # WebSocket/SSE, sourcemap). This is deliberately separate from the
+        # seven short-lived ``new_cdp_session + detach`` call sites elsewhere
+        # in this file (snapshot/evaluate/clipboard/raw_cdp) — those are
+        # one-shot and must NOT be migrated here in 7b. A persistent session
+        # forwards every CDP event to ``_dispatch_cdp_event`` via the generic
+        # Playwright ``"event"`` listener, and is invalidated when its tab
+        # closes (see ``_invalidate_cdp_session``).
+        self._cdp_sessions: dict[int, Any] = {}
+
         self._setup_network_listeners(page)
         self._setup_feedback_listeners(page)
 
@@ -1413,6 +1424,10 @@ class PlaywrightContext(BrowserContextBase):
             pw_ctx = self._browser_context
         else:
             pw_ctx = page.context
+        # Drop any persistent CDP session bound to this tab before the page
+        # goes away, so a reverse-engineering manager can't reuse a dead
+        # session on a recycled tab_id.
+        await self._invalidate_cdp_session(tab_id)
         await page.close()
 
         if not self._tabs:
@@ -1523,6 +1538,62 @@ class PlaywrightContext(BrowserContextBase):
         }
 
     # ------------------------------------------------------------------
+    # Persistent CDP session (7b) — event-stream transport for managers
+    # ------------------------------------------------------------------
+
+    async def _get_or_create_cdp_session(self) -> Any:
+        """Return the active tab's persistent ``CDPSession``, creating once.
+
+        Cache hit returns the existing session; on miss we open a new session
+        bound to the active page and wire its generic ``"event"`` listener
+        into :meth:`_dispatch_cdp_event`. Playwright's ``CDPSession`` emits two
+        signals per CDP event — the method name itself and the catch-all
+        ``"event"`` (carrying ``{"method", "params"}``); we subscribe to the
+        latter so a single forward covers every domain the managers enable.
+        """
+        tab_id = self._active_tab
+        existing = self._cdp_sessions.get(tab_id)
+        if existing is not None:
+            return existing
+        session = await self._page.context.new_cdp_session(self._page)
+
+        def _forward(event: dict[str, Any]) -> None:
+            self._dispatch_cdp_event(event.get("method", ""), event.get("params", {}))
+
+        session.on("event", _forward)
+        self._cdp_sessions[tab_id] = session
+        return session
+
+    async def _invalidate_cdp_session(self, tab_id: int) -> None:
+        """Detach and forget the persistent CDP session for ``tab_id``.
+
+        Called when a tab closes so a stale session bound to a dead page is
+        never reused. Detach failures are swallowed — the session is already
+        being torn down with its page, and a half-closed session must not
+        block tab cleanup.
+        """
+        session = self._cdp_sessions.pop(tab_id, None)
+        if session is None:
+            return
+        with contextlib.suppress(Exception):
+            await session.detach()
+
+    async def _cdp_send_impl(
+        self, method: str, params: dict[str, Any]
+    ) -> dict[str, Any]:
+        session = await self._get_or_create_cdp_session()
+        # Playwright's ``CDPSession.send`` is typed ``Dict`` and the session is
+        # held as ``Any`` in the cache, so cast the result to the contract's
+        # ``dict[str, Any]`` rather than relying on isinstance narrowing
+        # (which pyright widens back to ``dict[Unknown, Unknown]``).
+        raw: dict[str, Any] | None = await session.send(method, params)
+        return dict(raw) if raw is not None else {}
+
+    async def _cdp_enable_domain_impl(self, domain: str) -> None:
+        session = await self._get_or_create_cdp_session()
+        await session.send(f"{domain}.enable")
+
+    # ------------------------------------------------------------------
     # Atomic: raw CDP / close
     # ------------------------------------------------------------------
 
@@ -1540,6 +1611,12 @@ class PlaywrightContext(BrowserContextBase):
             await cdp.detach()
 
     async def _close_impl(self) -> None:
+        # Detach persistent CDP sessions first. Closing the browser/context
+        # below tears them down anyway, but detaching explicitly avoids a
+        # spurious "session orphaned" warning on a still-attached session and
+        # keeps the cache from outliving the browser if close() is retried.
+        for tab_id in list(self._cdp_sessions.keys()):
+            await self._invalidate_cdp_session(tab_id)
         if self._browser is not None:
             await self._browser.close()
         elif self._browser_context is not None:

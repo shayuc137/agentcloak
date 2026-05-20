@@ -218,6 +218,14 @@ class RemoteBridgeContext(BrowserContextBase):
                 # Only build capture entries while recording — dropping events
                 # otherwise saves memory on busy pages.
                 self._handle_network_event(method, params)
+            # 7b: fan the same event out to any reverse-engineering manager
+            # that registered via ``_on_cdp_event``. This runs unconditionally
+            # — outside the ``recording`` guard above — because managers like
+            # StreamingMonitor also want ``Network.*`` events (webSocketFrame*,
+            # eventSourceMessageReceived) even when capture is off. The legacy
+            # handlers above and the manager dispatch are independent consumers
+            # of the same event.
+            self._dispatch_cdp_event(method, params)
             return
 
         if msg.get("type") == "tab_event":
@@ -1399,6 +1407,25 @@ class RemoteBridgeContext(BrowserContextBase):
         return await self.send_command(
             "cdp", {"method": method, "params": params or {}}
         )
+
+    # ------------------------------------------------------------------
+    # Persistent CDP transport (7b)
+    # ------------------------------------------------------------------
+    # The bridge has no session object to cache — the Extension keeps one
+    # debugger attachment per tab and forwards every CDP event back through
+    # ``feed_message`` already (see the global ``chrome.debugger.onEvent``
+    # forwarder in background.js). So ``_cdp_send_impl`` reuses the same
+    # ``cdp`` command shape as ``_raw_cdp_impl``; the only new wire message is
+    # ``enable_domain``, which asks the Extension to ``<Domain>.enable`` on the
+    # active tab (the events then flow without further plumbing here).
+
+    async def _cdp_send_impl(
+        self, method: str, params: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await self._send("cdp", {"method": method, "params": params})
+
+    async def _cdp_enable_domain_impl(self, domain: str) -> None:
+        await self._send("enable_domain", {"domain": domain})
 
     # ------------------------------------------------------------------
     # Capture (CDP Network domain)

@@ -18,6 +18,12 @@ let ws = null;
 let reconnectDelay = RECONNECT_BASE;
 let reconnectTimer = null;
 let attachedTabs = new Map();
+// Per-tab set of CDP domains the daemon has asked us to enable (7b reverse-
+// engineering). Kept separate from attachedTabs so we don't disturb its
+// JSON-serialized persistence (Sets don't round-trip through chrome.storage).
+// Domains live only for the tab's lifetime — events flow through the global
+// chrome.debugger.onEvent forwarder once enabled, so nothing else to wire.
+let enabledDomainsByTab = new Map();
 let currentHost = null;
 let currentPort = null;
 let currentService = null; // "agentcloak-daemon" or "agentcloak-bridge"
@@ -556,6 +562,8 @@ async function handleCommand(msg) {
         return await cmdFetch(msg);
       case "cdp":
         return await cmdCDP(msg);
+      case "enable_domain":
+        return await cmdEnableDomain(msg);
       case "batch":
         return await cmdBatch(msg);
       case "claim":
@@ -683,6 +691,9 @@ async function detachTab(tabId) {
     await chrome.debugger.detach({ tabId });
   } catch {}
   attachedTabs.delete(tabId);
+  // Detaching the debugger drops every enabled domain, so forget our
+  // per-tab record — a future re-attach starts from a clean slate.
+  enabledDomainsByTab.delete(tabId);
   await removeCspRuleForTab(tabId);
   await saveAttachedTabs();
 }
@@ -1080,6 +1091,36 @@ async function cmdCDP(msg) {
   return { ok: true, data: result };
 }
 
+// enable_domain — idempotently turn on a CDP domain for the active tab so the
+// reverse-engineering managers (debugger / streaming / sourcemap) receive its
+// events. ensureAttached already enables Page + Runtime; this covers the
+// on-demand domains (Debugger, Network, Fetch, ...). Events then arrive via
+// the global chrome.debugger.onEvent forwarder, so there's nothing further to
+// route here. Tracked per-tab so a second request for the same domain is a
+// no-op rather than a redundant <Domain>.enable.
+async function cmdEnableDomain(msg) {
+  const tabId = resolveTabId(msg);
+  if (!tabId) return { ok: false, error: "no active tab" };
+
+  const domain = msg.params?.domain || msg.domain;
+  if (!domain) return { ok: false, error: "domain required" };
+
+  await ensureAttached(tabId);
+
+  let domains = enabledDomainsByTab.get(tabId);
+  if (!domains) {
+    domains = new Set();
+    enabledDomainsByTab.set(tabId, domains);
+  }
+  if (domains.has(domain)) {
+    return { ok: true, data: { domain, enabled: true, already: true } };
+  }
+
+  await chrome.debugger.sendCommand({ tabId }, `${domain}.enable`, {});
+  domains.add(domain);
+  return { ok: true, data: { domain, enabled: true } };
+}
+
 async function cmdBatch(msg) {
   const commands = msg.params?.commands || msg.commands || [];
   const results = [];
@@ -1259,6 +1300,7 @@ async function cmdFinalize(msg) {
 // active_tab_id if the gone tab was the one it was driving.
 chrome.tabs.onRemoved.addListener((tabId) => {
   attachedTabs.delete(tabId);
+  enabledDomainsByTab.delete(tabId);
   managedTabIds.delete(tabId);
   if (activeTabId === tabId) {
     activeTabId = null;

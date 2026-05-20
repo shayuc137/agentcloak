@@ -13,6 +13,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from agentcloak.daemon.models._defaults import DEFAULT_ACTION_TIMEOUT
 
 __all__ = [
+    "CookieDeleteRequest",
+    "CookieDeleteResponse",
+    "CookieSetRequest",
+    "CookieSetResponse",
+    "CookiesClearResponse",
     "CookiesExportRequest",
     "CookiesExportResponse",
     "CookiesImportRequest",
@@ -53,6 +58,45 @@ class CookiesImportRequest(BaseModel):
 
 class CookiesImportResponse(BaseModel):
     imported: int
+
+
+class CookieSetRequest(BaseModel):
+    """Set cookies directly or parse them from a Copy-as-cURL string (7a R3).
+
+    Provide either ``cookies`` (a list of cookie objects) or ``curl`` (a
+    DevTools "Copy as cURL" command whose ``Cookie:`` header / ``-b`` flag is
+    parsed into cookie objects). When both are present they are merged.
+    """
+
+    cookies: list[dict[str, Any]] | None = Field(
+        None, description="Cookie objects (name/value/domain/path) to set."
+    )
+    curl: str | None = Field(
+        None,
+        description="Copy-as-cURL command string; cookies are parsed from it.",
+    )
+
+
+class CookieSetResponse(BaseModel):
+    set: int = Field(0, description="Number of cookies set.")
+
+
+class CookiesClearResponse(BaseModel):
+    cleared: bool = Field(description="True when all cookies were removed.")
+
+
+class CookieDeleteRequest(BaseModel):
+    """Delete cookies matching a name (optionally scoped to a domain)."""
+
+    name: str = Field(description="Cookie name to delete.")
+    domain: str | None = Field(
+        None, description="Restrict deletion to cookies on this domain."
+    )
+
+
+class CookieDeleteResponse(BaseModel):
+    deleted: int = Field(0, description="Number of cookies removed.")
+    name: str = Field("", description="Cookie name that was targeted.")
 
 
 # --- Dialog ---

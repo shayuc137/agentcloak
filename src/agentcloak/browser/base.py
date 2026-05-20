@@ -23,11 +23,14 @@ import contextlib
 import re
 import time
 from abc import ABC, abstractmethod
+from collections import deque
 from typing import TYPE_CHECKING, Any
 
 import structlog
 
 from agentcloak.browser.state import (
+    ConsoleEntry,
+    DownloadEntry,
     ElementRef,
     FrameInfo,
     PageSnapshot,
@@ -231,6 +234,28 @@ class BrowserContextBase(ABC):
         # next successful navigate restores it.
         self._page_valid: bool = True
 
+        # R1 (7a): Console capture. Console messages arrive asynchronously
+        # via page events, not as user actions, so they get their own
+        # monotonic counter (``_console_seq``) and ring buffer instead of
+        # sharing the action ``_seq_counter``. ``console_entries(since=N)``
+        # pages through this the same way ``network --since`` does.
+        self._console_buffer: deque[ConsoleEntry] = deque(
+            maxlen=self._browser_config.console_buffer_size
+        )
+        self._console_seq: int = 0
+        self._console_listening: bool = False
+
+        # R2 (7a): Completed downloads (both direct-URL and click-triggered).
+        self._downloads: list[DownloadEntry] = []
+        # Click-triggered download events arrive on the page's ``download``
+        # listener; ``download_wait`` parks a future here so the next event
+        # can hand the Download object back to the waiter.
+        self._download_waiters: list[asyncio.Future[Any]] = []
+
+        # R5 (7a): clipboard permission is granted lazily on first use and
+        # remembered so we don't re-issue ``Browser.grantPermissions`` per call.
+        self._clipboard_granted: bool = False
+
     # ------------------------------------------------------------------
     # Public properties
     # ------------------------------------------------------------------
@@ -428,6 +453,68 @@ class BrowserContextBase(ABC):
 
     @abstractmethod
     async def _network_entries(self, *, since_seq: int) -> list[dict[str, Any]]: ...
+
+    # --- Console capture (7a R1) ---
+
+    @abstractmethod
+    async def _console_setup_impl(self) -> None:
+        """Wire backend console/error listeners so messages flow into the buffer.
+
+        Idempotent — the public :meth:`console_entries` calls it once and
+        flips :attr:`_console_listening`. Playwright registers
+        ``page.on('console')`` + ``page.on('pageerror')``; RemoteBridge enables
+        the CDP ``Runtime`` domain so ``consoleAPICalled`` /
+        ``exceptionThrown`` events arrive over the bridge.
+        """
+
+    # --- Download (7a R2) ---
+
+    @abstractmethod
+    async def _download_url_impl(self, url: str, output_dir: str) -> DownloadEntry:
+        """Fetch ``url`` server-side (reusing browser cookies) into ``output_dir``.
+
+        The SSRF guard runs in the public :meth:`download_url` before this is
+        called, so implementations may fetch directly.
+        """
+
+    @abstractmethod
+    async def _download_wait_impl(
+        self, output_dir: str, *, timeout: float
+    ) -> DownloadEntry:
+        """Block until the next click-triggered download finishes, saving it."""
+
+    # --- Clipboard (7a R5) ---
+
+    @abstractmethod
+    async def _clipboard_read_impl(self) -> str:
+        """Return the system clipboard text (granting permission as needed)."""
+
+    @abstractmethod
+    async def _clipboard_write_impl(self, text: str) -> None:
+        """Write ``text`` to the system clipboard (granting permission as needed)."""
+
+    # --- PDF (7a R6) ---
+
+    @abstractmethod
+    async def _pdf_impl(self, options: dict[str, Any]) -> bytes:
+        """Render the current page to PDF bytes (headless Chromium only)."""
+
+    # --- Cookies CRUD (7a R3) ---
+
+    @abstractmethod
+    async def _cookies_set_impl(self, cookies: list[dict[str, Any]]) -> None:
+        """Inject the given cookie objects into the browser context."""
+
+    @abstractmethod
+    async def _cookies_clear_impl(self) -> None:
+        """Remove all cookies from the browser context."""
+
+    @abstractmethod
+    async def _cookies_delete_impl(self, name: str, *, domain: str | None) -> int:
+        """Delete cookies matching ``name`` (optionally scoped to ``domain``).
+
+        Returns the number of cookies removed.
+        """
 
     # ------------------------------------------------------------------
     # Browser self-healing
@@ -662,18 +749,30 @@ class BrowserContextBase(ABC):
         full_page: bool = False,
         format: str = "jpeg",
         quality: int | None = None,
+        output_path: str | None = None,
     ) -> bytes:
+        # ``output_path`` writes the capture to disk in addition to returning
+        # the bytes. Writing lives here rather than in ``_screenshot_impl`` so
+        # both backends share one path-handling code path (it is pure local
+        # I/O, independent of how the bytes were produced). The daemon route
+        # inspects ``output_path`` to decide whether to base64 the bytes or
+        # return ``{path, size}``.
         self._check_browser_alive()
         self._check_page_valid()
         if quality is None:
             quality = self._browser_config.screenshot_quality
         try:
-            return await self._screenshot_impl(
+            data = await self._screenshot_impl(
                 full_page=full_page, fmt=format, quality=quality
             )
         except Exception as exc:
             self._maybe_mark_browser_closed(exc)
             raise
+        if output_path:
+            from pathlib import Path
+
+            Path(output_path).expanduser().write_bytes(data)
+        return data
 
     # ------------------------------------------------------------------
     # Dialog handling
@@ -1002,6 +1101,234 @@ class BrowserContextBase(ABC):
     async def _capture_teardown_impl(self) -> None:
         """Hook for backend-specific capture teardown. Default no-op."""
         return None
+
+    # ------------------------------------------------------------------
+    # Console capture (7a R1)
+    # ------------------------------------------------------------------
+
+    def _record_console_entry(
+        self,
+        *,
+        level: str,
+        text: str,
+        url: str = "",
+        line: int | None = None,
+        column: int | None = None,
+        is_error: bool = False,
+    ) -> None:
+        """Append one sanitized console message to the ring buffer.
+
+        Backend event handlers normalise their native payload into these
+        fields and call this; the shared method owns seq assignment and
+        terminal-injection sanitisation so both backends stay consistent.
+        """
+        from agentcloak.core.text_sanitize import sanitize_terminal_text
+
+        self._console_seq += 1
+        self._console_buffer.append(
+            ConsoleEntry(
+                seq=self._console_seq,
+                level=level,
+                text=sanitize_terminal_text(text),
+                timestamp=time.time(),
+                url=url,
+                line=line,
+                column=column,
+                is_error=is_error,
+            )
+        )
+
+    async def console_entries(
+        self,
+        *,
+        since: int = 0,
+        limit: int = 0,
+        level: str | None = None,
+    ) -> dict[str, Any]:
+        """Return buffered console messages newer than ``since``.
+
+        ``level`` filters to a single log level (``log``/``warn``/``error``/
+        ``info``/``debug``). ``limit`` caps the number returned (most recent
+        kept). The returned ``seq`` is the highest console seq seen so the
+        caller can pass it back as ``since`` next time.
+        """
+        if not self._console_listening:
+            with contextlib.suppress(Exception):
+                await self._console_setup_impl()
+            self._console_listening = True
+
+        entries = [e for e in self._console_buffer if e.seq > since]
+        if level:
+            entries = [e for e in entries if e.level == level]
+        if limit > 0:
+            entries = entries[-limit:]
+        return {
+            "entries": [
+                {
+                    "seq": e.seq,
+                    "level": e.level,
+                    "text": e.text,
+                    "url": e.url,
+                    "line": e.line,
+                    "column": e.column,
+                    "is_error": e.is_error,
+                    "timestamp": e.timestamp,
+                }
+                for e in entries
+            ],
+            "seq": self._console_seq,
+        }
+
+    async def console_clear(self) -> dict[str, Any]:
+        """Drop all buffered console messages."""
+        self._console_buffer.clear()
+        return {"cleared": True}
+
+    # ------------------------------------------------------------------
+    # Download (7a R2)
+    # ------------------------------------------------------------------
+
+    def _resolve_download_waiter(self, download: Any) -> None:
+        """Hand a freshly-observed download object to the oldest parked waiter.
+
+        Backend ``download`` event handlers call this. If no one is waiting
+        the event is dropped — agents opt into capturing a download by calling
+        ``download_wait`` *before* triggering the click.
+        """
+        while self._download_waiters:
+            fut = self._download_waiters.pop(0)
+            if not fut.done():
+                fut.set_result(download)
+                return
+
+    async def download_url(self, url: str, *, output_dir: str) -> dict[str, Any]:
+        """Download ``url`` directly (server-side, with browser cookies).
+
+        The SSRF guard rejects private/loopback/link-local targets before any
+        request is made. The saved file is recorded in :meth:`download_list`.
+        """
+        from agentcloak.core.ssrf_guard import validate_download_url
+
+        self._check_browser_alive()
+        validate_download_url(url)
+        entry = await self._download_url_impl(url, output_dir)
+        self._downloads.append(entry)
+        new_seq = self._seq_counter.increment_action()
+        logger.info(
+            "audit_action",
+            action="download_url",
+            seq=new_seq,
+            url=url,
+            path=entry.path,
+            size=entry.size,
+        )
+        return {
+            "filename": entry.filename,
+            "path": entry.path,
+            "size": entry.size,
+            "url": entry.url,
+            "source": entry.source,
+            "seq": new_seq,
+        }
+
+    async def download_wait(
+        self, *, output_dir: str, timeout: float | None = None
+    ) -> dict[str, Any]:
+        """Wait for the next click-triggered download and save it to ``output_dir``."""
+        self._check_browser_alive()
+        self._check_page_valid()
+        if timeout is None:
+            timeout = float(self._browser_config.navigation_timeout)
+        entry = await self._download_wait_impl(output_dir, timeout=timeout)
+        self._downloads.append(entry)
+        return {
+            "filename": entry.filename,
+            "path": entry.path,
+            "size": entry.size,
+            "url": entry.url,
+            "source": entry.source,
+        }
+
+    async def download_list(self) -> dict[str, Any]:
+        """Return all downloads saved during this session."""
+        return {
+            "downloads": [
+                {
+                    "filename": e.filename,
+                    "path": e.path,
+                    "size": e.size,
+                    "url": e.url,
+                    "source": e.source,
+                }
+                for e in self._downloads
+            ],
+            "count": len(self._downloads),
+        }
+
+    # ------------------------------------------------------------------
+    # Clipboard (7a R5)
+    # ------------------------------------------------------------------
+
+    async def clipboard_read(self) -> dict[str, Any]:
+        """Read the system clipboard text."""
+        self._check_browser_alive()
+        self._check_page_valid()
+        text = await self._clipboard_read_impl()
+        return {"text": text}
+
+    async def clipboard_write(self, text: str) -> dict[str, Any]:
+        """Write ``text`` to the system clipboard."""
+        self._check_browser_alive()
+        self._check_page_valid()
+        await self._clipboard_write_impl(text)
+        return {"written": True, "length": len(text)}
+
+    # ------------------------------------------------------------------
+    # PDF (7a R6)
+    # ------------------------------------------------------------------
+
+    async def pdf(self, *, options: dict[str, Any] | None = None) -> bytes:
+        """Render the current page to PDF bytes.
+
+        Only headless Chromium can produce a PDF; backends raise
+        ``pdf_not_supported`` otherwise. The daemon route decides whether to
+        write the bytes to disk or base64-encode them, mirroring screenshot.
+        """
+        self._check_browser_alive()
+        self._check_page_valid()
+        return await self._pdf_impl(options or {})
+
+    # ------------------------------------------------------------------
+    # Cookies CRUD (7a R3)
+    # ------------------------------------------------------------------
+
+    async def cookies_set(self, cookies: list[dict[str, Any]]) -> dict[str, Any]:
+        """Inject cookie objects into the browser context."""
+        self._check_browser_alive()
+        await self._cookies_set_impl(cookies)
+        new_seq = self._seq_counter.increment_action()
+        logger.info(
+            "audit_action", action="cookies_set", seq=new_seq, count=len(cookies)
+        )
+        return {"set": len(cookies), "seq": new_seq}
+
+    async def cookies_clear(self) -> dict[str, Any]:
+        """Remove all cookies from the browser context."""
+        self._check_browser_alive()
+        await self._cookies_clear_impl()
+        new_seq = self._seq_counter.increment_action()
+        logger.info("audit_action", action="cookies_clear", seq=new_seq)
+        return {"cleared": True, "seq": new_seq}
+
+    async def cookies_delete(
+        self, name: str, *, domain: str | None = None
+    ) -> dict[str, Any]:
+        """Delete cookies matching ``name`` (optionally scoped to ``domain``)."""
+        self._check_browser_alive()
+        removed = await self._cookies_delete_impl(name, domain=domain)
+        new_seq = self._seq_counter.increment_action()
+        logger.info("audit_action", action="cookies_delete", seq=new_seq, name=name)
+        return {"deleted": removed, "name": name, "seq": new_seq}
 
     # ------------------------------------------------------------------
     # Element resolution (shared helpers — subclasses can override

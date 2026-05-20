@@ -11,6 +11,9 @@ from agentcloak.cli._dispatch import dispatch_text_or_json, emit_envelope
 from agentcloak.cli.output import is_json_mode, value
 from agentcloak.client import DaemonClient
 from agentcloak.core.text_renderers import (
+    render_cookie_delete_text,
+    render_cookie_set_text,
+    render_cookies_clear_text,
     render_cookies_export_text,
     render_cookies_import_text,
 )
@@ -85,4 +88,76 @@ def cookies_import(
         "/cookies/import",
         json_body={"cookies": cookies},
         renderer=render_cookies_import_text,
+    )
+
+
+@app.command("set")
+def cookies_set(
+    name: str | None = typer.Argument(
+        None, help="Cookie name (omit when using --curl)."
+    ),
+    value: str | None = typer.Argument(
+        None, help="Cookie value (omit when using --curl)."
+    ),
+    domain: str = typer.Option(
+        "", "--domain", "-d", help="Cookie domain, e.g. .example.com."
+    ),
+    path: str = typer.Option("/", "--path", help="Cookie path."),
+    curl: str = typer.Option(
+        "",
+        "--curl",
+        help="Parse cookies from a DevTools 'Copy as cURL' command string.",
+    ),
+) -> None:
+    """Set a cookie directly, or import cookies from a Copy-as-cURL string."""
+    body: dict[str, object] = {}
+    if curl:
+        body["curl"] = curl
+    if name is not None and value is not None:
+        cookie: dict[str, object] = {"name": name, "value": value, "path": path}
+        if domain:
+            cookie["domain"] = domain
+        body["cookies"] = [cookie]
+    if not body:
+        from agentcloak.cli.output import error
+
+        error(
+            "no cookie provided",
+            "pass NAME VALUE (with optional --domain) or --curl '<string>'",
+        )
+        return
+    dispatch_text_or_json(
+        DaemonClient(),
+        "POST",
+        "/cookies/set",
+        json_body=body,
+        renderer=render_cookie_set_text,
+    )
+
+
+@app.command("clear")
+def cookies_clear() -> None:
+    """Remove all cookies from the browser context."""
+    dispatch_text_or_json(
+        DaemonClient(), "POST", "/cookies/clear", renderer=render_cookies_clear_text
+    )
+
+
+@app.command("delete")
+def cookies_delete(
+    name: str = typer.Argument(..., help="Cookie name to delete."),
+    domain: str = typer.Option(
+        "", "--domain", "-d", help="Restrict deletion to this domain."
+    ),
+) -> None:
+    """Delete cookies matching a name (optionally scoped to a domain)."""
+    body: dict[str, object] = {"name": name}
+    if domain:
+        body["domain"] = domain
+    dispatch_text_or_json(
+        DaemonClient(),
+        "POST",
+        "/cookies/delete",
+        json_body=body,
+        renderer=render_cookie_delete_text,
     )

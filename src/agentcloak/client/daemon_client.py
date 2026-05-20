@@ -781,6 +781,35 @@ class DaemonClient:
         """Hot-rotate the persistent bridge token via the running daemon."""
         return self._send_sync("POST", "/bridge/token/reset")
 
+    def pdf_sync(
+        self,
+        *,
+        format: str = "A4",
+        landscape: bool = False,
+        scale: float | None = None,
+        margin: dict[str, Any] | None = None,
+        page_ranges: str | None = None,
+    ) -> dict[str, Any]:
+        """Render the page to PDF and return base64 for the CLI to write.
+
+        The CLI decodes the base64 and writes the file itself (it may target a
+        remote daemon), mirroring ``screenshot_sync``. ``output_path`` is
+        intentionally omitted here — the daemon returns bytes, the CLI owns the
+        filesystem write.
+        """
+        return self._send_sync(
+            "POST",
+            "/pdf",
+            json_body=_build_pdf_body(
+                format=format,
+                landscape=landscape,
+                scale=scale,
+                margin=margin,
+                page_ranges=page_ranges,
+                output_path=None,
+            ),
+        )
+
     # ------------------------------------------------------------------
     # Typed async API (MCP)
     # ------------------------------------------------------------------
@@ -1128,6 +1157,148 @@ class DaemonClient:
             json_body={"name": name, "args": args or {}},
         )
 
+    # --- Console (async, 7a R1) ---
+
+    async def console(
+        self, *, since: int = 0, limit: int = 0, level: str = ""
+    ) -> dict[str, Any]:
+        params: dict[str, str] = {"since": str(since)}
+        if limit:
+            params["limit"] = str(limit)
+        if level:
+            params["level"] = level
+        return await self._send_async("GET", "/console", params=params)
+
+    async def console_clear(self) -> dict[str, Any]:
+        return await self._send_async("POST", "/console/clear")
+
+    # --- Download (async, 7a R2) ---
+
+    async def download_url(
+        self, *, url: str, output_dir: str | None = None
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {"url": url}
+        if output_dir:
+            body["output_dir"] = output_dir
+        return await self._send_async("POST", "/download/url", json_body=body)
+
+    async def download_wait(
+        self, *, output_dir: str | None = None, timeout: float | None = None
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {}
+        if output_dir:
+            body["output_dir"] = output_dir
+        if timeout is not None:
+            body["timeout"] = timeout
+        return await self._send_async("POST", "/download/wait", json_body=body)
+
+    async def download_list(self) -> dict[str, Any]:
+        return await self._send_async("GET", "/download/list")
+
+    # --- Storage (async, 7a R4) ---
+
+    async def storage_get(
+        self, *, type: str = "local", key: str | None = None
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {"type": type}
+        if key is not None:
+            body["key"] = key
+        return await self._send_async("POST", "/storage/get", json_body=body)
+
+    async def storage_set(
+        self, *, type: str = "local", key: str, value: str
+    ) -> dict[str, Any]:
+        return await self._send_async(
+            "POST", "/storage/set", json_body={"type": type, "key": key, "value": value}
+        )
+
+    async def storage_delete(self, *, type: str = "local", key: str) -> dict[str, Any]:
+        return await self._send_async(
+            "POST", "/storage/delete", json_body={"type": type, "key": key}
+        )
+
+    async def storage_clear(self, *, type: str = "local") -> dict[str, Any]:
+        return await self._send_async(
+            "POST", "/storage/clear", json_body={"type": type}
+        )
+
+    # --- Clipboard (async, 7a R5) ---
+
+    async def clipboard_read(self) -> dict[str, Any]:
+        return await self._send_async("GET", "/clipboard/read")
+
+    async def clipboard_write(self, *, text: str) -> dict[str, Any]:
+        return await self._send_async(
+            "POST", "/clipboard/write", json_body={"text": text}
+        )
+
+    # --- PDF (async, 7a R6) ---
+
+    async def pdf(
+        self,
+        *,
+        format: str = "A4",
+        landscape: bool = False,
+        scale: float | None = None,
+        margin: dict[str, Any] | None = None,
+        page_ranges: str | None = None,
+        output_path: str | None = None,
+    ) -> dict[str, Any]:
+        return await self._send_async(
+            "POST",
+            "/pdf",
+            json_body=_build_pdf_body(
+                format=format,
+                landscape=landscape,
+                scale=scale,
+                margin=margin,
+                page_ranges=page_ranges,
+                output_path=output_path,
+            ),
+        )
+
+    # --- Serve (async, 7a R7) ---
+
+    async def serve_start(
+        self, *, directory: str, port: int | None = None
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {"directory": directory}
+        if port is not None:
+            body["port"] = port
+        return await self._send_async("POST", "/serve/start", json_body=body)
+
+    async def serve_stop(self) -> dict[str, Any]:
+        return await self._send_async("POST", "/serve/stop")
+
+    async def serve_status(self) -> dict[str, Any]:
+        return await self._send_async("GET", "/serve/status")
+
+    # --- Cookies CRUD (async, 7a R3) ---
+
+    async def cookies_set(
+        self,
+        *,
+        cookies: list[dict[str, Any]] | None = None,
+        curl: str | None = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {}
+        if cookies is not None:
+            body["cookies"] = cookies
+        if curl is not None:
+            body["curl"] = curl
+        return await self._send_async("POST", "/cookies/set", json_body=body)
+
+    async def cookies_clear(self) -> dict[str, Any]:
+        return await self._send_async("POST", "/cookies/clear")
+
+    async def cookies_delete(
+        self, *, name: str, domain: str | None = None
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {"name": name}
+        if domain is not None:
+            body["domain"] = domain
+        return await self._send_async("POST", "/cookies/delete", json_body=body)
+
 
 # ----------------------------------------------------------------------
 # Body / param builders — defined once, used by both sync and async API.
@@ -1229,3 +1400,25 @@ def _build_fetch_body(
     if headers is not None:
         json_body["headers"] = headers
     return json_body
+
+
+def _build_pdf_body(
+    *,
+    format: str,
+    landscape: bool,
+    scale: float | None,
+    margin: dict[str, Any] | None,
+    page_ranges: str | None,
+    output_path: str | None,
+) -> dict[str, Any]:
+    """Assemble the ``/pdf`` request body, omitting unset optional fields."""
+    body: dict[str, Any] = {"format": format, "landscape": landscape}
+    if scale is not None:
+        body["scale"] = scale
+    if margin is not None:
+        body["margin"] = margin
+    if page_ranges:
+        body["page_ranges"] = page_ranges
+    if output_path:
+        body["output_path"] = output_path
+    return body

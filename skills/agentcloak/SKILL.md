@@ -112,6 +112,12 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak fetch URL --method POST --body '{...}'` | HTTP POST with cookies |
 | `cloak network --since N` | Recent network requests (filter by seq; `--since last_action` returns only requests after the most recent action) |
 | `cloak capture start` / `stop` / `export` | Record and export network traffic |
+| `cloak console show [--level error] [--since N]` | Read captured console logs + uncaught page errors (`--clear` empties the buffer) |
+| `cloak storage get [KEY]` / `set KEY VAL` / `delete KEY` / `clear` | localStorage CRUD (`--type session` for sessionStorage) |
+| `cloak clipboard read` / `write TEXT` | Read/write the system clipboard |
+| `cloak download url URL [-o dir]` | Download a URL server-side (with cookies; SSRF-guarded) |
+| `cloak download wait [-o dir]` | Capture the next click-triggered download |
+| `cloak download list` | List files downloaded this session |
 
 ### Management
 
@@ -122,6 +128,9 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak tab list` / `new` / `close` / `switch` | Tab management |
 | `cloak spell list` / `info` / `run NAME` / `scaffold` | Spells (reusable site automation) |
 | `cloak cookies export [--url URL]` / `import -c '[...]'` | Export/import cookies (text output is `domain \| name=value`; pass `--url` to scope to one site — without it every site's cookies are returned, with import preserving httpOnly) |
+| `cloak cookies set NAME VAL [--domain D]` / `set --curl '<copy-as-curl>'` / `clear` / `delete NAME` | Cookie CRUD; `--curl` seeds cookies from a DevTools Copy-as-cURL string |
+| `cloak pdf [-o file] [--format A4] [--landscape]` | Export the current page to PDF (headless only) |
+| `cloak serve start DIR [--port P]` / `stop` / `status` | Local http server for previewing local files (`file://` is blocked); navigate to the printed URL |
 | `cloak cdp endpoint` | Get CDP WebSocket URL (for jshookmcp) |
 | `cloak config` | Show merged config with value sources (default/env/toml) |
 | `cloak config get KEY` | Print one value (e.g. `cloak config get browser.proxy`) |

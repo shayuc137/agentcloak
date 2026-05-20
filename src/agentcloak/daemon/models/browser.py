@@ -82,9 +82,20 @@ class NavigateResponse(BaseModel):
 
 
 class ScreenshotResponse(BaseModel):
-    base64: str
-    size: int
-    format: str
+    """Screenshot result.
+
+    Without ``output_path`` the daemon returns ``base64`` for the CLI/MCP to
+    decode. With ``output_path`` (7a R8) the daemon writes the image itself
+    and returns ``path`` + ``size`` instead, so API/MCP callers driving a
+    daemon on the same host get a file without round-tripping base64.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    base64: str = ""
+    size: int = 0
+    format: str = ""
+    path: str | None = None
 
 
 # --- Snapshot ---

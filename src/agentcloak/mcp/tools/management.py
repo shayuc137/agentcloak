@@ -13,6 +13,9 @@ from mcp.types import ToolAnnotations
 from agentcloak.core.errors import AgentBrowserError
 from agentcloak.core.text_renderers import (
     render_cdp_endpoint_text,
+    render_cookie_delete_text,
+    render_cookie_set_text,
+    render_cookies_clear_text,
     render_cookies_export_text,
     render_cookies_import_text,
     render_doctor_detail_text,
@@ -68,26 +71,36 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
     async def agentcloak_cookies(
-        action: Literal["export", "import"] = "export",
+        action: Literal["export", "import", "set", "clear", "delete"] = "export",
         url: str = "",
         cookies_json: str = "",
+        curl: str = "",
+        name: str = "",
+        domain: str = "",
     ) -> str:
-        """Manage browser cookies — export or import.
+        """Manage browser cookies — export, import, set, clear, or delete.
 
         Actions:
           export — get all cookies from the browser (local or bridge)
           import — inject cookies into the browser (supports httpOnly)
+          set    — set cookies from cookies_json and/or a Copy-as-cURL string
+          clear  — remove all cookies from the browser context
+          delete — delete cookies matching 'name' (optionally scoped to 'domain')
 
         Args:
-            action: 'export' to get cookies, 'import' to inject cookies
-            url: Filter exported cookies by URL (only for export)
-            cookies_json: JSON array of cookie objects to import. Each cookie
-                needs at least 'name', 'value', 'domain', 'path'. Example:
-                '[{"name":"token","value":"abc","domain":".example.com","path":"/"}]'
+            action: export, import, set, clear, or delete
+            url: Filter exported cookies by URL (export only)
+            cookies_json: JSON array of cookie objects (import / set). Each
+                cookie needs at least 'name', 'value', 'domain', 'path'.
+            curl: A DevTools 'Copy as cURL' command string; its cookies are
+                parsed and set (set only)
+            name: Cookie name to delete (delete only)
+            domain: Restrict delete to this domain (delete only)
 
         Returns:
-            export: array of cookies with name, value, domain, path, httpOnly, etc.
-            import: count of imported cookies.
+            export: array of cookies with name, value, domain, path, httpOnly.
+            import/set: count of cookies applied.
+            clear/delete: confirmation.
         """
         if action == "export":
             return await format_call(
@@ -108,10 +121,38 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                 client.cookies_import(cookies=cookies), render_cookies_import_text
             )
 
+        if action == "set":
+            cookies_list = orjson.loads(cookies_json) if cookies_json else None
+            if not cookies_list and not curl:
+                return _error_envelope(
+                    error="missing_cookies",
+                    hint="set needs cookies_json or curl",
+                    action="pass a cookies_json array or a curl string",
+                )
+            return await format_call(
+                client.cookies_set(cookies=cookies_list, curl=curl or None),
+                render_cookie_set_text,
+            )
+
+        if action == "clear":
+            return await format_call(client.cookies_clear(), render_cookies_clear_text)
+
+        if action == "delete":
+            if not name:
+                return _error_envelope(
+                    error="missing_name",
+                    hint="name is required for delete",
+                    action="pass a cookie name",
+                )
+            return await format_call(
+                client.cookies_delete(name=name, domain=domain or None),
+                render_cookie_delete_text,
+            )
+
         return _error_envelope(
             error="unknown_action",
             hint=f"Unknown action: {action}",
-            action="use export or import",
+            action="use export, import, set, clear, or delete",
         )
 
     @mcp.tool(annotations=ToolAnnotations(destructiveHint=False, readOnlyHint=False))

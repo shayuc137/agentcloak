@@ -15,7 +15,8 @@ import contextlib
 import json
 import time
 import uuid
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol, cast
 
 import structlog
 
@@ -27,6 +28,7 @@ from agentcloak.browser.base import (
     match_url_substring,
 )
 from agentcloak.browser.state import (
+    DownloadEntry,
     FrameInfo,
     PageSnapshot,
     TabInfo,
@@ -41,6 +43,50 @@ if TYPE_CHECKING:
 __all__ = ["RemoteBridgeContext"]
 
 logger = structlog.get_logger()
+
+# Paper sizes in inches for CDP Page.printToPDF (which wants explicit
+# paperWidth/paperHeight rather than the named formats Playwright accepts).
+_PAPER_SIZES_IN: dict[str, tuple[float, float]] = {
+    "a4": (8.27, 11.69),
+    "letter": (8.5, 11.0),
+    "legal": (8.5, 14.0),
+    "a3": (11.69, 16.54),
+}
+
+
+def _pdf_options_to_cdp(options: dict[str, Any]) -> dict[str, Any]:
+    """Translate Playwright-style PDF options into CDP printToPDF params.
+
+    Mirrors the option vocabulary the daemon route exposes (format, landscape,
+    scale, margin, pageRanges) so both backends accept the same request shape.
+    """
+    params: dict[str, Any] = {"printBackground": True}
+    fmt = str(options.get("format", "A4")).lower()
+    width, height = _PAPER_SIZES_IN.get(fmt, _PAPER_SIZES_IN["a4"])
+    params["paperWidth"] = width
+    params["paperHeight"] = height
+    if options.get("landscape"):
+        params["landscape"] = True
+    if options.get("scale") is not None:
+        params["scale"] = float(options["scale"])
+    if options.get("pageRanges"):
+        params["pageRanges"] = str(options["pageRanges"])
+    margin = options.get("margin")
+    if isinstance(margin, dict):
+        margin_obj = cast("dict[str, Any]", margin)
+        # Playwright margins are CSS strings ("1cm"); CDP wants inches. Only a
+        # plain inch float is passed straight through; anything else is left to
+        # the CDP defaults to avoid mis-converting units.
+        for side, key in (
+            ("top", "marginTop"),
+            ("bottom", "marginBottom"),
+            ("left", "marginLeft"),
+            ("right", "marginRight"),
+        ):
+            val = margin_obj.get(side)
+            if isinstance(val, int | float):
+                params[key] = float(val)
+    return params
 
 
 class _BridgeWS(Protocol):
@@ -162,6 +208,12 @@ class RemoteBridgeContext(BrowserContextBase):
             params = msg.get("params", {})
             if method == "Page.javascriptDialogOpening":
                 self._handle_dialog_event(params)
+            elif method == "Runtime.consoleAPICalled":
+                self._handle_console_event(params)
+            elif method == "Runtime.exceptionThrown":
+                self._handle_exception_event(params)
+            elif method == "Page.downloadWillBegin":
+                self._handle_download_begin(params)
             elif method.startswith("Network.") and self._capture_store.recording:
                 # Only build capture entries while recording — dropping events
                 # otherwise saves memory on busy pages.
@@ -787,6 +839,310 @@ class RemoteBridgeContext(BrowserContextBase):
             },
         )
         return {"uploaded": True}
+
+    # ------------------------------------------------------------------
+    # Atomic: console capture (7a R1)
+    # ------------------------------------------------------------------
+
+    # CDP console types map onto the level vocabulary agents filter by.
+    _CONSOLE_TYPE_MAP: ClassVar[dict[str, str]] = {"warning": "warn"}
+
+    async def _console_setup_impl(self) -> None:
+        # The Runtime domain must be enabled before consoleAPICalled /
+        # exceptionThrown events flow. Unlike the Playwright backend (which
+        # registers listeners for free), remote console capture is opt-in so
+        # we don't spam the bridge with Runtime traffic until asked.
+        try:
+            await self._send("cdp", {"method": "Runtime.enable", "params": {}})
+        except Exception:
+            logger.warning("runtime_enable_failed", exc_info=True)
+
+    def _handle_console_event(self, params: dict[str, Any]) -> None:
+        raw_type = str(params.get("type", "log"))
+        args = params.get("args", [])
+        parts: list[str] = []
+        if isinstance(args, list):
+            arg_list = cast("list[Any]", args)
+            for arg in arg_list:
+                if not isinstance(arg, dict):
+                    continue
+                arg_obj = cast("dict[str, Any]", arg)
+                if "value" in arg_obj:
+                    parts.append(str(arg_obj.get("value")))
+                elif arg_obj.get("description"):
+                    parts.append(str(arg_obj.get("description")))
+                elif arg_obj.get("unserializableValue"):
+                    parts.append(str(arg_obj.get("unserializableValue")))
+        text = " ".join(parts)
+        url, line, column = self._console_location(params.get("stackTrace"))
+        self._record_console_entry(
+            level=self._CONSOLE_TYPE_MAP.get(raw_type, raw_type),
+            text=text,
+            url=url,
+            line=line,
+            column=column,
+            is_error=False,
+        )
+
+    def _handle_exception_event(self, params: dict[str, Any]) -> None:
+        raw_details = params.get("exceptionDetails", {})
+        if not isinstance(raw_details, dict):
+            return
+        details = cast("dict[str, Any]", raw_details)
+        exception = details.get("exception", {})
+        text = ""
+        if isinstance(exception, dict):
+            exc_obj = cast("dict[str, Any]", exception)
+            text = str(exc_obj.get("description") or exc_obj.get("value") or "")
+        if not text:
+            text = str(details.get("text", "Uncaught exception"))
+        self._record_console_entry(
+            level="error",
+            text=text,
+            url=str(details.get("url", "")),
+            line=details.get("lineNumber"),
+            column=details.get("columnNumber"),
+            is_error=True,
+        )
+
+    @staticmethod
+    def _console_location(
+        stack_trace: Any,
+    ) -> tuple[str, int | None, int | None]:
+        """Pull (url, line, column) from a CDP stackTrace's top frame."""
+        if not isinstance(stack_trace, dict):
+            return "", None, None
+        trace_obj = cast("dict[str, Any]", stack_trace)
+        frames = trace_obj.get("callFrames", [])
+        if isinstance(frames, list) and frames:
+            top = cast("list[Any]", frames)[0]
+            if isinstance(top, dict):
+                top_obj = cast("dict[str, Any]", top)
+                return (
+                    str(top_obj.get("url", "")),
+                    top_obj.get("lineNumber"),
+                    top_obj.get("columnNumber"),
+                )
+        return "", None, None
+
+    # ------------------------------------------------------------------
+    # Atomic: download (7a R2)
+    # ------------------------------------------------------------------
+
+    def _handle_download_begin(self, params: dict[str, Any]) -> None:
+        """Hand a click-triggered download's metadata to a parked waiter."""
+        self._resolve_download_waiter(
+            {
+                "url": str(params.get("url", "")),
+                "suggested_filename": str(params.get("suggestedFilename", "")),
+                "guid": str(params.get("guid", "")),
+            }
+        )
+
+    async def _bridge_cookie_jar(self) -> Any:
+        """Build an httpx cookie jar from the remote browser's cookies."""
+        import httpx
+
+        jar = httpx.Cookies()
+        with contextlib.suppress(Exception):
+            raw = await self._send("cookies", {})
+            cookies: list[dict[str, Any]] = cast(
+                "list[dict[str, Any]]", raw if isinstance(raw, list) else []
+            )
+            for c in cookies:
+                if c.get("name"):
+                    jar.set(
+                        str(c.get("name")),
+                        str(c.get("value", "")),
+                        domain=str(c.get("domain", "")),
+                        path=str(c.get("path", "/")),
+                    )
+        return jar
+
+    async def _download_url_impl(self, url: str, output_dir: str) -> DownloadEntry:
+        # Direct-URL download works even on the remote backend: the daemon
+        # fetches the URL itself, carrying the remote browser's cookies so an
+        # authenticated resource still resolves. The file lands on the daemon
+        # host, which is what an agent driving the CLI expects.
+        import httpx
+
+        # Shared filename-derivation helper lives in the Playwright module; both
+        # backends run the identical direct-URL download path. Reusing it keeps
+        # Content-Disposition parsing consistent across backends.
+        from agentcloak.browser.playwright_ctx import (
+            _download_filename,  # pyright: ignore[reportPrivateUsage]
+        )
+
+        jar = await self._bridge_cookie_jar()
+        out_dir = Path(output_dir).expanduser()
+        out_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            async with httpx.AsyncClient(
+                cookies=jar, timeout=httpx.Timeout(60.0), follow_redirects=True
+            ) as client:
+                async with client.stream("GET", url) as resp:
+                    resp.raise_for_status()
+                    filename = _download_filename(url, resp.headers)
+                    dest = out_dir / filename
+                    size = 0
+                    with dest.open("wb") as fh:
+                        async for chunk in resp.aiter_bytes():
+                            fh.write(chunk)
+                            size += len(chunk)
+        except httpx.HTTPStatusError as exc:
+            raise BackendError(
+                error="download_failed",
+                hint=f"Download of {url} returned HTTP {exc.response.status_code}",
+                action="check the URL is reachable with the current session",
+            ) from exc
+        except httpx.RequestError as exc:
+            raise BackendError(
+                error="download_failed",
+                hint=f"Download of {url} failed: {exc}",
+                action="check URL and network connectivity",
+            ) from exc
+
+        return DownloadEntry(
+            filename=dest.name,
+            path=str(dest.resolve()),
+            size=size,
+            url=url,
+            source="url",
+        )
+
+    async def _download_wait_impl(
+        self, output_dir: str, *, timeout: float
+    ) -> DownloadEntry:
+        # Enable download events, then park a waiter the ``Page.downloadWillBegin``
+        # handler resolves. The remote browser saves the file on the user's
+        # machine, so we re-fetch the captured URL via httpx to land a copy on
+        # the daemon host (what the CLI caller can actually access).
+        with contextlib.suppress(Exception):
+            await self._send(
+                "cdp",
+                {
+                    "method": "Page.setDownloadBehavior",
+                    "params": {"behavior": "allow", "downloadPath": output_dir},
+                },
+            )
+
+        loop = asyncio.get_running_loop()
+        fut: asyncio.Future[Any] = loop.create_future()
+        self._download_waiters.append(fut)
+        try:
+            meta = await asyncio.wait_for(fut, timeout=timeout)
+        except TimeoutError as exc:
+            with contextlib.suppress(ValueError):
+                self._download_waiters.remove(fut)
+            raise BrowserTimeoutError(
+                error="download_timeout",
+                hint=f"No download started within {timeout}s",
+                action="trigger the download (click) after calling 'download wait'",
+            ) from exc
+
+        download_url = str(meta.get("url", ""))
+        if not download_url:
+            raise BackendError(
+                error="download_failed",
+                hint="Download started but no source URL was reported",
+                action="use 'download url' with the file URL instead",
+            )
+        entry = await self._download_url_impl(download_url, output_dir)
+        return DownloadEntry(
+            filename=entry.filename,
+            path=entry.path,
+            size=entry.size,
+            url=download_url,
+            source="event",
+        )
+
+    # ------------------------------------------------------------------
+    # Atomic: clipboard (7a R5)
+    # ------------------------------------------------------------------
+
+    async def _grant_clipboard(self) -> None:
+        if self._clipboard_granted:
+            return
+        with contextlib.suppress(Exception):
+            await self._send(
+                "cdp",
+                {
+                    "method": "Browser.grantPermissions",
+                    "params": {
+                        "permissions": [
+                            "clipboardReadWrite",
+                            "clipboardSanitizedWrite",
+                        ]
+                    },
+                },
+            )
+        self._clipboard_granted = True
+
+    async def _clipboard_read_impl(self) -> str:
+        await self._grant_clipboard()
+        result = await self._send("evaluate", {"js": "navigator.clipboard.readText()"})
+        return str(result.get("result") or "")
+
+    async def _clipboard_write_impl(self, text: str) -> None:
+        await self._grant_clipboard()
+        js = f"navigator.clipboard.writeText({json.dumps(text)})"
+        await self._send("evaluate", {"js": js})
+
+    # ------------------------------------------------------------------
+    # Atomic: PDF (7a R6)
+    # ------------------------------------------------------------------
+
+    async def _pdf_impl(self, options: dict[str, Any]) -> bytes:
+        cdp_params = _pdf_options_to_cdp(options)
+        try:
+            result = await self._send(
+                "cdp",
+                {"method": "Page.printToPDF", "params": cdp_params},
+            )
+        except BackendError as exc:
+            raise BackendError(
+                error="pdf_failed",
+                hint=str(exc.hint),
+                action="check the PDF options or remote Chrome support",
+            ) from exc
+        data = str(result.get("data", ""))
+        try:
+            return base64.b64decode(data)
+        except Exception as exc:
+            raise BackendError(
+                error="pdf_failed",
+                hint="Remote browser returned no PDF data",
+                action="retry, or verify the page finished loading",
+            ) from exc
+
+    # ------------------------------------------------------------------
+    # Atomic: cookies CRUD (7a R3)
+    # ------------------------------------------------------------------
+
+    async def _cookies_set_impl(self, cookies: list[dict[str, Any]]) -> None:
+        for cookie in cookies:
+            await self._send(
+                "cdp",
+                {"method": "Network.setCookie", "params": cookie},
+            )
+
+    async def _cookies_clear_impl(self) -> None:
+        await self._send(
+            "cdp",
+            {"method": "Network.clearBrowserCookies", "params": {}},
+        )
+
+    async def _cookies_delete_impl(self, name: str, *, domain: str | None) -> int:
+        params: dict[str, Any] = {"name": name}
+        if domain is not None:
+            params["domain"] = domain
+        await self._send(
+            "cdp",
+            {"method": "Network.deleteCookies", "params": params},
+        )
+        # CDP deleteCookies reports no count; return 1 to signal "delete issued"
+        # without claiming a precise number we can't observe.
+        return 1
 
     # ------------------------------------------------------------------
     # Atomic: dialog

@@ -27,6 +27,7 @@ __all__ = [
     "BrowserCtxDep",
     "ConfigDep",
     "ContextManagerDep",
+    "FileServerDep",
     "LocalProxyDep",
     "OptionalBrowserCtxDep",
     "RemoteCtxDep",
@@ -41,6 +42,7 @@ __all__ = [
     "get_browser_ctx",
     "get_config",
     "get_context_manager",
+    "get_file_server",
     "get_local_proxy",
     "get_optional_browser_ctx",
     "get_remote_ctx",
@@ -237,6 +239,22 @@ def get_bridge_token(request: Request) -> str | None:
     return getattr(request.app.state, "bridge_token", None)
 
 
+def get_file_server(request: Request) -> Any:
+    """Return the daemon's :class:`FileServer`, creating it on first use.
+
+    The server is lazily instantiated so the ``serve`` capability costs
+    nothing until an agent actually calls ``/serve/start``. The handle lives
+    on ``app.state`` so the daemon shutdown path can stop it.
+    """
+    from agentcloak.daemon.services import FileServer
+
+    server = getattr(request.app.state, "file_server", None)
+    if server is None:
+        server = FileServer()
+        request.app.state.file_server = server
+    return server
+
+
 def get_bridge_service(request: Request) -> BridgeService:
     """Return the :class:`BridgeService` that owns bridge WebSocket lifecycle.
 
@@ -272,3 +290,4 @@ SnapshotCacheDep = Annotated[SnapshotCache, Depends(get_snapshot_cache)]
 ShutdownEventDep = Annotated[Any, Depends(get_shutdown_event)]
 BridgeTokenDep = Annotated[Any, Depends(get_bridge_token)]
 BridgeServiceDep = Annotated[Any, Depends(get_bridge_service)]
+FileServerDep = Annotated[Any, Depends(get_file_server)]

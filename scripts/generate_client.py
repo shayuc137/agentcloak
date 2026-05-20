@@ -74,6 +74,9 @@ KEEP_SYNC_METHODS: set[str] = {
     "cookies_export_sync",
     "fetch_sync",
     "profile_create_from_current_sync",
+    # 7a R6: PDF returns base64 the CLI decodes and writes locally (like
+    # screenshot), so it needs a bespoke sync wrapper.
+    "pdf_sync",
 }
 
 

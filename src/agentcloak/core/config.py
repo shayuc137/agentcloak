@@ -130,6 +130,10 @@ class BrowserConfig:
     # contents. Common uses include ``--lang=ja-JP`` or
     # ``--disable-blink-features=AutomationControlled``.
     extra_args: list[str] = field(default_factory=list[str])
+    # Ring-buffer capacity for captured console messages (7a R1). Oldest
+    # messages are dropped past this cap so a chatty page can't grow daemon
+    # memory unbounded. Matches the action ring buffer's default size.
+    console_buffer_size: int = 1000
 
 
 @dataclass
@@ -314,6 +318,10 @@ def load_config(*, root: Path | None = None) -> tuple[Paths, AgentcloakConfig]:
     cfg.browser.snapshot_max_nodes = int(
         _env("SNAPSHOT_MAX_NODES")
         or browser_tbl.get("snapshot_max_nodes", cfg.browser.snapshot_max_nodes)
+    )
+    cfg.browser.console_buffer_size = int(
+        _env("CONSOLE_BUFFER_SIZE")
+        or browser_tbl.get("console_buffer_size", cfg.browser.console_buffer_size)
     )
     cfg.browser.proxy = _env("PROXY") or browser_tbl.get("proxy", cfg.browser.proxy)
     doh_env = _env("DNS_OVER_HTTPS")

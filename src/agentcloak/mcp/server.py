@@ -69,13 +69,19 @@ def create_server() -> object:
     from agentcloak.mcp.tools import (
         bridge,
         capture,
+        clipboard,
+        console,
         content,
         dialog,
+        download,
         frame,
         interaction,
         management,
         navigation,
         network,
+        pdf,
+        serve,
+        storage,
         upload,
         wait,
     )
@@ -111,6 +117,13 @@ def create_server() -> object:
     upload.register(mcp, client)
     frame.register(mcp, client)
     bridge.register(mcp, client)
+    # 7a R1-R7 capabilities.
+    console.register(mcp, client)
+    download.register(mcp, client)
+    storage.register(mcp, client)
+    clipboard.register(mcp, client)
+    pdf.register(mcp, client)
+    serve.register(mcp, client)
 
     return mcp
 

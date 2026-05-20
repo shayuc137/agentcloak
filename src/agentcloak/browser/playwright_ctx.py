@@ -22,11 +22,12 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import re
 import shutil
 import socket
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
+from typing import TYPE_CHECKING, Any, ClassVar
+from urllib.parse import unquote, urlparse
 
 import httpx
 import structlog
@@ -38,6 +39,7 @@ from agentcloak.browser.base import (
     match_url_substring,
 )
 from agentcloak.browser.state import (
+    DownloadEntry,
     FrameInfo,
     TabInfo,
 )
@@ -66,6 +68,42 @@ def find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
+
+
+_FILENAME_STAR_RE = re.compile(r"filename\*=(?:[^']*'')?([^;]+)", re.IGNORECASE)
+_FILENAME_RE = re.compile(r'filename="?([^";]+)"?', re.IGNORECASE)
+
+
+def _download_filename(url: str, headers: Any) -> str:
+    """Derive a safe download filename from Content-Disposition or the URL.
+
+    Prefers RFC 5987 ``filename*`` then plain ``filename`` in the
+    Content-Disposition header, falling back to the URL path's basename, then
+    a generic ``download.bin``. Strips path separators so a malicious header
+    can't write outside the target directory.
+    """
+    disposition = ""
+    with contextlib.suppress(Exception):
+        disposition = headers.get("content-disposition", "") or ""
+
+    name = ""
+    star = _FILENAME_STAR_RE.search(disposition)
+    if star:
+        name = unquote(star.group(1).strip().strip('"'))
+    else:
+        plain = _FILENAME_RE.search(disposition)
+        if plain:
+            name = plain.group(1).strip()
+
+    if not name:
+        path = urlparse(url).path
+        name = path.rsplit("/", 1)[-1] if path else ""
+
+    # Strip any directory components and reject empty/relative names.
+    name = name.replace("\\", "/").rsplit("/", 1)[-1].strip()
+    if not name or name in (".", ".."):
+        return "download.bin"
+    return name
 
 
 def _find_chromium() -> str | None:
@@ -196,6 +234,12 @@ class PlaywrightContext(BrowserContextBase):
         target.on("dialog", self._on_dialog)
         target.on("framenavigated", self._on_frame_navigated)
         target.on("download", self._on_download)
+        # Console capture (7a R1): wire listeners eagerly so messages emitted
+        # before the first ``console`` query (e.g. during navigate) are not
+        # lost. The ring buffer caps growth; ``_console_setup_impl`` is a
+        # no-op on this backend because registration already happened here.
+        target.on("console", self._on_console)
+        target.on("pageerror", self._on_page_error)
 
     def _on_request_start(self, _request: Any) -> None:
         self._pending_request_count += 1
@@ -247,6 +291,38 @@ class PlaywrightContext(BrowserContextBase):
             self._last_download_event = {
                 "filename": download.suggested_filename,
             }
+        # Hand the Download object to a parked ``download_wait`` caller, if any.
+        with contextlib.suppress(Exception):
+            self._resolve_download_waiter(download)
+
+    # Playwright console types use "warning"; agents/CLI filter on "warn".
+    _CONSOLE_LEVEL_MAP: ClassVar[dict[str, str]] = {"warning": "warn"}
+
+    def _on_console(self, msg: Any) -> None:
+        with contextlib.suppress(Exception):
+            loc: dict[str, Any] = {}
+            with contextlib.suppress(Exception):
+                loc = msg.location or {}
+            raw_type = str(getattr(msg, "type", "log"))
+            self._record_console_entry(
+                level=self._CONSOLE_LEVEL_MAP.get(raw_type, raw_type),
+                text=str(getattr(msg, "text", "")),
+                url=str(loc.get("url", "")),
+                line=loc.get("lineNumber"),
+                column=loc.get("columnNumber"),
+                is_error=False,
+            )
+
+    def _on_page_error(self, error: Any) -> None:
+        with contextlib.suppress(Exception):
+            self._record_console_entry(
+                level="error",
+                text=str(error),
+                url="",
+                line=None,
+                column=None,
+                is_error=True,
+            )
 
     def _on_response(self, response: Any) -> None:
         try:
@@ -806,6 +882,219 @@ class PlaywrightContext(BrowserContextBase):
         element = await self._resolve_element(index)
         await element.set_input_files(files)
         return {"uploaded": True}
+
+    # ------------------------------------------------------------------
+    # Atomic: console capture (7a R1)
+    # ------------------------------------------------------------------
+
+    async def _console_setup_impl(self) -> None:
+        # Listeners are registered eagerly in ``_setup_feedback_listeners`` so
+        # nothing emitted before the first query is missed. Nothing to do here.
+        return None
+
+    # ------------------------------------------------------------------
+    # Atomic: download (7a R2)
+    # ------------------------------------------------------------------
+
+    async def _browser_cookie_jar(self) -> tuple[httpx.Cookies, str]:
+        """Build an httpx cookie jar + UA from the live browser context.
+
+        Shared by direct-URL download (and mirrors the cookie-sync logic in
+        ``_fetch_impl``) so a server-side download carries the same session as
+        the logged-in browser.
+        """
+        context = self._page.context
+        cookies_raw: list[dict[str, Any]] = await context.cookies()
+        jar = httpx.Cookies()
+        for c in cookies_raw:
+            jar.set(
+                c["name"],
+                c["value"],
+                domain=c.get("domain", ""),
+                path=c.get("path", "/"),
+            )
+        ua: str = await self._page.evaluate("navigator.userAgent")
+        return jar, ua
+
+    async def _download_url_impl(self, url: str, output_dir: str) -> DownloadEntry:
+        jar, ua = await self._browser_cookie_jar()
+        client_kwargs: dict[str, Any] = {
+            "cookies": jar,
+            "timeout": httpx.Timeout(60.0),
+            "follow_redirects": True,
+        }
+        if self._proxy_url:
+            client_kwargs["proxy"] = self._proxy_url
+
+        out_dir = Path(output_dir).expanduser()
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            async with httpx.AsyncClient(**client_kwargs) as client:
+                async with client.stream(
+                    "GET", url, headers={"User-Agent": ua}
+                ) as resp:
+                    resp.raise_for_status()
+                    filename = _download_filename(url, resp.headers)
+                    dest = out_dir / filename
+                    size = 0
+                    with dest.open("wb") as fh:
+                        async for chunk in resp.aiter_bytes():
+                            fh.write(chunk)
+                            size += len(chunk)
+        except httpx.HTTPStatusError as exc:
+            raise BackendError(
+                error="download_failed",
+                hint=f"Download of {url} returned HTTP {exc.response.status_code}",
+                action="check the URL is reachable and not behind auth you lack",
+            ) from exc
+        except httpx.RequestError as exc:
+            raise BackendError(
+                error="download_failed",
+                hint=f"Download of {url} failed: {exc}",
+                action="check URL and network connectivity",
+            ) from exc
+
+        return DownloadEntry(
+            filename=dest.name,
+            path=str(dest.resolve()),
+            size=size,
+            url=url,
+            source="url",
+        )
+
+    async def _download_wait_impl(
+        self, output_dir: str, *, timeout: float
+    ) -> DownloadEntry:
+        loop = asyncio.get_running_loop()
+        fut: asyncio.Future[Any] = loop.create_future()
+        self._download_waiters.append(fut)
+        try:
+            download = await asyncio.wait_for(fut, timeout=timeout)
+        except TimeoutError as exc:
+            with contextlib.suppress(ValueError):
+                self._download_waiters.remove(fut)
+            raise BrowserTimeoutError(
+                error="download_timeout",
+                hint=f"No download started within {timeout}s",
+                action="trigger the download (click) after calling 'download wait'",
+            ) from exc
+
+        out_dir = Path(output_dir).expanduser()
+        out_dir.mkdir(parents=True, exist_ok=True)
+        dest = out_dir / download.suggested_filename
+        await download.save_as(str(dest))
+        size = dest.stat().st_size if dest.is_file() else 0
+        return DownloadEntry(
+            filename=dest.name,
+            path=str(dest.resolve()),
+            size=size,
+            url=str(getattr(download, "url", "")),
+            source="event",
+        )
+
+    # ------------------------------------------------------------------
+    # Atomic: clipboard (7a R5)
+    # ------------------------------------------------------------------
+
+    async def _grant_clipboard(self) -> None:
+        """Grant clipboard read/write once via CDP ``Browser.grantPermissions``."""
+        if self._clipboard_granted:
+            return
+        origin = ""
+        with contextlib.suppress(Exception):
+            origin = str(self._page.url)
+        cdp = await self._page.context.new_cdp_session(self._page)
+        try:
+            params: dict[str, Any] = {
+                "permissions": ["clipboardReadWrite", "clipboardSanitizedWrite"],
+            }
+            if origin and origin.startswith(("http://", "https://")):
+                params["origin"] = origin
+            await cdp.send("Browser.grantPermissions", params)
+        except Exception:
+            logger.debug("clipboard_grant_failed", exc_info=True)
+        finally:
+            await cdp.detach()
+        self._clipboard_granted = True
+
+    async def _clipboard_read_impl(self) -> str:
+        await self._grant_clipboard()
+        try:
+            result = await self._page.evaluate("navigator.clipboard.readText()")
+        except Exception as exc:
+            raise BackendError(
+                error="clipboard_read_failed",
+                hint=str(exc),
+                action="ensure the page is focused and clipboard access is allowed",
+            ) from exc
+        return str(result or "")
+
+    async def _clipboard_write_impl(self, text: str) -> None:
+        await self._grant_clipboard()
+        try:
+            await self._page.evaluate("(t) => navigator.clipboard.writeText(t)", text)
+        except Exception as exc:
+            raise BackendError(
+                error="clipboard_write_failed",
+                hint=str(exc),
+                action="ensure the page is focused and clipboard access is allowed",
+            ) from exc
+
+    # ------------------------------------------------------------------
+    # Atomic: PDF (7a R6)
+    # ------------------------------------------------------------------
+
+    async def _pdf_impl(self, options: dict[str, Any]) -> bytes:
+        try:
+            return await self._page.pdf(**options)
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "headless" in msg or "non-headless" in msg or "pdf" in msg:
+                raise BackendError(
+                    error="pdf_not_supported",
+                    hint="PDF export requires headless Chromium",
+                    action="restart the daemon with headless mode to export PDF",
+                ) from exc
+            raise BackendError(
+                error="pdf_failed",
+                hint=str(exc),
+                action="check the PDF options (format, margin, pageRanges)",
+            ) from exc
+
+    # ------------------------------------------------------------------
+    # Atomic: cookies CRUD (7a R3)
+    # ------------------------------------------------------------------
+
+    async def _cookies_set_impl(self, cookies: list[dict[str, Any]]) -> None:
+        await self._get_browser_context().add_cookies(cookies)
+
+    async def _cookies_clear_impl(self) -> None:
+        await self._get_browser_context().clear_cookies()
+
+    async def _cookies_delete_impl(self, name: str, *, domain: str | None) -> int:
+        context = self._get_browser_context()
+        existing: list[dict[str, Any]] = await context.cookies()
+        # Playwright >=1.43 supports filtered clear_cookies(name=, domain=);
+        # count the matches first so we can report how many were removed.
+        matched = [
+            c
+            for c in existing
+            if c.get("name") == name and (domain is None or c.get("domain") == domain)
+        ]
+        clear_kwargs: dict[str, Any] = {"name": name}
+        if domain is not None:
+            clear_kwargs["domain"] = domain
+        try:
+            await context.clear_cookies(**clear_kwargs)
+        except TypeError:
+            # Older Playwright without filtered clear: clear all, re-add the
+            # cookies we did not want to delete.
+            await context.clear_cookies()
+            survivors = [c for c in existing if c not in matched]
+            if survivors:
+                await context.add_cookies(survivors)
+        return len(matched)
 
     # ------------------------------------------------------------------
     # Atomic: dialog handle

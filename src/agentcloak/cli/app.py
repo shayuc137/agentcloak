@@ -34,7 +34,7 @@ _SHORTCUTS = (
 _GROUPS = (
     "browser, do, js, tab, profile, spell, capture, frame, daemon, doctor, "
     "launch, network, fetch, bridge, cookies, skill, cdp, dialog, wait, "
-    "upload, config"
+    "upload, config, console, download, storage, clipboard, pdf, serve"
 )
 _EPILOG = (
     f"Shortcuts (top-level, also documented under their groups):\n  {_SHORTCUTS}\n"
@@ -189,19 +189,25 @@ def _register_commands() -> None:
         browser,
         capture_cmd,
         cdp,
+        clipboard_cmd,
         config_cmd,
+        console_cmd,
         cookies_cmd,
         daemon_cmd,
         dialog,
         doctor,
+        download_cmd,
         fetch,
         frame,
         js,
         launch,
         network,
+        pdf_cmd,
         profile,
+        serve_cmd,
         skill_cmd,
         spell_cmd,
+        storage_cmd,
         tab,
         upload,
         wait_cmd,
@@ -294,6 +300,36 @@ def _register_commands() -> None:
         frame.app,
         name="frame",
         help="Frame switching: list, focus.",
+    )
+    app.add_typer(
+        console_cmd.app,
+        name="console",
+        help="Console logs: show captured messages and page errors.",
+    )
+    app.add_typer(
+        download_cmd.app,
+        name="download",
+        help="Downloads: direct-URL fetch, wait for click-triggered, list.",
+    )
+    app.add_typer(
+        storage_cmd.app,
+        name="storage",
+        help="Web storage: get/set/delete/clear localStorage and sessionStorage.",
+    )
+    app.add_typer(
+        clipboard_cmd.app,
+        name="clipboard",
+        help="Clipboard: read and write the system clipboard.",
+    )
+    app.add_typer(
+        pdf_cmd.app,
+        name="pdf",
+        help="Export the current page to a PDF file.",
+    )
+    app.add_typer(
+        serve_cmd.app,
+        name="serve",
+        help="Local static file server for previewing local files over http.",
     )
 
 

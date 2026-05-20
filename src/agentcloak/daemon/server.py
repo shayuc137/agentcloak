@@ -609,6 +609,12 @@ async def start(
         unregister_daemon()
         with contextlib.suppress(Exception):
             await context_manager.shutdown()
+        # Stop the embedded ``cloak serve`` file server (7a R7) so its
+        # listener never outlives the daemon.
+        file_server = getattr(app.state, "file_server", None)
+        if file_server is not None:
+            with contextlib.suppress(Exception):
+                await file_server.stop()
         if local_proxy is not None:
             with contextlib.suppress(Exception):
                 local_proxy.close()  # pyright: ignore[reportUnknownMemberType]

@@ -28,9 +28,15 @@ from agentcloak.daemon.routes import (
     bridge,
     browser,
     capture,
+    clipboard,
+    console,
+    download,
     interaction,
     lifecycle,
+    pdf,
+    serve,
     spells,
+    storage,
     tabs,
 )
 from agentcloak.daemon.services import ActionService
@@ -54,6 +60,12 @@ def _build_router() -> APIRouter:
         tabs,
         interaction,
         spells,
+        console,
+        download,
+        storage,
+        clipboard,
+        pdf,
+        serve,
     ):
         merged.include_router(module.router)
     return merged

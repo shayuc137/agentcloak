@@ -95,6 +95,13 @@ async def handle_screenshot(
         None,
         description="JPEG quality 1-100; unset uses the default. Ignored for png.",
     ),
+    output_path: str = Query(
+        "",
+        description=(
+            "Write the image to this path on the daemon host (7a R8) and return "
+            "path+size instead of base64. Omit to return base64 inline."
+        ),
+    ),
 ) -> dict[str, Any]:
     # ``quality=None`` resolves to the configured default. CLI callers leave
     # this unset and inherit the file/env default; MCP tools pass an explicit
@@ -102,6 +109,19 @@ async def handle_screenshot(
     if quality is None:
         quality = config.browser.screenshot_quality
     raw = await ctx.screenshot(full_page=full_page, format=format, quality=quality)
+
+    # ``output_path`` lets an API/MCP caller driving a same-host daemon get a
+    # file directly. The CLI keeps its own base64→file path (it may target a
+    # remote daemon), so it leaves this unset and decodes locally.
+    if output_path:
+        from pathlib import Path
+
+        dest = Path(output_path).expanduser()
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(raw)
+        data = {"path": str(dest), "size": len(raw), "format": format}
+        return _ok(data, seq=ctx.seq)
+
     b64 = screenshot_to_base64(raw)
     data = {"base64": b64, "size": len(raw), "format": format}
     return _ok(data, seq=ctx.seq)

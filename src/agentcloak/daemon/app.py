@@ -56,6 +56,9 @@ def create_app() -> FastAPI:
     app.state.local_tier = None
     app.state.local_profile = None
     app.state.active_tier = None
+    # Embedded static file server for ``cloak serve`` (7a R7). Lazily created
+    # on first ``/serve/start`` and torn down by the daemon shutdown path.
+    app.state.file_server = None
     # BridgeService is instantiated by ``server.start()`` after the
     # initial config is loaded; routes that depend on it (``BridgeServiceDep``)
     # raise 503 if accessed before then. Defaulting to ``None`` here lets

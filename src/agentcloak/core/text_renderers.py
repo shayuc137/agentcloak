@@ -55,12 +55,21 @@ __all__ = [
     "render_capture_export_text",
     "render_capture_status_text",
     "render_cdp_endpoint_text",
+    "render_clipboard_read_text",
+    "render_clipboard_write_text",
+    "render_console_clear_text",
+    "render_console_text",
+    "render_cookie_delete_text",
+    "render_cookie_set_text",
+    "render_cookies_clear_text",
     "render_cookies_export_text",
     "render_cookies_import_text",
     "render_dialog_handle_text",
     "render_dialog_status_text",
     "render_doctor_detail_text",
     "render_doctor_text",
+    "render_download_list_text",
+    "render_download_text",
     "render_evaluate_text",
     "render_fetch_text",
     "render_frame_focus_text",
@@ -69,16 +78,20 @@ __all__ = [
     "render_launch_text",
     "render_navigate_text",
     "render_network_text",
+    "render_pdf_text",
     "render_profile_create_from_current_text",
     "render_profile_create_text",
     "render_profile_delete_text",
     "render_profile_list_text",
     "render_resume_text",
     "render_screenshot_text",
+    "render_serve_status_text",
+    "render_serve_stop_text",
     "render_shutdown_text",
     "render_snapshot_text",
     "render_spell_list_text",
     "render_spell_run_text",
+    "render_storage_text",
     "render_tab_list_text",
     "render_tab_op_text",
     "render_token_text",
@@ -984,3 +997,180 @@ def render_doctor_detail_text(data: dict[str, Any]) -> str:
             line += f" | hint: {hint}"
         lines.append(line)
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Console (7a R1)
+# ---------------------------------------------------------------------------
+
+
+def render_console_text(data: dict[str, Any]) -> str:
+    """Render ``/console`` as ``[level] text (url:line)`` per message.
+
+    Errors get an ``!`` prefix so an agent scanning the output can spot
+    uncaught exceptions among ordinary logs. The trailing ``seq=N`` lets the
+    agent pass ``--since N`` next time to page only new messages.
+    """
+    entries: list[Any] = list(data.get("entries") or [])
+    if not entries:
+        return "no console messages"
+    lines: list[str] = []
+    for raw in entries:
+        if not isinstance(raw, dict):
+            continue
+        entry = _as_dict(raw)
+        level = str(entry.get("level", "") or "log")
+        text = str(entry.get("text", "") or "")
+        marker = "!" if entry.get("is_error") else " "
+        url = str(entry.get("url", "") or "")
+        line_no = entry.get("line")
+        loc = ""
+        if url:
+            loc = f" ({url}:{line_no})" if line_no is not None else f" ({url})"
+        lines.append(f"{marker}[{level}] {text}{loc}")
+    seq = int(data.get("seq", 0) or 0)
+    lines.append(f"--- seq={seq} ---")
+    return "\n".join(lines)
+
+
+def render_console_clear_text(_data: dict[str, Any]) -> str:
+    """Render ``POST /console/clear`` — fixed confirmation."""
+    return "console cleared"
+
+
+# ---------------------------------------------------------------------------
+# Download (7a R2)
+# ---------------------------------------------------------------------------
+
+
+def render_download_text(data: dict[str, Any]) -> str:
+    """Render a single download (url/wait) as ``saved <path> (<size> bytes)``."""
+    path = str(data.get("path", "") or "")
+    size = int(data.get("size", 0) or 0)
+    if not path:
+        return "no download"
+    return f"saved {path} ({size} bytes)"
+
+
+def render_download_list_text(data: dict[str, Any]) -> str:
+    """Render ``/download/list`` as one ``<path> | <size> bytes`` per line."""
+    downloads: list[Any] = list(data.get("downloads") or [])
+    if not downloads:
+        return "no downloads"
+    lines: list[str] = []
+    for raw in downloads:
+        if not isinstance(raw, dict):
+            continue
+        dl = _as_dict(raw)
+        path = str(dl.get("path", "") or "")
+        size = int(dl.get("size", 0) or 0)
+        lines.append(f"{path} | {size} bytes")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Storage (7a R4)
+# ---------------------------------------------------------------------------
+
+
+def render_storage_text(data: dict[str, Any]) -> str:
+    """Render a storage op result.
+
+    A single-key get prints the bare value (pipe-friendly); a full dump prints
+    ``key=value`` per line. Mutating ops (set/delete/clear) print a short
+    confirmation that names the area and key.
+    """
+    area = str(data.get("type", "") or "local")
+    if data.get("set"):
+        return f"set {area}.{data.get('key', '')}"
+    if data.get("deleted"):
+        return f"deleted {area}.{data.get('key', '')}"
+    if data.get("cleared"):
+        return f"cleared {area}Storage"
+    # Read path: ``value`` is a string (single key), an object (full dump),
+    # or null/None (missing key).
+    value = data.get("value")
+    if value is None:
+        return ""
+    if isinstance(value, dict):
+        items = _as_dict(value)
+        if not items:
+            return f"{area}Storage is empty"
+        return "\n".join(f"{k}={v}" for k, v in items.items())
+    return str(value)
+
+
+# ---------------------------------------------------------------------------
+# Clipboard (7a R5)
+# ---------------------------------------------------------------------------
+
+
+def render_clipboard_read_text(data: dict[str, Any]) -> str:
+    """Render ``/clipboard/read`` — the bare clipboard text (pipe-friendly)."""
+    return str(data.get("text", "") or "")
+
+
+def render_clipboard_write_text(data: dict[str, Any]) -> str:
+    """Render ``/clipboard/write`` — ``wrote N chars to clipboard``."""
+    length = int(data.get("length", 0) or 0)
+    return f"wrote {length} chars to clipboard"
+
+
+# ---------------------------------------------------------------------------
+# PDF (7a R6)
+# ---------------------------------------------------------------------------
+
+
+def render_pdf_text(data: dict[str, Any]) -> str:
+    """Render ``/pdf`` — saved path when the daemon wrote the file, else a summary.
+
+    The CLI ``pdf`` command decodes base64 and writes the file locally, then
+    renders its own path; this renderer covers the daemon-side ``output_path``
+    case and API/MCP callers.
+    """
+    path = str(data.get("path", "") or "")
+    size = int(data.get("size", 0) or 0)
+    if path:
+        return f"saved {path} ({size} bytes)"
+    return f"pdf rendered | {size} bytes"
+
+
+# ---------------------------------------------------------------------------
+# Serve (7a R7)
+# ---------------------------------------------------------------------------
+
+
+def render_serve_status_text(data: dict[str, Any]) -> str:
+    """Render serve start/status — ``serving <dir> at <url>`` or ``not running``."""
+    if not data.get("running"):
+        return "file server not running"
+    directory = str(data.get("directory", "") or "")
+    url = str(data.get("url", "") or "")
+    return f"serving {directory} at {url}"
+
+
+def render_serve_stop_text(data: dict[str, Any]) -> str:
+    """Render ``/serve/stop`` — confirmation or no-op note."""
+    return "file server stopped" if data.get("stopped") else "no file server running"
+
+
+# ---------------------------------------------------------------------------
+# Cookies CRUD (7a R3)
+# ---------------------------------------------------------------------------
+
+
+def render_cookie_set_text(data: dict[str, Any]) -> str:
+    """Render ``/cookies/set`` — ``set N cookies``."""
+    return f"set {int(data.get('set', 0) or 0)} cookies"
+
+
+def render_cookies_clear_text(_data: dict[str, Any]) -> str:
+    """Render ``/cookies/clear`` — fixed confirmation."""
+    return "cleared all cookies"
+
+
+def render_cookie_delete_text(data: dict[str, Any]) -> str:
+    """Render ``/cookies/delete`` — ``deleted N cookie(s) named "name"``."""
+    n = int(data.get("deleted", 0) or 0)
+    name = str(data.get("name", "") or "")
+    return f'deleted {n} cookie{"s" if n != 1 else ""} named "{name}"'

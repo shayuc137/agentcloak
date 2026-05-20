@@ -65,7 +65,26 @@ GROUPS: list[tuple[str, list[str]]] = [
             "/capture/replay",
         ],
     ),
-    ("Cookies & CDP", ["/cookies/export", "/cookies/import", "/cdp/endpoint"]),
+    (
+        "Cookies & CDP",
+        [
+            "/cookies/export",
+            "/cookies/import",
+            "/cookies/set",
+            "/cookies/clear",
+            "/cookies/delete",
+            "/cdp/endpoint",
+        ],
+    ),
+    ("Console", ["/console", "/console/clear"]),
+    ("Download", ["/download/url", "/download/wait", "/download/list"]),
+    (
+        "Storage",
+        ["/storage/get", "/storage/set", "/storage/delete", "/storage/clear"],
+    ),
+    ("Clipboard", ["/clipboard/read", "/clipboard/write"]),
+    ("PDF", ["/pdf"]),
+    ("Serve", ["/serve/start", "/serve/stop", "/serve/status"]),
     (
         "Profiles",
         [
@@ -116,6 +135,24 @@ ROUTE_TO_CLI: dict[str, str] = {
     "/capture/replay": "cloak capture replay",
     "/cookies/export": "cloak cookies export",
     "/cookies/import": "cloak cookies import",
+    "/cookies/set": "cloak cookies set",
+    "/cookies/clear": "cloak cookies clear",
+    "/cookies/delete": "cloak cookies delete NAME",
+    "/console": "cloak console show",
+    "/console/clear": "cloak console show --clear",
+    "/download/url": "cloak download url URL",
+    "/download/wait": "cloak download wait",
+    "/download/list": "cloak download list",
+    "/storage/get": "cloak storage get",
+    "/storage/set": "cloak storage set KEY VALUE",
+    "/storage/delete": "cloak storage delete KEY",
+    "/storage/clear": "cloak storage clear",
+    "/clipboard/read": "cloak clipboard read",
+    "/clipboard/write": "cloak clipboard write TEXT",
+    "/pdf": "cloak pdf",
+    "/serve/start": "cloak serve start DIR",
+    "/serve/stop": "cloak serve stop",
+    "/serve/status": "cloak serve status",
     "/cdp/endpoint": "cloak cdp endpoint",
     "/profile/list": "cloak profile list",
     "/profile/create": "cloak profile create NAME",
@@ -164,6 +201,24 @@ ROUTE_TO_MCP: dict[str, str] = {
     "/capture/replay": "agentcloak_capture_control (action=replay)",
     "/cookies/export": "agentcloak_cookies (action=export)",
     "/cookies/import": "agentcloak_cookies (action=import)",
+    "/cookies/set": "agentcloak_cookies (action=set)",
+    "/cookies/clear": "agentcloak_cookies (action=clear)",
+    "/cookies/delete": "agentcloak_cookies (action=delete)",
+    "/console": "agentcloak_console (action=show)",
+    "/console/clear": "agentcloak_console (action=clear)",
+    "/download/url": "agentcloak_download (action=url)",
+    "/download/wait": "agentcloak_download (action=wait)",
+    "/download/list": "agentcloak_download (action=list)",
+    "/storage/get": "agentcloak_storage (action=get)",
+    "/storage/set": "agentcloak_storage (action=set)",
+    "/storage/delete": "agentcloak_storage (action=delete)",
+    "/storage/clear": "agentcloak_storage (action=clear)",
+    "/clipboard/read": "agentcloak_clipboard (action=read)",
+    "/clipboard/write": "agentcloak_clipboard (action=write)",
+    "/pdf": "agentcloak_pdf",
+    "/serve/start": "agentcloak_serve (action=start)",
+    "/serve/stop": "agentcloak_serve (action=stop)",
+    "/serve/status": "agentcloak_serve (action=status)",
     "/profile/list": "agentcloak_profile (action=list)",
     "/profile/create": "agentcloak_profile (action=create)",
     "/profile/delete": "agentcloak_profile (action=delete)",
@@ -379,8 +434,10 @@ def render_document(spec: dict[str, Any]) -> str:
 
     parts.append("")
     parts.append(
-        "_End of generated content. Updates flow from `daemon/models/` + `daemon/routes/`; run "
-        "`python scripts/generate_skill.py --write` after changing routes._"
+        "_End of generated content. Updates flow from"
+        " `daemon/models/` + `daemon/routes/`; run"
+        " `python scripts/generate_skill.py --write`"
+        " after changing routes._"
     )
     parts.append("")
     return "\n".join(parts)

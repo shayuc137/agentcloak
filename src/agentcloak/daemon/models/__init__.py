@@ -59,7 +59,29 @@ from agentcloak.daemon.models.capture import (
     CaptureReplayResponse,
     CaptureStatusResponse,
 )
+from agentcloak.daemon.models.clipboard import (
+    ClipboardReadResponse,
+    ClipboardWriteRequest,
+    ClipboardWriteResponse,
+)
+from agentcloak.daemon.models.console import (
+    ConsoleClearResponse,
+    ConsoleEntryModel,
+    ConsoleResponse,
+)
+from agentcloak.daemon.models.download import (
+    DownloadEntryModel,
+    DownloadListResponse,
+    DownloadResponse,
+    DownloadUrlRequest,
+    DownloadWaitRequest,
+)
 from agentcloak.daemon.models.interaction import (
+    CookieDeleteRequest,
+    CookieDeleteResponse,
+    CookiesClearResponse,
+    CookieSetRequest,
+    CookieSetResponse,
     CookiesExportRequest,
     CookiesExportResponse,
     CookiesImportRequest,
@@ -83,6 +105,12 @@ from agentcloak.daemon.models.lifecycle import (
     ResumeResponse,
     ShutdownResponse,
 )
+from agentcloak.daemon.models.pdf import PdfRequest, PdfResponse
+from agentcloak.daemon.models.serve import (
+    ServeStartRequest,
+    ServeStatusResponse,
+    ServeStopResponse,
+)
 from agentcloak.daemon.models.spells import (
     ProfileCreateFromCurrentRequest,
     ProfileCreateFromCurrentResponse,
@@ -93,6 +121,13 @@ from agentcloak.daemon.models.spells import (
     SpellListResponse,
     SpellRunRequest,
     SpellRunResponse,
+)
+from agentcloak.daemon.models.storage import (
+    StorageClearRequest,
+    StorageDeleteRequest,
+    StorageGetRequest,
+    StorageResponse,
+    StorageSetRequest,
 )
 from agentcloak.daemon.models.tabs import (
     TabCloseRequest,
@@ -118,6 +153,17 @@ __all__ = [
     "CaptureReplayRequest",
     "CaptureReplayResponse",
     "CaptureStatusResponse",
+    "ClipboardReadResponse",
+    "ClipboardWriteRequest",
+    "ClipboardWriteResponse",
+    "ConsoleClearResponse",
+    "ConsoleEntryModel",
+    "ConsoleResponse",
+    "CookieDeleteRequest",
+    "CookieDeleteResponse",
+    "CookieSetRequest",
+    "CookieSetResponse",
+    "CookiesClearResponse",
     "CookiesExportRequest",
     "CookiesExportResponse",
     "CookiesImportRequest",
@@ -125,6 +171,11 @@ __all__ = [
     "DialogHandleRequest",
     "DialogHandleResponse",
     "DialogStatusResponse",
+    "DownloadEntryModel",
+    "DownloadListResponse",
+    "DownloadResponse",
+    "DownloadUrlRequest",
+    "DownloadWaitRequest",
     "ErrorResponse",
     "EvaluateRequest",
     "EvaluateResponse",
@@ -140,6 +191,8 @@ __all__ = [
     "NavigateResponse",
     "NetworkResponse",
     "OkEnvelope",
+    "PdfRequest",
+    "PdfResponse",
     "ProfileCreateFromCurrentRequest",
     "ProfileCreateFromCurrentResponse",
     "ProfileCreateRequest",
@@ -148,11 +201,19 @@ __all__ = [
     "ProfileListResponse",
     "ResumeResponse",
     "ScreenshotResponse",
+    "ServeStartRequest",
+    "ServeStatusResponse",
+    "ServeStopResponse",
     "ShutdownResponse",
     "SnapshotResponse",
     "SpellListResponse",
     "SpellRunRequest",
     "SpellRunResponse",
+    "StorageClearRequest",
+    "StorageDeleteRequest",
+    "StorageGetRequest",
+    "StorageResponse",
+    "StorageSetRequest",
     "TabCloseRequest",
     "TabListResponse",
     "TabNewRequest",

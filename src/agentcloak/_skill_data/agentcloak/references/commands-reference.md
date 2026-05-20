@@ -58,6 +58,7 @@ Read this file when you need full parameter detail. For the common path, the qui
   - `full_page` (boolean, default: false) — Capture the full scrollable page instead of the viewport.
   - `format` (string, default: "jpeg") — Format: jpeg (smaller) or png (lossless, better for OCR/design).
   - `quality` (integer | null, default: —) — JPEG quality 1-100; unset uses the default. Ignored for png.
+  - `output_path` (string, default: "") — Write the image to this path on the daemon host (7a R8) and return path+size instead of base64. Omit to return base64 inline.
 
 ### `GET /network`
 
@@ -247,10 +248,152 @@ Read this file when you need full parameter detail. For the common path, the qui
 - Body:
   - `cookies` (array<object>, default: *required*) — Cookie objects (name/value/domain/path) to inject.
 
+### `POST /cookies/set`
+
+- CLI: `cloak cookies set`
+- MCP: `agentcloak_cookies (action=set)`
+- Body:
+  - `cookies` (array<object> | null, default: —) — Cookie objects (name/value/domain/path) to set.
+  - `curl` (string | null, default: —) — Copy-as-cURL command string; cookies are parsed from it.
+
+### `POST /cookies/clear`
+
+- CLI: `cloak cookies clear`
+- MCP: `agentcloak_cookies (action=clear)`
+
+### `POST /cookies/delete`
+
+- CLI: `cloak cookies delete NAME`
+- MCP: `agentcloak_cookies (action=delete)`
+- Body:
+  - `name` (string, default: *required*) — Cookie name to delete.
+  - `domain` (string | null, default: —) — Restrict deletion to cookies on this domain.
+
 ### `GET /cdp/endpoint`
 
 - CLI: `cloak cdp endpoint`
 - MCP: `agentcloak_status (query=cdp_endpoint)`
+
+## Console
+
+### `GET /console`
+
+- CLI: `cloak console show`
+- MCP: `agentcloak_console (action=show)`
+- Query:
+  - `since` (integer, default: 0) — Return console messages with seq greater than this value.
+  - `limit` (integer, default: 0) — Cap the number of messages returned (most recent kept).
+  - `level` (string, default: "") — Filter to one level: log, warn, error, info, or debug.
+
+### `POST /console/clear`
+
+- CLI: `cloak console show --clear`
+- MCP: `agentcloak_console (action=clear)`
+
+## Download
+
+### `POST /download/url`
+
+- CLI: `cloak download url URL`
+- MCP: `agentcloak_download (action=url)`
+- Body:
+  - `url` (string, default: *required*) — http(s) URL to download server-side.
+  - `output_dir` (string | null, default: —) — Directory to save into. Defaults to the system temp dir.
+
+### `POST /download/wait`
+
+- CLI: `cloak download wait`
+- MCP: `agentcloak_download (action=wait)`
+- Body:
+  - `output_dir` (string | null, default: —) — Directory to save into. Defaults to the system temp dir.
+  - `timeout` (number | null, default: —) — Seconds to wait for a download. Defaults to navigation_timeout.
+
+### `GET /download/list`
+
+- CLI: `cloak download list`
+- MCP: `agentcloak_download (action=list)`
+
+## Storage
+
+### `POST /storage/get`
+
+- CLI: `cloak storage get`
+- MCP: `agentcloak_storage (action=get)`
+- Body:
+  - `type` (string, default: "local") — Storage area: 'local' or 'session'.
+  - `key` (string | null, default: —) — Single key to read; omit to dump all entries.
+
+### `POST /storage/set`
+
+- CLI: `cloak storage set KEY VALUE`
+- MCP: `agentcloak_storage (action=set)`
+- Body:
+  - `type` (string, default: "local") — Storage area: 'local' or 'session'.
+  - `key` (string, default: *required*) — Key to write.
+  - `value` (string, default: *required*) — Value to store (strings only).
+
+### `POST /storage/delete`
+
+- CLI: `cloak storage delete KEY`
+- MCP: `agentcloak_storage (action=delete)`
+- Body:
+  - `type` (string, default: "local") — Storage area: 'local' or 'session'.
+  - `key` (string, default: *required*) — Key to remove.
+
+### `POST /storage/clear`
+
+- CLI: `cloak storage clear`
+- MCP: `agentcloak_storage (action=clear)`
+- Body:
+  - `type` (string, default: "local") — Storage area: 'local' or 'session'.
+
+## Clipboard
+
+### `GET /clipboard/read`
+
+- CLI: `cloak clipboard read`
+- MCP: `agentcloak_clipboard (action=read)`
+
+### `POST /clipboard/write`
+
+- CLI: `cloak clipboard write TEXT`
+- MCP: `agentcloak_clipboard (action=write)`
+- Body:
+  - `text` (string, default: *required*) — Text to copy to the clipboard.
+
+## PDF
+
+### `POST /pdf`
+
+- CLI: `cloak pdf`
+- MCP: `agentcloak_pdf`
+- Body:
+  - `format` (string, default: "A4") — Paper format: A4, Letter, Legal, etc.
+  - `landscape` (boolean, default: false) — Landscape orientation.
+  - `scale` (number | null, default: —) — Render scale (0.1-2.0). Unset uses the browser default.
+  - `margin` (object | null, default: —) — Margins, e.g. {'top': '1cm', 'bottom': '1cm'}.
+  - `page_ranges` (string | null, default: —) — Pages to print, e.g. '1-3,5'. Empty = all pages.
+  - `output_path` (string | null, default: —) — Save the PDF here. Omit to return base64-encoded bytes.
+
+## Serve
+
+### `POST /serve/start`
+
+- CLI: `cloak serve start DIR`
+- MCP: `agentcloak_serve (action=start)`
+- Body:
+  - `directory` (string, default: *required*) — Local directory to serve over http://.
+  - `port` (integer | null, default: —) — Preferred port. Omit to auto-allocate a free one.
+
+### `POST /serve/stop`
+
+- CLI: `cloak serve stop`
+- MCP: `agentcloak_serve (action=stop)`
+
+### `GET /serve/status`
+
+- CLI: `cloak serve status`
+- MCP: `agentcloak_serve (action=status)`
 
 ## Profiles
 

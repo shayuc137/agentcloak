@@ -17,6 +17,11 @@ from agentcloak.daemon.dependencies import (  # noqa: TC001
     RemoteCtxDep,
 )
 from agentcloak.daemon.models import (
+    CookieDeleteRequest,
+    CookieDeleteResponse,
+    CookiesClearResponse,
+    CookieSetRequest,
+    CookieSetResponse,
     CookiesExportRequest,
     CookiesExportResponse,
     CookiesImportRequest,
@@ -106,6 +111,55 @@ async def handle_cookies_import(
     await browser_context.add_cookies(body.cookies)
     data = {"imported": len(body.cookies)}
     return _ok(data, seq=ctx.seq)
+
+
+@router.post("/cookies/set", response_model=OkEnvelope[CookieSetResponse])
+async def handle_cookies_set(
+    body: CookieSetRequest, ctx: BrowserCtxDep
+) -> dict[str, Any]:
+    """Set cookies directly or parse them from a Copy-as-cURL string (7a R3).
+
+    ``cookies`` and ``curl`` may both be supplied; the parsed curl cookies are
+    appended to the explicit list. Goes through ``ctx.cookies_set`` so both
+    backends (Playwright ``add_cookies`` / CDP ``Network.setCookie``) share
+    the same audit-logged path.
+    """
+    from agentcloak.core.curl_parser import parse_curl_cookies
+
+    cookies: list[dict[str, Any]] = list(body.cookies or [])
+    if body.curl:
+        cookies.extend(parse_curl_cookies(body.curl))
+
+    if not cookies:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "ok": False,
+                "error": "no_cookies",
+                "hint": "No cookies provided (empty list and no curl string)",
+                "action": "pass 'cookies' as a JSON array or 'curl' as a "
+                "Copy-as-cURL string",
+            },
+        )
+
+    result = await ctx.cookies_set(cookies)
+    return _ok(result, seq=ctx.seq)
+
+
+@router.post("/cookies/clear", response_model=OkEnvelope[CookiesClearResponse])
+async def handle_cookies_clear(ctx: BrowserCtxDep) -> dict[str, Any]:
+    """Remove all cookies from the browser context (7a R3)."""
+    result = await ctx.cookies_clear()
+    return _ok(result, seq=ctx.seq)
+
+
+@router.post("/cookies/delete", response_model=OkEnvelope[CookieDeleteResponse])
+async def handle_cookies_delete(
+    body: CookieDeleteRequest, ctx: BrowserCtxDep
+) -> dict[str, Any]:
+    """Delete cookies matching ``name`` (optionally scoped to ``domain``) (7a R3)."""
+    result = await ctx.cookies_delete(body.name, domain=body.domain)
+    return _ok(result, seq=ctx.seq)
 
 
 # --- Dialog -----------------------------------------------------------------

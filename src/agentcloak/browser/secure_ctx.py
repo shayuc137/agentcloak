@@ -97,6 +97,16 @@ class SecureBrowserContext:
             )
         return await self._inner.tab_new(url)
 
+    async def download_url(self, url: str, *, output_dir: str) -> dict[str, Any]:
+        # Direct-URL download fetches server-side with the browser's cookies —
+        # the same threat surface as ``fetch``. The inner method already runs
+        # the SSRF guard (blocks private/loopback hosts), but that does not
+        # enforce the operator's domain policy. Run the Layer 1 whitelist /
+        # blacklist check here too so a configured policy can't be bypassed by
+        # routing an exfiltration through ``download url`` instead of ``fetch``.
+        check_domain_allowed(url, whitelist=self._whitelist, blacklist=self._blacklist)
+        return await self._inner.download_url(url, output_dir=output_dir)
+
     # ------------------------------------------------------------------
     # Layer 3 + Layer 2: snapshot
     # ------------------------------------------------------------------

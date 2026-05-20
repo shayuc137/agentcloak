@@ -26,32 +26,54 @@ __all__ = ["is_blocked_ip", "validate_download_url"]
 _ALLOWED_SCHEMES = frozenset({"http", "https"})
 
 
+_BLOCKED_NETWORKS_V4 = [
+    ipaddress.IPv4Network("0.0.0.0/8"),
+    ipaddress.IPv4Network("10.0.0.0/8"),
+    ipaddress.IPv4Network("100.64.0.0/10"),
+    ipaddress.IPv4Network("127.0.0.0/8"),
+    ipaddress.IPv4Network("169.254.0.0/16"),
+    ipaddress.IPv4Network("172.16.0.0/12"),
+    ipaddress.IPv4Network("192.168.0.0/16"),
+    ipaddress.IPv4Network("224.0.0.0/4"),
+    ipaddress.IPv4Network("240.0.0.0/4"),
+]
+
+_BLOCKED_NETWORKS_V6 = [
+    ipaddress.IPv6Network("::1/128"),
+    ipaddress.IPv6Network("::/128"),
+    ipaddress.IPv6Network("fc00::/7"),
+    ipaddress.IPv6Network("fe80::/10"),
+    ipaddress.IPv6Network("ff00::/8"),
+]
+
+
 def is_blocked_ip(ip: str) -> bool:
     """Return True if the literal IP must not be reached for a download.
 
-    Blocks loopback, private (RFC1918 / ULA), link-local, multicast,
-    reserved, and unspecified ranges. IPv4-mapped IPv6 addresses are
-    unwrapped first so ``::ffff:127.0.0.1`` can't sneak past the IPv4 checks.
+    Uses an explicit blocklist instead of Python's ``is_private`` (which
+    includes 198.18.0.0/15 — commonly used by fake-IP DNS proxies like
+    clash/surge/passwall and would false-positive for many users).
+
+    Blocked ranges:
+    - 0.0.0.0/8 (unspecified), 127.0.0.0/8 (loopback)
+    - 10/8, 172.16/12, 192.168/16 (RFC 1918 private)
+    - 100.64/10 (CGNAT), 169.254/16 (link-local, cloud metadata)
+    - 224/4 (multicast), 240/4 (reserved)
+    - IPv6: ::1 (loopback), fc00::/7 (ULA), fe80::/10 (link-local), ff00::/8 (multicast)
+
+    Intentionally NOT blocked: 198.18.0.0/15 (benchmarking / fake-IP proxies).
     """
     try:
         addr = ipaddress.ip_address(ip)
     except ValueError:
-        # Not a parseable IP — treat as blocked, the caller only feeds us
-        # getaddrinfo output so an unparseable value is anomalous.
         return True
 
-    # Unwrap IPv4-mapped IPv6 (``::ffff:a.b.c.d``) to apply IPv4 ranges.
     if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
         addr = addr.ipv4_mapped
 
-    return (
-        addr.is_private
-        or addr.is_loopback
-        or addr.is_link_local
-        or addr.is_multicast
-        or addr.is_reserved
-        or addr.is_unspecified
-    )
+    if isinstance(addr, ipaddress.IPv4Address):
+        return any(addr in net for net in _BLOCKED_NETWORKS_V4)
+    return any(addr in net for net in _BLOCKED_NETWORKS_V6)
 
 
 def validate_download_url(url: str) -> None:

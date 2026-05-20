@@ -1,6 +1,6 @@
 # Spells
 
-A **spell** is a reusable, named site operation — one command per site task. Instead of asking the agent to re-figure-out "how do I search GitHub repos by language", you write a `github/repos-by-language` spell once, then `cloak spell run github/repos-by-language --arg lang=python` from anywhere. Spells encode the cheapest viable transport (often a direct API call) so they're orders of magnitude faster than UI automation.
+A **spell** is a reusable, named site operation — one command per site task. Instead of asking the agent to re-figure-out "how do I search GitHub repos by language", you write a `github/repos-by-language` spell once, then `cloak spell run github/repos-by-language lang=python` from anywhere. Spells encode the cheapest viable transport (often a direct API call) so they're orders of magnitude faster than UI automation.
 
 ## Quick start
 

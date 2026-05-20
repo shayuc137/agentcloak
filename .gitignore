@@ -51,3 +51,4 @@ jshook-plugin/
 # Trellis workspace artifacts (legacy)
 # .trellis/workspace/*/screenshots/
 # .trellis/workspace/*/artifacts/
+skills-lock.json

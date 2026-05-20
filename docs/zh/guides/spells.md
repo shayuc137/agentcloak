@@ -1,6 +1,6 @@
 # Spell
 
-**Spell** 是可复用、有名字的站点操作——每个站点任务一条命令。与其让 agent 反复琢磨"怎么按语言搜 GitHub 仓库"，不如写一个 `github/repos-by-language` spell，然后在任何地方 `cloak spell run github/repos-by-language --arg lang=python`。spell 编码了最低成本的可行传输方式（往往是直接 API 调用），所以比 UI 自动化快几个数量级。
+**Spell** 是可复用、有名字的站点操作——每个站点任务一条命令。与其让 agent 反复琢磨"怎么按语言搜 GitHub 仓库"，不如写一个 `github/repos-by-language` spell，然后在任何地方 `cloak spell run github/repos-by-language lang=python`。spell 编码了最低成本的可行传输方式（往往是直接 API 调用），所以比 UI 自动化快几个数量级。
 
 ## 快速开始
 

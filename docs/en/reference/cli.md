@@ -312,7 +312,7 @@ cloak capture clear
 
 cloak spell list
 cloak spell info NAME
-cloak spell run NAME [--args-json '{"key": "value"}']
+cloak spell run NAME [key=value ...]
 cloak spell scaffold SITE COMMAND
 ```
 

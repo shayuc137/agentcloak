@@ -172,35 +172,11 @@ def config_get(paths: Paths, key: str) -> str:
     """
     from agentcloak.core.config import load_config
 
-    _resolve_key(key)  # validates key exists
-    # Pass ``paths.root`` through so we reload the same on-disk file the
-    # writer just mutated — in-process callers (tests, future programmatic
-    # use) might point at a non-default root that ``load_config()`` would
-    # otherwise ignore.
+    section, field, _ = _resolve_key(key)
     _, cfg = load_config(root=paths.root)
-    # Map dot-notation back to a dataclass field name. ``browser.proxy`` →
-    # ``proxy``; ``daemon.host`` → ``daemon_host``; ``bridge.local_idle_timeout``
-    # → ``local_idle_timeout``. The dataclass uses flat field names so we
-    # can't trivially derive the field from (section, key) — keep an
-    # explicit map.
-    field_name = _dot_to_field(key)
-    value = getattr(cfg, field_name)
+    sub_cfg = getattr(cfg, section)
+    value = getattr(sub_cfg, field)
     return _format_value(value)
-
-
-def _dot_to_field(key: str) -> str:
-    """Translate dot-notation key to the matching ``AgentcloakConfig`` field."""
-    # The dataclass uses flat names that *mostly* match ``key.split('.')[1]``
-    # except for the daemon-level renames (``host`` → ``daemon_host`` etc).
-    # Hard-code the special cases; everything else falls through.
-    mapping: dict[str, str] = {
-        "daemon.host": "daemon_host",
-        "daemon.port": "daemon_port",
-        "bridge.local_idle_timeout": "local_idle_timeout",
-    }
-    if key in mapping:
-        return mapping[key]
-    return key.split(".", 1)[1]
 
 
 def parse_batch_args(args: list[str]) -> list[tuple[str, list[str]]]:

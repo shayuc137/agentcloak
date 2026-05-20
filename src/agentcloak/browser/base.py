@@ -699,7 +699,9 @@ class BrowserContextBase(ABC):
         :class:`asyncio.Future` (the debugger pause pattern) rather than
         awaiting inside the callback.
         """
-        self._cdp_event_handlers.setdefault(method, []).append(callback)
+        handlers = self._cdp_event_handlers.setdefault(method, [])
+        if callback not in handlers:
+            handlers.append(callback)
 
     def _dispatch_cdp_event(self, method: str, params: dict[str, Any]) -> None:
         """Fan a CDP event out to every matching registered callback.

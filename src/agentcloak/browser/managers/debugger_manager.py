@@ -164,25 +164,34 @@ class DebuggerManager:
         # the next stop (the download-waiter Future pattern).
         self._paused_future: asyncio.Future[PausedState] | None = None
 
+        # CDP event handlers are ctx-level (shared across tabs), so they're
+        # registered once at construction — not in enable(). When the Debugger
+        # domain is disabled, Chrome simply stops sending events and the handlers
+        # sit idle. This decouples handler registration (ctx lifetime) from domain
+        # activation (per-tab, toggled by enable/disable), preventing the
+        # duplicate-handler bug that occurs when disable()→enable() cycles
+        # re-append the same callbacks. _on_cdp_event deduplicates as a defence
+        # layer, but the structural fix is here: register once, never again.
+        ctx._on_cdp_event("Debugger.scriptParsed", self._on_script_parsed)
+        ctx._on_cdp_event("Debugger.paused", self._on_paused)
+        ctx._on_cdp_event("Debugger.resumed", self._on_resumed)
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 
     async def enable(self) -> None:
-        """Wire the ``Debugger`` event handlers and enable the domain (once).
+        """Enable the CDP ``Debugger`` domain (once).
 
-        Idempotent: a second call is a no-op. Registers the three state-machine
-        handlers (``scriptParsed`` / ``paused`` / ``resumed``) before enabling so
-        no event is missed, then bumps the async call-stack depth so paused
-        frames include their async origins.
+        Idempotent: a second call is a no-op. Event handlers were registered at
+        construction (ctx-level, tab-independent), so enable() only activates
+        the domain on the current tab's CDP session and sets the async stack
+        depth. This separation prevents handler duplication on disable→enable
+        cycles (tab switch, explicit re-enable).
         """
         if self._enabled:
             return
-        # Flip before the await so a concurrent enable can't double-register.
         self._enabled = True
-        self._ctx._on_cdp_event("Debugger.scriptParsed", self._on_script_parsed)
-        self._ctx._on_cdp_event("Debugger.paused", self._on_paused)
-        self._ctx._on_cdp_event("Debugger.resumed", self._on_resumed)
         await self._ctx._cdp_enable_domain("Debugger")
         await self._ctx._cdp_send(
             "Debugger.setAsyncCallStackDepth", {"maxDepth": _ASYNC_STACK_DEPTH}

@@ -1079,7 +1079,20 @@ class PlaywrightContext(BrowserContextBase):
     async def _clipboard_read_impl(self) -> str:
         await self._grant_clipboard()
         try:
-            result = await self._page.evaluate("navigator.clipboard.readText()")
+            result = await asyncio.wait_for(
+                self._page.evaluate("navigator.clipboard.readText()"),
+                timeout=5.0,
+            )
+        except TimeoutError as exc:
+            raise BackendError(
+                error="clipboard_read_not_available",
+                hint="clipboard read timed out (headless Chromium blocks it)",
+                action=(
+                    "clipboard read requires headed mode with a display"
+                    " or the remote bridge; use 'clipboard write' or"
+                    " 'evaluate' to work around this limitation"
+                ),
+            ) from exc
         except Exception as exc:
             raise BackendError(
                 error="clipboard_read_failed",

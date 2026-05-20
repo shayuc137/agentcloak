@@ -105,8 +105,12 @@ cloak screenshot [--output FILE] [--full-page] [--format FORMAT] [--quality N]
 | `--quality` | `80` | JPEG 质量 0-100（PNG 时忽略） |
 
 > [!TIP]
-> 视觉分析（OCR、视觉模型）场景建议 `--format png`——无损质量避免 JPEG
-> 伪影干扰文字识别。版面校验类截图默认使用 JPEG，体积小 4-10 倍。
+> **PNG 和 JPEG 的选择：**
+> - `--format png` — UI 设计验证、OCR、视觉模型。无损质量避免 JPEG 伪影干扰文字识别或像素级对比。
+> - `--format jpeg`（默认）— 版面检查、页面状态验证。体积小 4-10 倍，像素精度要求不高时够用。
+>
+> MCP 工具默认 JPEG 质量 50（可通过 `browser.mcp_screenshot_quality` 配置），
+> 控制 token 预算。CLI 默认质量 80。
 
 ### resume
 
@@ -253,6 +257,30 @@ cloak wait --ms 2000
 | `--js` | 等待 JS 表达式返回真值 |
 | `--ms` | 休眠 N 毫秒 |
 | `--timeout` | 最大等待时间（毫秒，默认 30000） |
+
+### 常用组合
+
+```bash
+# 等待 Web Font 加载完再截图
+cloak wait --js "document.fonts.ready.then(() => true)"
+cloak screenshot --format png
+
+# 等待所有网络请求结束（SPA 水合、懒加载数据）
+cloak wait --load networkidle
+
+# 等待特定 API 数据就绪后提取
+cloak wait --js "window.__DATA_LOADED === true"
+
+# 组合：导航 → 等待网络空闲 + 字体加载 → 全页截图
+cloak navigate "https://example.com"
+cloak wait --load networkidle
+cloak wait --js "document.fonts.ready.then(() => true)"
+cloak screenshot --format png --full-page
+```
+
+> [!TIP]
+> `--js` 表达式必须返回真值。对于 Promise（如 `document.fonts.ready`），
+> 用 `.then(() => true)` 包裹。
 
 ## 文件上传
 

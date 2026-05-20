@@ -105,9 +105,14 @@ cloak screenshot [--output FILE] [--full-page] [--format FORMAT] [--quality N]
 | `--quality` | `80` | JPEG quality 0-100 (ignored for PNG) |
 
 > [!TIP]
-> For visual analysis (OCR, vision models) use `--format png` — lossless quality
-> avoids JPEG artefacts that confuse text recognition. JPEG stays the default
-> because it ships ~4-10× smaller payloads for layout-verification screenshots.
+> **When to use PNG vs JPEG:**
+> - `--format png` — UI design verification, OCR, vision models. Lossless quality
+>   avoids JPEG artefacts that confuse text recognition or pixel-level comparison.
+> - `--format jpeg` (default) — layout checks, page state verification. Ships
+>   ~4-10× smaller payloads, good enough when pixel fidelity doesn't matter.
+>
+> MCP tools default to JPEG quality 50 (configurable via `browser.mcp_screenshot_quality`)
+> to stay within token budgets. CLI defaults to quality 80.
 
 ### resume
 
@@ -254,6 +259,30 @@ cloak wait --ms 2000
 | `--js` | Wait for JS expression to return truthy |
 | `--ms` | Sleep for N milliseconds |
 | `--timeout` | Max wait time in ms (default 30000) |
+
+### Common recipes
+
+```bash
+# Wait for web fonts to load before taking a screenshot
+cloak wait --js "document.fonts.ready.then(() => true)"
+cloak screenshot --format png
+
+# Wait for all network activity to settle (SPA hydration, lazy-loaded data)
+cloak wait --load networkidle
+
+# Wait for a specific API response before extracting data
+cloak wait --js "window.__DATA_LOADED === true"
+
+# Combine: navigate, wait for fonts + network idle, then screenshot
+cloak navigate "https://example.com"
+cloak wait --load networkidle
+cloak wait --js "document.fonts.ready.then(() => true)"
+cloak screenshot --format png --full-page
+```
+
+> [!TIP]
+> `--js` expressions must return a truthy value. For Promises like
+> `document.fonts.ready`, wrap them: `.then(() => true)`.
 
 ## File upload
 

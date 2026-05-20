@@ -468,8 +468,8 @@ _ENV_KEYS: dict[str, list[str]] = {
 # Schema for ``cloak config set/get/unset/add/remove`` — maps user-facing
 # dot-notation keys (``browser.proxy``) to the TOML location and Python
 # type. Keep this in lockstep with :class:`AgentcloakConfig` and the
-# example config writer; preflight has no automatic check for this yet
-# because the table is small enough to keep mental.
+# example config writer. Preflight step 10 (Config docs sync) validates
+# that all fields here are documented.
 _FIELD_SCHEMA: dict[str, tuple[str, str, type]] = {
     # [daemon]
     "daemon.host": ("daemon", "host", str),

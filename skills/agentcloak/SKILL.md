@@ -130,6 +130,9 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak emulation headers -H 'Name: value'` | Inject extra HTTP headers on every request (forged auth/tokens); no `-H` clears them |
 | `cloak graphql introspect URL` | Run the standard `__schema` introspection query (via the session's cookies) |
 | `cloak graphql query URL QUERY [--variables '{...}']` | Send an arbitrary GraphQL operation |
+| `cloak ws list` | List tracked WebSocket connections (capture turns on lazily; cleared on navigation) |
+| `cloak ws messages [--since N]` | Read buffered WebSocket frames (→ sent, ← received); page with `--since` like `console` |
+| `cloak sse messages [--since N]` | Read buffered Server-Sent Events; page with `--since` |
 
 ### Management
 

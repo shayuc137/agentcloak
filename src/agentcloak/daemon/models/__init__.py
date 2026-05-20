@@ -148,6 +148,14 @@ from agentcloak.daemon.models.storage import (
     StorageResponse,
     StorageSetRequest,
 )
+from agentcloak.daemon.models.streaming import (
+    SseEventModel,
+    SseMessagesResponse,
+    WsConnectionModel,
+    WsFrameModel,
+    WsListResponse,
+    WsMessagesResponse,
+)
 from agentcloak.daemon.models.tabs import (
     TabCloseRequest,
     TabListResponse,
@@ -242,6 +250,8 @@ __all__ = [
     "SpellListResponse",
     "SpellRunRequest",
     "SpellRunResponse",
+    "SseEventModel",
+    "SseMessagesResponse",
     "StorageClearRequest",
     "StorageDeleteRequest",
     "StorageGetRequest",
@@ -256,4 +266,8 @@ __all__ = [
     "UploadResponse",
     "WaitRequest",
     "WaitResponse",
+    "WsConnectionModel",
+    "WsFrameModel",
+    "WsListResponse",
+    "WsMessagesResponse",
 ]

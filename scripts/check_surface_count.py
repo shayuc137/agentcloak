@@ -105,12 +105,17 @@ def collect_cli_commands() -> dict[str, set[str]]:
     commands: dict[str, set[str]] = {_TOP_LEVEL: set()}
 
     # 1. add_typer(module.app, name="cookies", help=...) → groups
+    # The typer object is usually ``<module>.app`` but a single module may
+    # export several groups (e.g. ``streaming.ws_app`` + ``streaming.sse_app``),
+    # so capture the attribute name too and key the mapping on the
+    # ``(module, attr)`` pair → group. Per-file scanning then matches each
+    # ``@<attr>.command`` decorator against the right group.
     group_pattern = re.compile(
-        r'app\.add_typer\(\s*(\w+)\.app,\s*name="([^"]+)"',
+        r'app\.add_typer\(\s*(\w+)\.(\w*app),\s*name="([^"]+)"',
     )
-    module_to_group: dict[str, str] = {}
-    for module_alias, group_name in group_pattern.findall(app_text):
-        module_to_group[module_alias] = group_name
+    attr_to_group: dict[tuple[str, str], str] = {}
+    for module_alias, attr, group_name in group_pattern.findall(app_text):
+        attr_to_group[(module_alias, attr)] = group_name
         commands.setdefault(group_name, set())
 
     # 2. Top-level shortcuts: app.command("name", hidden=True)(func)
@@ -118,27 +123,30 @@ def collect_cli_commands() -> dict[str, set[str]]:
     for cmd_name in shortcut_pattern.findall(app_text):
         commands[_TOP_LEVEL].add(cmd_name)
 
-    # 3. Per-file decorators
+    # 3. Per-file decorators. A command belongs to ``@<attr>.command(...)``;
+    # we resolve ``<attr>`` to its group via the add_typer mapping so a file
+    # exporting several typer objects (ws_app/sse_app) splits correctly.
     commands_dir = SRC / "agentcloak" / "cli" / "commands"
-    cmd_pattern = re.compile(r'@app\.command\(\s*["\']([^"\']+)["\']')
+    cmd_pattern = re.compile(r'@(\w*app)\.command\(\s*["\']([^"\']+)["\']')
     # ``invoke_without_command=True`` is the marker we care about — a plain
-    # ``@app.callback()`` that requires a subcommand is irrelevant here.
+    # ``@<attr>.callback()`` that requires a subcommand is irrelevant here.
     callback_pattern = re.compile(
-        r"@app\.callback\([^)]*invoke_without_command=True",
+        r"@(\w*app)\.callback\([^)]*invoke_without_command=True",
     )
 
     for f in commands_dir.glob("*.py"):
         if f.name == "__init__.py":
             continue
         module_alias = f.stem
-        group_name = module_to_group.get(module_alias)
-        if not group_name:
-            continue
         text = f.read_text()
-        for cmd_name in cmd_pattern.findall(text):
-            commands[group_name].add(cmd_name)
-        if callback_pattern.search(text):
-            commands[group_name].add("")
+        for attr, cmd_name in cmd_pattern.findall(text):
+            group_name = attr_to_group.get((module_alias, attr))
+            if group_name:
+                commands[group_name].add(cmd_name)
+        for attr in callback_pattern.findall(text):
+            group_name = attr_to_group.get((module_alias, attr))
+            if group_name:
+                commands[group_name].add("")
 
     return commands
 

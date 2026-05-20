@@ -8,8 +8,8 @@ the browser only through the base's thin CDP interface
 touching a backend session directly.
 
 T0 establishes the package and the base transport. T1 adds ScriptManager and
-RouteManager (script injection + network route interception); the streaming and
-debugger managers land in T2-T4.
+RouteManager (script injection + network route interception). T2 adds
+StreamingMonitor (WebSocket/SSE capture); the debugger manager lands in T3-T4.
 """
 
 from __future__ import annotations
@@ -19,10 +19,20 @@ from agentcloak.browser.managers.script_manager import (
     PRESET_TEMPLATES,
     ScriptManager,
 )
+from agentcloak.browser.managers.streaming_monitor import (
+    SseEvent,
+    StreamingMonitor,
+    WsConnectionInfo,
+    WsFrame,
+)
 
 __all__ = [
     "PRESET_TEMPLATES",
     "RouteManager",
     "RouteRule",
     "ScriptManager",
+    "SseEvent",
+    "StreamingMonitor",
+    "WsConnectionInfo",
+    "WsFrame",
 ]

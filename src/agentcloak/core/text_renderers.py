@@ -98,12 +98,15 @@ __all__ = [
     "render_snapshot_text",
     "render_spell_list_text",
     "render_spell_run_text",
+    "render_sse_messages_text",
     "render_storage_text",
     "render_tab_list_text",
     "render_tab_op_text",
     "render_token_text",
     "render_upload_text",
     "render_wait_text",
+    "render_ws_list_text",
+    "render_ws_messages_text",
 ]
 
 
@@ -1300,3 +1303,70 @@ def render_graphql_text(data: dict[str, Any]) -> str:
     if raw:
         return f"status={status} {raw}"
     return f"status={status} (empty response)"
+
+
+# ---------------------------------------------------------------------------
+# Streaming capture: WebSocket + SSE (7b T2)
+# ---------------------------------------------------------------------------
+
+
+def render_ws_list_text(data: dict[str, Any]) -> str:
+    """Render ``/ws/list`` — one ``<status> <url> (<request_id>)`` per line."""
+    conns: list[Any] = list(data.get("connections") or [])
+    if not conns:
+        return "no websocket connections"
+    lines: list[str] = []
+    for raw in conns:
+        if not isinstance(raw, dict):
+            continue
+        conn = _as_dict(raw)
+        status = str(conn.get("status", "") or "")
+        url = str(conn.get("url", "") or "")
+        request_id = str(conn.get("request_id", "") or "")
+        lines.append(f"{status} {url} ({request_id})")
+    return "\n".join(lines)
+
+
+def render_ws_messages_text(data: dict[str, Any]) -> str:
+    """Render ``/ws/messages`` — one ``<seq> <dir> <payload>`` per line.
+
+    ``→`` marks a sent frame (client→server), ``←`` a received one. Payloads are
+    collapsed to a single line so the listing stays scannable; pass the trailing
+    ``seq`` back as ``--since`` to page forward.
+    """
+    frames: list[Any] = list(data.get("frames") or [])
+    if not frames:
+        return "no websocket frames"
+    lines: list[str] = []
+    for raw in frames:
+        if not isinstance(raw, dict):
+            continue
+        frame = _as_dict(raw)
+        seq = frame.get("seq", "")
+        arrow = "→" if str(frame.get("direction", "")) == "sent" else "←"
+        payload = " ".join(str(frame.get("payload", "") or "").split())
+        lines.append(f"{seq} {arrow} {payload}")
+    return "\n".join(lines)
+
+
+def render_sse_messages_text(data: dict[str, Any]) -> str:
+    """Render ``/sse/messages`` — one ``<seq> [<event>] <data>`` per line.
+
+    The event name is shown in brackets only when the server set one (default
+    SSE messages have none). Pass the trailing ``seq`` back as ``--since`` to
+    page forward.
+    """
+    events: list[Any] = list(data.get("events") or [])
+    if not events:
+        return "no sse events"
+    lines: list[str] = []
+    for raw in events:
+        if not isinstance(raw, dict):
+            continue
+        event = _as_dict(raw)
+        seq = event.get("seq", "")
+        name = str(event.get("event_name", "") or "")
+        payload = " ".join(str(event.get("data", "") or "").split())
+        prefix = f"{seq} [{name}]" if name else f"{seq}"
+        lines.append(f"{prefix} {payload}")
+    return "\n".join(lines)

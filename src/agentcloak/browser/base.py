@@ -51,7 +51,12 @@ from agentcloak.core.seq import RingBuffer, SeqCounter, SeqEvent
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from agentcloak.browser.managers import RouteManager, RouteRule, ScriptManager
+    from agentcloak.browser.managers import (
+        RouteManager,
+        RouteRule,
+        ScriptManager,
+        StreamingMonitor,
+    )
     from agentcloak.core.types import StealthTier
 
 __all__ = [
@@ -271,12 +276,13 @@ class BrowserContextBase(ABC):
         self._cdp_event_handlers: dict[str, list[Callable[[dict[str, Any]], None]]] = {}
         self._enabled_domains: set[str] = set()
 
-        # 7b T1: reverse-engineering managers, constructed lazily on first use
-        # so a session that never touches them pays nothing. ``script_manager``
-        # and ``route_manager`` are the public accessors below; the slots stay
-        # ``None`` until then.
+        # 7b T1/T2: reverse-engineering managers, constructed lazily on first
+        # use so a session that never touches them pays nothing.
+        # ``script_manager`` / ``route_manager`` / ``streaming_monitor`` are the
+        # public accessors below; the slots stay ``None`` until then.
         self._script_mgr: ScriptManager | None = None
         self._route_mgr: RouteManager | None = None
+        self._streaming_mgr: StreamingMonitor | None = None
 
         # 7b T1.2: extra HTTP headers injected on every request. Kept here so
         # ``emulation headers`` can report the active set; the backend applies
@@ -304,6 +310,15 @@ class BrowserContextBase(ABC):
 
             self._route_mgr = RouteManager(self)
         return self._route_mgr
+
+    @property
+    def streaming_monitor(self) -> StreamingMonitor:
+        """Lazily-constructed WebSocket/SSE capture monitor (7b T2)."""
+        if self._streaming_mgr is None:
+            from agentcloak.browser.managers import StreamingMonitor
+
+            self._streaming_mgr = StreamingMonitor(self)
+        return self._streaming_mgr
 
     @property
     def seq(self) -> int:
@@ -797,6 +812,7 @@ class BrowserContextBase(ABC):
             self._maybe_mark_browser_closed(exc)
             raise
         self._page_valid = True
+        await self._notify_managers_on_navigated()
 
         new_seq = self._seq_counter.increment_action()
         self._ring_buffer.append(
@@ -1254,6 +1270,21 @@ class BrowserContextBase(ABC):
             await self._script_mgr.on_tab_switched()
         if self._route_mgr is not None:
             await self._route_mgr.on_tab_switched()
+
+    async def _notify_managers_on_navigated(self) -> None:
+        """Let event-driven managers react to a completed navigation.
+
+        Symmetric with :meth:`_replay_managers_on_new_page` but for in-place
+        navigations rather than tab changes: the streaming monitor drops its
+        connection inventory because a navigation tears down any open WebSocket
+        / EventSource (their ``requestId``s are now dead). As with the replay
+        path, only managers that were actually constructed do anything — the
+        lazy slots stay ``None`` for sessions that never used the capability,
+        keeping the common navigate path free of overhead. Init scripts and
+        route rules survive a navigation natively, so they need no hook here.
+        """
+        if self._streaming_mgr is not None:
+            await self._streaming_mgr.on_navigated()
 
     # ------------------------------------------------------------------
     # Fetch / Close / Raw CDP

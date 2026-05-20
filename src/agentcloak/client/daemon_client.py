@@ -1352,6 +1352,21 @@ class DaemonClient:
     async def route_list(self) -> dict[str, Any]:
         return await self._send_async("GET", "/route/list")
 
+    # --- Streaming capture: WebSocket + SSE (async, 7b T2) ---
+
+    async def ws_list(self) -> dict[str, Any]:
+        return await self._send_async("GET", "/ws/list")
+
+    async def ws_messages(self, *, since: int = 0) -> dict[str, Any]:
+        return await self._send_async(
+            "GET", "/ws/messages", params={"since": str(since)}
+        )
+
+    async def sse_messages(self, *, since: int = 0) -> dict[str, Any]:
+        return await self._send_async(
+            "GET", "/sse/messages", params={"since": str(since)}
+        )
+
     # --- Header injection (async, 7b T1.2) ---
 
     async def emulation_headers(self, *, headers: dict[str, str]) -> dict[str, Any]:

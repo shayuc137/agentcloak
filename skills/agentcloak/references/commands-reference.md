@@ -473,6 +473,27 @@ Read this file when you need full parameter detail. For the common path, the qui
   - `variables` (object, default: —) — GraphQL variables object.
   - `headers` (object, default: —) — Extra request headers (e.g. auth token).
 
+## Streaming
+
+### `GET /ws/list`
+
+- CLI: `cloak ws list`
+- MCP: `agentcloak_streaming (action=ws_list)`
+
+### `GET /ws/messages`
+
+- CLI: `cloak ws messages`
+- MCP: `agentcloak_streaming (action=ws_messages)`
+- Query:
+  - `since` (integer, default: 0) — Return WebSocket frames with seq greater than this value.
+
+### `GET /sse/messages`
+
+- CLI: `cloak sse messages`
+- MCP: `agentcloak_streaming (action=sse_messages)`
+- Query:
+  - `since` (integer, default: 0) — Return SSE events with seq greater than this value.
+
 ## Profiles
 
 ### `GET /profile/list`

@@ -86,6 +86,7 @@ def create_server() -> object:
         script,
         serve,
         storage,
+        streaming,
         upload,
         wait,
     )
@@ -128,11 +129,12 @@ def create_server() -> object:
     clipboard.register(mcp, client)
     pdf.register(mcp, client)
     serve.register(mcp, client)
-    # 7b T1 reverse-engineering capabilities.
+    # 7b T1/T2 reverse-engineering capabilities.
     script.register(mcp, client)
     route.register(mcp, client)
     emulation.register(mcp, client)
     graphql.register(mcp, client)
+    streaming.register(mcp, client)
 
     return mcp
 

@@ -89,6 +89,7 @@ GROUPS: list[tuple[str, list[str]]] = [
     ("Route Interception", ["/route/add", "/route/remove", "/route/list"]),
     ("Header Injection", ["/emulation/headers"]),
     ("GraphQL", ["/graphql/introspect", "/graphql/query"]),
+    ("Streaming", ["/ws/list", "/ws/messages", "/sse/messages"]),
     (
         "Profiles",
         [
@@ -163,6 +164,9 @@ ROUTE_TO_CLI: dict[str, str] = {
     "/route/add": "cloak route add PATTERN",
     "/route/remove": "cloak route remove",
     "/route/list": "cloak route list",
+    "/ws/list": "cloak ws list",
+    "/ws/messages": "cloak ws messages",
+    "/sse/messages": "cloak sse messages",
     "/emulation/headers": "cloak emulation headers",
     "/graphql/introspect": "cloak graphql introspect URL",
     "/graphql/query": "cloak graphql query URL QUERY",
@@ -238,6 +242,9 @@ ROUTE_TO_MCP: dict[str, str] = {
     "/route/add": "agentcloak_route (action=add)",
     "/route/remove": "agentcloak_route (action=remove)",
     "/route/list": "agentcloak_route (action=list)",
+    "/ws/list": "agentcloak_streaming (action=ws_list)",
+    "/ws/messages": "agentcloak_streaming (action=ws_messages)",
+    "/sse/messages": "agentcloak_streaming (action=sse_messages)",
     "/emulation/headers": "agentcloak_headers",
     "/graphql/introspect": "agentcloak_graphql (action=introspect)",
     "/graphql/query": "agentcloak_graphql (action=query)",

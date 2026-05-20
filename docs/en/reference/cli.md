@@ -389,6 +389,22 @@ cloak sourcemap sources SCRIPT_ID      # original source file paths
 cloak sourcemap source-content SCRIPT_ID SOURCE_PATH
 ```
 
+### Profiling
+
+JS code coverage, CPU profiling, performance metrics, and heap snapshots.
+
+```bash
+cloak profiler coverage-start              # begin recording function-level coverage
+cloak profiler coverage-stop               # stop recording
+cloak profiler coverage-get                # per-script summary (functions total/covered/%)
+cloak profiler coverage-get --script-id ID # single script with per-function detail
+cloak profiler cpu-start                   # begin CPU sampling
+cloak profiler cpu-stop                    # stop and show top functions by self time
+cloak profiler cpu-stop --output profile.cpuprofile  # save raw profile (opens in DevTools)
+cloak profiler heap-snapshot --output snap.heapsnapshot  # V8 heap dump to file
+cloak performance metrics                  # DOM nodes, JS heap, layout counts
+```
+
 ## Capture and spells
 
 ```bash

@@ -27,7 +27,7 @@ You need a browser. Your agents do too.
 - **Daemon architecture** -- auto-starts on first command, manages browser lifecycle with a monotonic seq counter
 - **Spells + API capture** -- wrap common site operations as one-liners; capture traffic, analyze patterns, generate spells automatically
 - **Web reverse engineering** -- CDP-native debugger, network route interception, WebSocket/SSE capture, init-script hooks, and source-map decode -- one tool covers 90%+ of browser RE
-- **MCP server with 36 tools** -- full compatibility with MCP-native clients (Claude Code, Codex, Cursor, etc.)
+- **MCP server with 38 tools** -- full compatibility with MCP-native clients (Claude Code, Codex, Cursor, etc.)
 
 ## Installation
 
@@ -124,7 +124,7 @@ See the full [Quick Start tutorial](docs/en/getting-started/quickstart.md) for l
 
 | | Skill + CLI (recommended) | MCP Server |
 |---|---|---|
-| **How it works** | Skill auto-loads when browser is needed; agent calls `cloak` via Bash | `agentcloak-mcp` exposes 36 tools over stdio |
+| **How it works** | Skill auto-loads when browser is needed; agent calls `cloak` via Bash | `agentcloak-mcp` exposes 38 tools over stdio |
 | **Context cost** | ~300 tokens (on-demand) | ~6,000 tokens (persistent) |
 | **Best for** | Claude Code, any Bash-capable agent | MCP-native clients without Bash |
 
@@ -242,7 +242,7 @@ All settings also accept environment variables (`AGENTCLOAK_PROXY`, `AGENTCLOAK_
 graph TD
     subgraph Surface["Surface Layer"]
         Skill["Skill + CLI<br/>~300 tokens"]
-        MCP["MCP Server<br/>36 tools"]
+        MCP["MCP Server<br/>38 tools"]
     end
 
     subgraph Engine["Engine"]

@@ -387,6 +387,22 @@ cloak sourcemap sources SCRIPT_ID      # 原始源文件路径
 cloak sourcemap source-content SCRIPT_ID SOURCE_PATH
 ```
 
+### 性能分析
+
+JS 代码覆盖率、CPU 性能分析、运行时指标和堆内存快照。
+
+```bash
+cloak profiler coverage-start              # 开始记录函数级覆盖率
+cloak profiler coverage-stop               # 停止记录
+cloak profiler coverage-get                # 每个脚本的摘要（函数总数/已覆盖/百分比）
+cloak profiler coverage-get --script-id ID # 单个脚本的逐函数详情
+cloak profiler cpu-start                   # 开始 CPU 采样
+cloak profiler cpu-stop                    # 停止并显示按耗时排名的热点函数
+cloak profiler cpu-stop --output profile.cpuprofile  # 保存原始 profile（可在 DevTools 中打开）
+cloak profiler heap-snapshot --output snap.heapsnapshot  # V8 堆内存转储到文件
+cloak performance metrics                  # DOM 节点数、JS 堆大小、布局次数
+```
+
 ## 捕获与 spell
 
 ```bash

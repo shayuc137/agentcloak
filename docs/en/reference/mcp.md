@@ -1,6 +1,6 @@
 # MCP tools reference
 
-agentcloak's MCP server exposes 36 tools via stdio transport. It is included in the base install (`pip install agentcloak`) and run with `agentcloak-mcp`.
+agentcloak's MCP server exposes 38 tools via stdio transport. It is included in the base install (`pip install agentcloak`) and run with `agentcloak-mcp`.
 
 For setup instructions, see the [MCP setup guide](../guides/mcp-setup.md).
 
@@ -437,3 +437,23 @@ Discover and parse source maps (pure-Python VLQ decode) to reverse-map a compile
 | `line` | `int` | `0` | Zero-based generated (compiled) line (for `lookup`) |
 | `column` | `int` | `0` | Zero-based generated column (for `lookup`) |
 | `source_path` | `str` | `""` | A path from `sources` (for `source_content`) |
+
+### agentcloak_profiler
+
+JS code coverage, CPU profiling, and heap memory snapshots — find which code ran, which functions burn CPU, and what data sits in memory.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `action` | `str` | `coverage_start` | `coverage_start`, `coverage_stop`, `coverage_get`, `cpu_start`, `cpu_stop`, or `heap_snapshot` |
+| `script_id` | `str` | `""` | Filter coverage to one script (for `coverage_get`) |
+| `output_path` | `str` | `""` | File path for CPU profile JSON or heap snapshot |
+
+Coverage workflow: `coverage_start` → perform actions → `coverage_get` → see per-script function coverage percentages. CPU profiling: `cpu_start` → exercise the page → `cpu_stop` → see ranked hot functions. Heap: `heap_snapshot` streams V8 memory to a `.heapsnapshot` file (loadable in Chrome DevTools).
+
+### agentcloak_performance
+
+Page runtime performance metrics (DOM node count, JS heap size, layout count, etc.).
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| (none) | | | Returns all available `Performance.getMetrics` counters |

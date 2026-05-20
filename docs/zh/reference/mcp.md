@@ -1,6 +1,6 @@
 # MCP 工具参考
 
-agentcloak 的 MCP server 通过 stdio 传输暴露 36 个工具。已包含在基础安装中（`pip install agentcloak`），运行命令：`agentcloak-mcp`。
+agentcloak 的 MCP server 通过 stdio 传输暴露 38 个工具。已包含在基础安装中（`pip install agentcloak`），运行命令：`agentcloak-mcp`。
 
 配置说明参见 [MCP 配置指南](../guides/mcp-setup.md)。
 
@@ -435,3 +435,23 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 36 个工具。已包含在�
 | `line` | `int` | `0` | 从 0 开始的生成（编译）行（用于 `lookup`） |
 | `column` | `int` | `0` | 从 0 开始的生成列（用于 `lookup`） |
 | `source_path` | `str` | `""` | 来自 `sources` 的路径（用于 `source_content`） |
+
+### agentcloak_profiler
+
+JS 代码覆盖率、CPU 性能分析和堆内存快照——找出哪些代码被执行了、哪些函数消耗最多 CPU、内存中有什么数据。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `action` | `str` | `coverage_start` | `coverage_start`、`coverage_stop`、`coverage_get`、`cpu_start`、`cpu_stop` 或 `heap_snapshot` |
+| `script_id` | `str` | `""` | 过滤到单个脚本（用于 `coverage_get`） |
+| `output_path` | `str` | `""` | CPU profile JSON 或堆快照的保存路径 |
+
+覆盖率工作流：`coverage_start` → 执行操作 → `coverage_get` → 查看每个脚本的函数覆盖率百分比。CPU 分析：`cpu_start` → 操作页面 → `cpu_stop` → 查看耗时排名。堆快照：`heap_snapshot` 将 V8 内存流式写入 `.heapsnapshot` 文件（可在 Chrome DevTools 中加载）。
+
+### agentcloak_performance
+
+页面运行时性能指标（DOM 节点数、JS 堆大小、布局次数等）。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| （无） | | | 返回所有可用的 `Performance.getMetrics` 计数器 |

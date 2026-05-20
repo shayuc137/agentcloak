@@ -1026,7 +1026,11 @@ class PlaywrightContext(BrowserContextBase):
             raise BackendError(
                 error="clipboard_read_failed",
                 hint=str(exc),
-                action="ensure the page is focused and clipboard access is allowed",
+                action=(
+                    "clipboard read requires headed or bridge mode"
+                    " — headless Chromium denies clipboard-read;"
+                    " use clipboard write or evaluate instead"
+                ),
             ) from exc
         return str(result or "")
 

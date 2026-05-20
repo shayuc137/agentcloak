@@ -59,6 +59,10 @@ Make the bridge the default for the daemon:
 export AGENTCLOAK_DEFAULT_TIER=remote_bridge
 ```
 
+## Reverse engineering over the bridge
+
+All Phase 7b reverse-engineering capabilities work through the bridge — debugger breakpoints, network route interception, WebSocket/SSE streaming, source maps, init-script injection, and GraphQL. The extension enables the CDP domains these features need (`Debugger`, `Fetch`, `Network`) **on demand** — the first time the agent uses a feature that needs them — rather than holding them open for every session. The commands are identical to the local backends; see the [reverse engineering section](../reference/cli.md#reverse-engineering) of the CLI reference.
+
 ## Privacy note
 
 RemoteBridge gives the agent the same view of your browser that you have.

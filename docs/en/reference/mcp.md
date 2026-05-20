@@ -1,6 +1,6 @@
 # MCP tools reference
 
-agentcloak's MCP server exposes 23 tools via stdio transport. It is included in the base install (`pip install agentcloak`) and run with `agentcloak-mcp`.
+agentcloak's MCP server exposes 36 tools via stdio transport. It is included in the base install (`pip install agentcloak`) and run with `agentcloak-mcp`.
 
 For setup instructions, see the [MCP setup guide](../guides/mcp-setup.md).
 
@@ -273,3 +273,99 @@ Manage remote browser tabs via Chrome Extension bridge.
 | `tab_id` | `int` | `-1` | Chrome tab ID (claim only) |
 | `url_pattern` | `str` | `""` | URL substring match (claim only) |
 | `mode` | `str` | `close` | Finalize mode: `close`, `handoff`, or `deliverable` |
+
+## Reverse engineering
+
+CDP-backed tools for inspecting and manipulating page internals. Each manager
+enables its CDP domain lazily on first use — a session that never reverse-engineers pays nothing — and all of them work on every backend (CloakBrowser, Playwright, RemoteBridge).
+
+### agentcloak_script
+
+Inject JavaScript that runs before page scripts on every navigation — the standard hook point for patching `fetch` / `XHR` / `JSON.parse` before the page uses them (unlike `agentcloak_evaluate`, which runs after load).
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `action` | `str` | `list` | `add`, `remove`, or `list` |
+| `js` | `str` | `""` | Raw JavaScript to inject (for `add`) |
+| `preset` | `str` | `""` | Built-in hook preset (for `add`; overrides `js`): `fetch`, `xhr`, `json_parse`, `crypto`, `timing` |
+| `identifier` | `str` | `""` | Script identifier to remove (for `remove`) |
+
+Presets log the intercepted calls to the console (read with `agentcloak_console`).
+
+### agentcloak_route
+
+Intercept network requests by URL pattern (abort / fulfill / continue). Rules persist across navigations and replay onto new tabs.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `action` | `str` | `list` | `add`, `remove`, or `list` |
+| `pattern` | `str` | `""` | URL glob (`*` = any chars; no `*` = substring match) |
+| `rule_action` | `str` | `continue` | Disposition for `add`: `abort`, `fulfill`, or `continue` |
+| `resource_type` | `str` | `""` | Only match this resource type (`xhr`, `image`, ...) |
+| `method` | `str` | `""` | Only match this HTTP method |
+| `status` | `int` | `0` | Response status for a `fulfill` rule (default 200) |
+| `content_type` | `str` | `""` | Content-Type for a `fulfill` response |
+| `body` | `str` | `""` | Response body for a `fulfill` response |
+
+### agentcloak_headers
+
+Set extra HTTP headers applied to every subsequent request — forge an Authorization token or custom header while debugging an API. Call with no headers to clear the override.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `headers` | `dict[str, str]` | `null` | Header name → value map. Empty/null clears all overrides |
+
+### agentcloak_graphql
+
+Introspect a GraphQL schema or send an arbitrary query through the browser session (inherits the page's cookies and passes the security domain check).
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `action` | `str` | `introspect` | `introspect` or `query` |
+| `url` | `str` | `""` | GraphQL endpoint URL |
+| `query` | `str` | `""` | GraphQL document (for `query`) |
+| `variables` | `dict` | `null` | GraphQL variables object (for `query`) |
+| `headers` | `dict` | `null` | Extra request headers (e.g. an auth token) |
+
+### agentcloak_streaming
+
+Capture WebSocket frames and Server-Sent Events — traffic invisible to the ordinary network view. Frames and events land in ring buffers paged by a monotonic seq, like the console.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `action` | `str` | `ws_messages` | `ws_list`, `ws_messages`, or `sse_messages` |
+| `since` | `int` | `0` | Only return frames/events with seq greater than this value |
+
+### agentcloak_debugger
+
+Inspect and control paused JavaScript execution via the CDP Debugger domain: set breakpoints, step, read the call stack and scope. The domain enables lazily on the first `enable` / `breakpoint_set`. While paused, page actions (navigate, click, ...) return a `debugger_paused` error — call `resume` or `step`.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `action` | `str` | `paused_info` | `enable`, `disable`, `breakpoint_set`, `breakpoint_remove`, `breakpoint_list`, `xhr_set`, `xhr_remove`, `resume`, `step`, `paused_info`, `scope_variables`, `evaluate`, `scripts`, `script_source`, `search`, `skip_pauses` |
+| `url` | `str` | `""` | Script URL regex (for `breakpoint_set`) |
+| `line` | `int` | `0` | Zero-based line number (for `breakpoint_set`) |
+| `condition` | `str` | `""` | Break only when this JS expression is truthy |
+| `breakpoint_id` | `str` | `""` | Breakpoint id (for `breakpoint_remove`) |
+| `url_pattern` | `str` | `""` | XHR URL substring (for `xhr_set` / `xhr_remove`; empty = all XHRs) |
+| `step_type` | `str` | `over` | `over`, `into`, or `out` (for `step`) |
+| `object_id` | `str` | `""` | Scope objectId from a frame's scopeChain (for `scope_variables`) |
+| `call_frame_id` | `str` | `""` | callFrameId (for `evaluate`) |
+| `expression` | `str` | `""` | Expression to evaluate in the paused frame |
+| `script_id` | `str` | `""` | Script id (for `script_source` / `search`) |
+| `query` | `str` | `""` | Substring or regex (for `search`) |
+| `is_regex` | `bool` | `false` | Treat `query` as a regex |
+| `case_sensitive` | `bool` | `false` | Case-sensitive search |
+| `skip` | `bool` | `true` | For `skip_pauses`: ignore all breakpoints / `debugger;` (anti-anti-debug) |
+
+### agentcloak_sourcemap
+
+Discover and parse source maps (pure-Python VLQ decode) to reverse-map a compiled `line:column` back to the original source file and read its text. Builds on the debugger's script inventory.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `action` | `str` | `list` | `list`, `get`, `lookup`, `sources`, or `source_content` |
+| `script_id` | `str` | `""` | CDP script id from the `list` action |
+| `line` | `int` | `0` | Zero-based generated (compiled) line (for `lookup`) |
+| `column` | `int` | `0` | Zero-based generated column (for `lookup`) |
+| `source_path` | `str` | `""` | A path from `sources` (for `source_content`) |

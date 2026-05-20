@@ -257,3 +257,26 @@ class StreamingMonitor:
         connection inventory is cleared because those ``requestId``s are dead.
         """
         self._ws_connections.clear()
+
+    async def on_tab_switched(self) -> None:
+        """Re-enable ``Network`` on the now-active tab's CDP session.
+
+        A switched-to tab has its own ``CDPSession`` with nothing enabled, so
+        WS/SSE frames stop flowing until ``Network.enable`` is re-issued against
+        it. We deliberately do *not* re-register the event handlers: they live
+        on the ctx-level ``_cdp_event_handlers`` (registered once by
+        :meth:`ensure_listening`) and already fan out to every session's
+        forwarder, so re-registering would double-count every frame. We only
+        clear the connection inventory (those ``requestId``s belong to the dead
+        session) and re-enable the domain — mirroring
+        :meth:`DebuggerManager.disable`'s ``_enabled_domains.discard`` so the
+        idempotent :meth:`BrowserContextBase._cdp_enable_domain` actually
+        re-issues on the new session. Frame/event history is kept so the seq
+        cursor stays monotonic. A monitor that never started listening stays
+        dormant — nothing to re-arm.
+        """
+        if not self._listening:
+            return
+        self._ws_connections.clear()
+        self._ctx._enabled_domains.discard("Network")
+        await self._ctx._cdp_enable_domain("Network")

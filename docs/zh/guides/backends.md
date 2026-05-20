@@ -180,3 +180,10 @@ cloak navigate "https://example.com"
 | Profile 持久化 | 支持 | 支持 | 天然具备 |
 | 代理支持 | 完整（含 SOCKS5 认证） | 有限 | 不适用 |
 | 配置复杂度 | 零 | 一行命令 | 安装扩展 |
+| 网页逆向 | 完整（调试器 / 路由 / 流式 / source map） | 完整 | 完整 |
+
+## 网页逆向支持
+
+三种后端都支持 Phase 7b 的网页逆向能力——调试器、网络路由拦截、WebSocket/SSE 流式监控、source map、init script 注入、GraphQL。命令在所有后端上完全一致，详见 [CLI 参考](../reference/cli.md#网页逆向)。
+
+这些能力依赖一条持久 CDP 通道。CloakBrowser 和 Playwright 现在为事件流（调试器暂停、WebSocket 帧）维护一条 **per-tab 持久 `CDPSession`**，与 `cloak cdp endpoint` 等一次性调用使用的短期 session 并存。RemoteBridge 把同样的 CDP 命令通过它的 WebSocket 隧道转发。每个 CDP 域都在首次使用时才惰性 enable，因此从不做逆向的会话能让隐身后端的热路径保持干净。

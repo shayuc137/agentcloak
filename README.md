@@ -26,7 +26,8 @@ You need a browser. Your agents do too.
 - **Network config** -- proxy (SOCKS5/HTTP), DNS-over-HTTPS control, and custom Chromium args via `cloak config set`
 - **Daemon architecture** -- auto-starts on first command, manages browser lifecycle with a monotonic seq counter
 - **Spells + API capture** -- wrap common site operations as one-liners; capture traffic, analyze patterns, generate spells automatically
-- **MCP server with 23 tools** -- full compatibility with MCP-native clients (Claude Code, Codex, Cursor, etc.)
+- **Web reverse engineering** -- CDP-native debugger, network route interception, WebSocket/SSE capture, init-script hooks, and source-map decode -- one tool covers 90%+ of browser RE
+- **MCP server with 36 tools** -- full compatibility with MCP-native clients (Claude Code, Codex, Cursor, etc.)
 
 ## Installation
 
@@ -123,7 +124,7 @@ See the full [Quick Start tutorial](docs/en/getting-started/quickstart.md) for l
 
 | | Skill + CLI (recommended) | MCP Server |
 |---|---|---|
-| **How it works** | Skill auto-loads when browser is needed; agent calls `cloak` via Bash | `agentcloak-mcp` exposes 23 tools over stdio |
+| **How it works** | Skill auto-loads when browser is needed; agent calls `cloak` via Bash | `agentcloak-mcp` exposes 36 tools over stdio |
 | **Context cost** | ~300 tokens (on-demand) | ~6,000 tokens (persistent) |
 | **Best for** | Claude Code, any Bash-capable agent | MCP-native clients without Bash |
 
@@ -241,7 +242,7 @@ All settings also accept environment variables (`AGENTCLOAK_PROXY`, `AGENTCLOAK_
 graph TD
     subgraph Surface["Surface Layer"]
         Skill["Skill + CLI<br/>~300 tokens"]
-        MCP["MCP Server<br/>23 tools"]
+        MCP["MCP Server<br/>36 tools"]
     end
 
     subgraph Engine["Engine"]
@@ -261,7 +262,7 @@ graph TD
     Daemon --> Bridge
 ```
 
-All backends extend a unified `BrowserContextBase` ABC. The base owns ~900 lines of shared behaviour (action dispatch, batch, dialog, self-healing); subclasses only implement 29 atomic `_xxx_impl` operations. Layer isolation is enforced: CLI cannot import browser internals, daemon cannot import CLI, backends import neither.
+All backends extend a unified `BrowserContextBase` ABC. The base owns ~900 lines of shared behaviour (action dispatch, batch, dialog, self-healing); subclasses only implement 45 atomic operations. Layer isolation is enforced: CLI cannot import browser internals, daemon cannot import CLI, backends import neither.
 
 See the [architecture docs](docs/en/explanation/architecture.md) for a deeper walkthrough.
 

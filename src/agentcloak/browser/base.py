@@ -1328,6 +1328,11 @@ class BrowserContextBase(ABC):
         # manager re-inits (disable → re-enable) and re-sets every breakpoint.
         if self._debugger_mgr is not None:
             await self._debugger_mgr.on_tab_switched()
+        # The streaming monitor's ``Network`` enable + WS/SSE handlers were
+        # registered on the previous tab's CDP session, so a switched-to tab
+        # captures nothing until we re-arm against its own session.
+        if self._streaming_mgr is not None:
+            await self._streaming_mgr.on_tab_switched()
 
     async def _notify_managers_on_navigated(self) -> None:
         """Let event-driven managers react to a completed navigation.

@@ -181,3 +181,10 @@ The `auto` tier (default) resolves to `cloak`.
 | Profile persistence | Yes | Yes | Inherent |
 | Proxy support | Full (incl. SOCKS5 auth) | Limited | N/A |
 | Setup complexity | Zero | One command | Extension install |
+| Reverse engineering | Full (debugger / route / streaming / sourcemap) | Full | Full |
+
+## Reverse-engineering support
+
+All three backends support the Phase 7b reverse-engineering capabilities — debugger, network route interception, WebSocket/SSE streaming, source maps, init-script injection, and GraphQL. The commands are identical regardless of backend; see the [CLI reference](../reference/cli.md#reverse-engineering).
+
+These features ride a persistent CDP channel. CloakBrowser and Playwright now keep a **per-tab persistent `CDPSession`** alive for event streaming (debugger pauses, WebSocket frames), alongside the existing short-lived sessions used by one-shot calls like `cloak cdp endpoint`. RemoteBridge tunnels the same CDP commands over its WebSocket. Each CDP domain is enabled lazily on first use, so a session that never reverse-engineers keeps the stealth backend's hot path clean.

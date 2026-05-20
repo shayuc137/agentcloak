@@ -26,7 +26,8 @@ Agent 原生隐身浏览器 -- 看见、交互、自动化。
 - **网络配置** -- 代理（SOCKS5/HTTP）、DNS-over-HTTPS 控制、自定义 Chromium 参数，通过 `cloak config set` 管理
 - **Daemon 架构** -- 首次命令自动启动，管理浏览器生命周期，单调递增的 seq 计数器追踪状态
 - **Spell + API 流量捕获** -- 常见站点操作封装为一行命令；捕获流量，分析模式，自动生成 spell
-- **MCP server 23 个工具** -- 完整兼容 MCP 原生客户端（Claude Code、Codex、Cursor 等）
+- **网页逆向** -- CDP 原生调试器、网络路由拦截、WebSocket/SSE 捕获、init script hook、source map 解码 -- 一个工具覆盖 90%+ 的网页逆向场景
+- **MCP server 36 个工具** -- 完整兼容 MCP 原生客户端（Claude Code、Codex、Cursor 等）
 
 ## 安装
 
@@ -123,7 +124,7 @@ cloak --json snapshot | jq -r '.data.tree_text'
 
 | | Skill + CLI（推荐） | MCP Server |
 |---|---|---|
-| **工作方式** | Skill 在需要浏览器时自动加载，agent 通过 Bash 调用 `cloak` | `agentcloak-mcp` 通过 stdio 暴露 23 个工具 |
+| **工作方式** | Skill 在需要浏览器时自动加载，agent 通过 Bash 调用 `cloak` | `agentcloak-mcp` 通过 stdio 暴露 36 个工具 |
 | **上下文开销** | ~300 tokens（按需加载） | ~6,000 tokens（常驻） |
 | **适用场景** | Claude Code 及任何支持 Bash 的 agent | 没有 Bash 能力的纯 MCP 客户端 |
 
@@ -237,7 +238,7 @@ extra_args = ["--disable-background-networking"]
 graph TD
     subgraph Surface["Surface Layer"]
         Skill["Skill + CLI<br/>~300 tokens"]
-        MCP["MCP Server<br/>23 tools"]
+        MCP["MCP Server<br/>36 tools"]
     end
 
     subgraph Engine["Engine"]
@@ -257,7 +258,7 @@ graph TD
     Daemon --> Bridge
 ```
 
-所有后端继承统一的 `BrowserContextBase` ABC。基类包含约 900 行共享行为（action dispatch、batch、dialog、自恢复）；子类只实现 29 个原子 `_xxx_impl` 操作。层级隔离严格执行：CLI 不能导入 browser 内部模块，daemon 不能导入 CLI，后端两者都不导入。
+所有后端继承统一的 `BrowserContextBase` ABC。基类包含约 900 行共享行为（action dispatch、batch、dialog、自恢复）；子类只实现 45 个原子操作。层级隔离严格执行：CLI 不能导入 browser 内部模块，daemon 不能导入 CLI，后端两者都不导入。
 
 详情参见[架构文档](docs/zh/explanation/architecture.md)。
 

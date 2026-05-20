@@ -11,6 +11,7 @@ import orjson
 import typer
 
 from agentcloak.cli._dispatch import dispatch_text_or_json
+from agentcloak.cli.commands._common import parse_header_list
 from agentcloak.client import DaemonClient
 from agentcloak.core.errors import AgentBrowserError
 from agentcloak.core.text_renderers import render_graphql_text
@@ -18,20 +19,6 @@ from agentcloak.core.text_renderers import render_graphql_text
 __all__ = ["app"]
 
 app = typer.Typer()
-
-
-def _parse_headers(items: list[str] | None) -> dict[str, str]:
-    headers: dict[str, str] = {}
-    for item in items or []:
-        name, sep, value = item.partition(":")
-        if not sep:
-            raise AgentBrowserError(
-                error="invalid_header",
-                hint=f"Header '{item}' is not 'Name: value'",
-                action="pass each header as --header 'Name: value'",
-            )
-        headers[name.strip()] = value.strip()
-    return headers
 
 
 @app.command("introspect")
@@ -43,7 +30,7 @@ def graphql_introspect(
 ) -> None:
     """Run the standard introspection query against a GraphQL endpoint."""
     payload: dict[str, object] = {"url": url}
-    headers = _parse_headers(header)
+    headers = parse_header_list(header)
     if headers:
         payload["headers"] = headers
     dispatch_text_or_json(
@@ -77,7 +64,7 @@ def graphql_query(
                 hint=f"--variables is not valid JSON: {exc}",
                 action="pass a JSON object, e.g. --variables '{\"id\": 1}'",
             ) from exc
-    headers = _parse_headers(header)
+    headers = parse_header_list(header)
     if headers:
         payload["headers"] = headers
     dispatch_text_or_json(

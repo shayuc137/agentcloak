@@ -299,6 +299,96 @@ cloak frame focus --url "partial-url"
 cloak frame focus --main
 ```
 
+## Reverse engineering
+
+CDP-backed inspection and manipulation. Each capability enables its CDP domain lazily on first use, so a session that never reverse-engineers pays nothing. All commands work on every backend (CloakBrowser, Playwright, RemoteBridge).
+
+### Init scripts
+
+Inject JavaScript that runs before page scripts on every navigation — the hook point for patching `fetch` / `XHR` / `JSON.parse`.
+
+```bash
+cloak script add "JS"                 # inject raw JS; prints an identifier
+cloak script add --preset fetch       # built-in hook: fetch|xhr|json_parse|crypto|timing
+cloak script remove ID
+cloak script list
+```
+
+Presets log intercepted calls to `cloak console`.
+
+### Network route interception
+
+Intercept requests by URL pattern. Rules persist across navigations and replay onto new tabs.
+
+```bash
+cloak route add "**/api/*" --action abort
+cloak route add "**/track" --action fulfill --status 204 --content-type application/json --body "{}"
+cloak route add "*" --action continue --resource-type xhr --method POST
+cloak route remove "**/api/*"         # omit pattern to clear ALL rules
+cloak route list
+```
+
+### Extra HTTP headers
+
+```bash
+cloak emulation headers -H "Authorization: Bearer TOKEN" -H "X-Requested-With: XMLHttpRequest"
+cloak emulation headers               # no -H clears all overrides
+```
+
+### GraphQL
+
+Runs through the browser session (cookies + security domain check).
+
+```bash
+cloak graphql introspect https://api.example.com/graphql
+cloak graphql query https://api.example.com/graphql "query { me { id } }" --variables '{"id": 1}'
+cloak graphql query URL QUERY -H "Authorization: Bearer TOKEN"
+```
+
+### Streaming (WebSocket + SSE)
+
+Capture traffic invisible to `network requests`. Buffers page by a monotonic seq.
+
+```bash
+cloak ws list                          # tracked WebSocket connections
+cloak ws messages [--since SEQ]        # → sent, ← received frames
+cloak sse messages [--since SEQ]       # Server-Sent Events
+```
+
+### Debugger
+
+Set breakpoints, step, read the call stack and scope. The domain enables lazily; while paused, page actions return `debugger_paused` until `resume` / `step`.
+
+```bash
+cloak debugger enable
+cloak debugger breakpoint-set "main\.js" 42 --condition "x > 1"   # URL regex + zero-based line
+cloak debugger breakpoint-remove ID
+cloak debugger breakpoint-list
+cloak debugger xhr-set "/api/login"    # break on matching XHR (omit pattern = all XHRs)
+cloak debugger xhr-remove "/api/login"
+cloak debugger paused-info             # reason + call stack (callFrameIds in brackets)
+cloak debugger step --type over        # over | into | out
+cloak debugger resume
+cloak debugger scope-variables OBJECT_ID
+cloak debugger evaluate CALL_FRAME_ID "expr"
+cloak debugger scripts                 # parsed scripts (id, URL, source-map marker)
+cloak debugger script-source SCRIPT_ID
+cloak debugger search SCRIPT_ID "query" --regex --case-sensitive
+cloak debugger skip-pauses true        # ignore all breakpoints / debugger; (anti-anti-debug)
+```
+
+### Source maps
+
+Reverse-map compiled positions back to original source. Requires the debugger enabled.
+
+```bash
+cloak sourcemap list                   # scripts that declared a sourceMapURL
+cloak sourcemap get SCRIPT_ID          # download + parse; metadata summary
+cloak sourcemap lookup SCRIPT_ID --line N --column N   # compiled pos → original source:line:col
+cloak sourcemap sources SCRIPT_ID      # original source file paths
+cloak sourcemap source-content SCRIPT_ID SOURCE_PATH
+```
+
 ## Capture and spells
 
 ```bash

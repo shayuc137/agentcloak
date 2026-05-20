@@ -297,6 +297,96 @@ cloak frame focus --url "partial-url"
 cloak frame focus --main
 ```
 
+## 网页逆向
+
+基于 CDP 的检视与操纵能力。每项能力在首次使用时才惰性 enable 对应的 CDP 域，从不做逆向的会话零开销。所有命令在三种后端（CloakBrowser、Playwright、RemoteBridge）上都可用。
+
+### Init script
+
+注入在每次导航时先于页面脚本运行的 JavaScript——给 `fetch` / `XHR` / `JSON.parse` 打补丁的 hook 点。
+
+```bash
+cloak script add "JS"                 # 注入原始 JS，打印一个标识符
+cloak script add --preset fetch       # 内置 hook：fetch|xhr|json_parse|crypto|timing
+cloak script remove ID
+cloak script list
+```
+
+预设会把拦截到的调用打到 `cloak console`。
+
+### 网络路由拦截
+
+按 URL 模式拦截请求。规则跨导航持续，并在新标签页上重放。
+
+```bash
+cloak route add "**/api/*" --action abort
+cloak route add "**/track" --action fulfill --status 204 --content-type application/json --body "{}"
+cloak route add "*" --action continue --resource-type xhr --method POST
+cloak route remove "**/api/*"         # 省略 pattern 则清空全部规则
+cloak route list
+```
+
+### 额外 HTTP header
+
+```bash
+cloak emulation headers -H "Authorization: Bearer TOKEN" -H "X-Requested-With: XMLHttpRequest"
+cloak emulation headers               # 不带 -H 则清空所有覆盖
+```
+
+### GraphQL
+
+通过浏览器会话执行（cookie + 安全域名检查）。
+
+```bash
+cloak graphql introspect https://api.example.com/graphql
+cloak graphql query https://api.example.com/graphql "query { me { id } }" --variables '{"id": 1}'
+cloak graphql query URL QUERY -H "Authorization: Bearer TOKEN"
+```
+
+### 流式监控（WebSocket + SSE）
+
+捕获 `network requests` 看不到的流量。按单调 seq 分页缓冲。
+
+```bash
+cloak ws list                          # 追踪的 WebSocket 连接
+cloak ws messages [--since SEQ]        # → 发送、← 接收 的帧
+cloak sse messages [--since SEQ]       # Server-Sent Events
+```
+
+### 调试器
+
+设断点、单步、读调用栈和作用域。该域惰性 enable；暂停期间页面操作返回 `debugger_paused`，直到 `resume` / `step`。
+
+```bash
+cloak debugger enable
+cloak debugger breakpoint-set "main\.js" 42 --condition "x > 1"   # URL 正则 + 从 0 开始的行号
+cloak debugger breakpoint-remove ID
+cloak debugger breakpoint-list
+cloak debugger xhr-set "/api/login"    # 在匹配的 XHR 上断下（省略 pattern = 所有 XHR）
+cloak debugger xhr-remove "/api/login"
+cloak debugger paused-info             # 暂停原因 + 调用栈（callFrameId 在方括号里）
+cloak debugger step --type over        # over | into | out
+cloak debugger resume
+cloak debugger scope-variables OBJECT_ID
+cloak debugger evaluate CALL_FRAME_ID "expr"
+cloak debugger scripts                 # 已解析脚本（id、URL、source-map 标记）
+cloak debugger script-source SCRIPT_ID
+cloak debugger search SCRIPT_ID "query" --regex --case-sensitive
+cloak debugger skip-pauses true        # 忽略所有断点 / debugger;（反反调试）
+```
+
+### Source map
+
+将编译后的位置反查回原始源。需要先 enable 调试器。
+
+```bash
+cloak sourcemap list                   # 声明了 sourceMapURL 的脚本
+cloak sourcemap get SCRIPT_ID          # 下载 + 解析；元数据摘要
+cloak sourcemap lookup SCRIPT_ID --line N --column N   # 编译位置 → 原始 source:line:col
+cloak sourcemap sources SCRIPT_ID      # 原始源文件路径
+cloak sourcemap source-content SCRIPT_ID SOURCE_PATH
+```
+
 ## 捕获与 spell
 
 ```bash

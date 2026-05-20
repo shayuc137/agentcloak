@@ -27,26 +27,36 @@ if TYPE_CHECKING:
 class _FakeCtx:
     """Minimal stand-in for BrowserContextBase's CDP funnel.
 
-    Records every ``_on_cdp_event`` registration into a method→callback table
-    and counts ``_cdp_enable_domain`` calls per domain so a test can assert the
-    lazy-enable contract.
+    Records every ``_on_cdp_event`` registration into a method→callbacks table
+    (a *list* per method, exactly like the real ``_cdp_event_handlers``, so a
+    manager that wrongly re-registers handlers double-counts events here too)
+    and tracks ``_cdp_enable_domain`` with the same idempotency the base has, so
+    a test can assert both the lazy-enable contract and the tab-switch
+    discard-then-re-enable contract.
     """
 
     def __init__(self) -> None:
-        self.handlers: dict[str, Callable[[dict[str, Any]], None]] = {}
+        self.handlers: dict[str, list[Callable[[dict[str, Any]], None]]] = {}
         self.enabled: list[str] = []
+        self._enabled_domains: set[str] = set()
 
     def _on_cdp_event(
         self, method: str, callback: Callable[[dict[str, Any]], None]
     ) -> None:
-        self.handlers[method] = callback
+        self.handlers.setdefault(method, []).append(callback)
 
     async def _cdp_enable_domain(self, domain: str) -> None:
+        # Mirror BrowserContextBase._cdp_enable_domain's idempotency so the
+        # discard-then-re-enable tab-switch contract is observable.
+        if domain in self._enabled_domains:
+            return
         self.enabled.append(domain)
+        self._enabled_domains.add(domain)
 
     def emit(self, method: str, params: dict[str, Any]) -> None:
-        """Deliver a synthetic CDP event to the registered handler."""
-        self.handlers[method](params)
+        """Deliver a synthetic CDP event to every registered handler."""
+        for cb in self.handlers.get(method, []):
+            cb(params)
 
 
 def _make() -> tuple[StreamingMonitor, _FakeCtx]:
@@ -323,3 +333,56 @@ class TestNavigationReset:
         # Monotonic across the navigation boundary — no reset to 1.
         assert latest == 2
         assert [f.seq for f in frames] == [1, 2]
+
+
+class TestTabSwitch:
+    @pytest.mark.asyncio
+    async def test_re_enables_network_without_duplicate_handlers(self) -> None:
+        # The regression guard: a switched-to tab has a fresh CDP session, so
+        # the monitor must re-issue Network.enable — but it must NOT re-register
+        # the event handlers (they live on the ctx and already fan out to every
+        # session). Re-registering would double-count every frame.
+        mgr, ctx = _make()
+        await mgr.ensure_listening()
+        assert ctx.enabled == ["Network"]
+
+        await mgr.on_tab_switched()
+        # Network re-enabled on the new session (discard cleared the marker)...
+        assert ctx.enabled == ["Network", "Network"]
+
+        # ...and one frame is recorded exactly once, not twice.
+        ctx.emit(
+            "Network.webSocketFrameReceived",
+            {"requestId": "ws-1", "response": {"payloadData": "once"}},
+        )
+        frames, latest = mgr.ws_messages()
+        assert latest == 1
+        assert len(frames) == 1
+        assert frames[0].payload == "once"
+
+    @pytest.mark.asyncio
+    async def test_clears_connections_keeps_frame_history(self) -> None:
+        mgr, ctx = _make()
+        await mgr.ensure_listening()
+        ctx.emit("Network.webSocketCreated", {"requestId": "ws-1", "url": "wss://x"})
+        ctx.emit(
+            "Network.webSocketFrameSent",
+            {"requestId": "ws-1", "response": {"payloadData": "x"}},
+        )
+
+        await mgr.on_tab_switched()
+
+        # Live connections gone (the new session's requestIds differ)...
+        assert mgr.ws_list() == []
+        # ...but frame history + seq survive (monotonic across the switch).
+        frames, latest = mgr.ws_messages()
+        assert latest == 1
+        assert len(frames) == 1
+
+    @pytest.mark.asyncio
+    async def test_noop_when_never_listening(self) -> None:
+        # A dormant monitor (no agent ever read WS/SSE) stays dormant — a tab
+        # switch must not enable Network just because a tab changed.
+        mgr, ctx = _make()
+        await mgr.on_tab_switched()
+        assert ctx.enabled == []

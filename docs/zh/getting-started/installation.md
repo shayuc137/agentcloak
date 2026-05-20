@@ -39,7 +39,7 @@ pip install agentcloak
 上面任一安装命令都会一次性带入所有组件：
 
 - `agentcloak` 和 `cloak` CLI 命令
-- `agentcloak-mcp` MCP server（23 个工具）
+- `agentcloak-mcp` MCP server（36 个工具）
 - CloakBrowser 隐身浏览器后端（默认）
 - httpcloak TLS 指纹代理（用于 `cloak fetch`）
 - 后台 daemon（FastAPI + uvicorn，OpenAPI 规范在 `http://127.0.0.1:18765/openapi.json`）

@@ -59,6 +59,10 @@ cloak click 5                                    # 在真实 Chrome 里点击
 export AGENTCLOAK_DEFAULT_TIER=remote_bridge
 ```
 
+## 通过 bridge 做网页逆向
+
+Phase 7b 的所有网页逆向能力都能通过 bridge 工作——调试器断点、网络路由拦截、WebSocket/SSE 流式监控、source map、init script 注入、GraphQL。扩展会在 agent 首次使用需要某个 CDP 域的能力时**按需** enable 对应的域（`Debugger`、`Fetch`、`Network`），而不是为每个会话一直开着。命令与本地后端完全一致，详见 CLI 参考的[网页逆向](../reference/cli.md#网页逆向)段。
+
 ## 隐私提示
 
 RemoteBridge 让 agent 看到的浏览器视图和你本人完全一致。`cloak tab list`

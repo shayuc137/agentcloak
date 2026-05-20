@@ -1,6 +1,6 @@
 # MCP 工具参考
 
-agentcloak 的 MCP server 通过 stdio 传输暴露 23 个工具。已包含在基础安装中（`pip install agentcloak`），运行命令：`agentcloak-mcp`。
+agentcloak 的 MCP server 通过 stdio 传输暴露 36 个工具。已包含在基础安装中（`pip install agentcloak`），运行命令：`agentcloak-mcp`。
 
 配置说明参见 [MCP 配置指南](../guides/mcp-setup.md)。
 
@@ -272,3 +272,98 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 23 个工具。已包含在�
 | `tab_id` | `int` | `-1` | Chrome 标签页 ID（仅 claim） |
 | `url_pattern` | `str` | `""` | URL 子串匹配（仅 claim） |
 | `mode` | `str` | `close` | finalize 模式：`close`、`handoff` 或 `deliverable` |
+
+## 网页逆向
+
+基于 CDP 的工具，用于检视和操纵页面内部。每个 manager 在首次使用时才惰性 enable 对应的 CDP 域——从不做逆向的会话零开销——且三种后端（CloakBrowser、Playwright、RemoteBridge）全部通用。
+
+### agentcloak_script
+
+注入在每次导航时先于页面脚本运行的 JavaScript——这是在页面用到 `fetch` / `XHR` / `JSON.parse` 之前打补丁的标准 hook 点（不同于 `agentcloak_evaluate`，后者在页面加载后才执行）。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|-------|------|
+| `action` | `str` | `list` | `add`、`remove` 或 `list` |
+| `js` | `str` | `""` | 要注入的原始 JavaScript（用于 `add`） |
+| `preset` | `str` | `""` | 内置 hook 预设（用于 `add`，覆盖 `js`）：`fetch`、`xhr`、`json_parse`、`crypto`、`timing` |
+| `identifier` | `str` | `""` | 要移除的脚本标识符（用于 `remove`） |
+
+预设会把拦截到的调用打到 console（用 `agentcloak_console` 读取）。
+
+### agentcloak_route
+
+按 URL 模式拦截网络请求（abort / fulfill / continue）。规则跨导航持续，并在新标签页上重放。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|-------|------|
+| `action` | `str` | `list` | `add`、`remove` 或 `list` |
+| `pattern` | `str` | `""` | URL glob（`*` = 任意字符；不含 `*` = 子串匹配） |
+| `rule_action` | `str` | `continue` | `add` 的处置方式：`abort`、`fulfill` 或 `continue` |
+| `resource_type` | `str` | `""` | 只匹配该资源类型（`xhr`、`image`...） |
+| `method` | `str` | `""` | 只匹配该 HTTP 方法 |
+| `status` | `int` | `0` | `fulfill` 规则的响应状态码（默认 200） |
+| `content_type` | `str` | `""` | `fulfill` 响应的 Content-Type |
+| `body` | `str` | `""` | `fulfill` 响应的 body |
+
+### agentcloak_headers
+
+设置应用到后续每个请求的额外 HTTP header——调试 API 时伪造 Authorization token 或自定义 header。不传 header 则清空覆盖。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|-------|------|
+| `headers` | `dict[str, str]` | `null` | header 名 → 值映射。空/null 清空所有覆盖 |
+
+### agentcloak_graphql
+
+通过浏览器会话（继承页面 cookie，通过安全域名检查）introspect GraphQL schema 或发送任意查询。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|-------|------|
+| `action` | `str` | `introspect` | `introspect` 或 `query` |
+| `url` | `str` | `""` | GraphQL 端点 URL |
+| `query` | `str` | `""` | GraphQL 文档（用于 `query`） |
+| `variables` | `dict` | `null` | GraphQL 变量对象（用于 `query`） |
+| `headers` | `dict` | `null` | 额外请求 header（如 auth token） |
+
+### agentcloak_streaming
+
+捕获 WebSocket 帧和 Server-Sent Events——普通 network 视图看不到的流量。帧和事件落入按单调 seq 分页的 ring buffer，与 console 一致。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|-------|------|
+| `action` | `str` | `ws_messages` | `ws_list`、`ws_messages` 或 `sse_messages` |
+| `since` | `int` | `0` | 只返回 seq 大于该值的帧/事件 |
+
+### agentcloak_debugger
+
+通过 CDP Debugger 域检视和控制暂停的 JavaScript 执行：设断点、单步、读调用栈和作用域。该域在首次 `enable` / `breakpoint_set` 时惰性开启。暂停期间，页面操作（navigate、click...）返回 `debugger_paused` 错误——调用 `resume` 或 `step`。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|-------|------|
+| `action` | `str` | `paused_info` | `enable`、`disable`、`breakpoint_set`、`breakpoint_remove`、`breakpoint_list`、`xhr_set`、`xhr_remove`、`resume`、`step`、`paused_info`、`scope_variables`、`evaluate`、`scripts`、`script_source`、`search`、`skip_pauses` |
+| `url` | `str` | `""` | 脚本 URL 正则（用于 `breakpoint_set`） |
+| `line` | `int` | `0` | 从 0 开始的行号（用于 `breakpoint_set`） |
+| `condition` | `str` | `""` | 仅当此 JS 表达式为真时断下 |
+| `breakpoint_id` | `str` | `""` | 断点 id（用于 `breakpoint_remove`） |
+| `url_pattern` | `str` | `""` | XHR URL 子串（用于 `xhr_set` / `xhr_remove`；空 = 所有 XHR） |
+| `step_type` | `str` | `over` | `over`、`into` 或 `out`（用于 `step`） |
+| `object_id` | `str` | `""` | 来自某帧 scopeChain 的作用域 objectId（用于 `scope_variables`） |
+| `call_frame_id` | `str` | `""` | callFrameId（用于 `evaluate`） |
+| `expression` | `str` | `""` | 在暂停帧中求值的表达式 |
+| `script_id` | `str` | `""` | 脚本 id（用于 `script_source` / `search`） |
+| `query` | `str` | `""` | 子串或正则（用于 `search`） |
+| `is_regex` | `bool` | `false` | 将 `query` 当作正则 |
+| `case_sensitive` | `bool` | `false` | 区分大小写搜索 |
+| `skip` | `bool` | `true` | 用于 `skip_pauses`：忽略所有断点 / `debugger;`（反反调试） |
+
+### agentcloak_sourcemap
+
+发现并解析 source map（纯 Python VLQ 解码），将编译后的 `line:column` 反查回原始源文件并读取其文本。构建在 debugger 的脚本清单之上。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|-------|------|
+| `action` | `str` | `list` | `list`、`get`、`lookup`、`sources` 或 `source_content` |
+| `script_id` | `str` | `""` | 来自 `list` 的 CDP 脚本 id |
+| `line` | `int` | `0` | 从 0 开始的生成（编译）行（用于 `lookup`） |
+| `column` | `int` | `0` | 从 0 开始的生成列（用于 `lookup`） |
+| `source_path` | `str` | `""` | 来自 `sources` 的路径（用于 `source_content`） |

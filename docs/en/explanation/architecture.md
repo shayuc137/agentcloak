@@ -46,7 +46,7 @@ The surface layer is how agents and users interact with agentcloak. Both surface
 
 **CLI** (`src/agentcloak/cli/`): Built with [typer](https://github.com/fastapi/typer). Every command sends an HTTP request to the daemon (via the shared `httpx`-based `DaemonClient`) and prints a text-first answer to stdout (JSON envelope available via `--json`). The CLI never touches browser internals.
 
-**MCP Server** (`src/agentcloak/mcp/`): Built with [FastMCP](https://github.com/modelcontextprotocol/python-sdk). Runs as a stdio MCP server, exposing 23 tools that map to daemon HTTP endpoints. The MCP server auto-starts the daemon on the first request, sharing the same `DaemonClient` (async mode) as the CLI uses in sync mode. Tool responses are rendered through `core/text_renderers` — the same renderer the CLI uses — so MCP returns agent-readable text instead of JSON strings. `agentcloak_screenshot` returns an MCP `ImageContent` so multimodal LLMs read the pixels directly.
+**MCP Server** (`src/agentcloak/mcp/`): Built with [FastMCP](https://github.com/modelcontextprotocol/python-sdk). Runs as a stdio MCP server, exposing 36 tools that map to daemon HTTP endpoints. The MCP server auto-starts the daemon on the first request, sharing the same `DaemonClient` (async mode) as the CLI uses in sync mode. Tool responses are rendered through `core/text_renderers` — the same renderer the CLI uses — so MCP returns agent-readable text instead of JSON strings. `agentcloak_screenshot` returns an MCP `ImageContent` so multimodal LLMs read the pixels directly.
 
 Both surfaces share the same daemon backend. Adding a new capability means adding one daemon route — the CLI/MCP adapters and the Skill `commands-reference.md` are generated or verified from the OpenAPI spec the daemon publishes at `/openapi.json`.
 
@@ -80,7 +80,7 @@ All backends extend the `BrowserContextBase` ABC (`src/agentcloak/browser/base.p
 - Browser self-healing (raise structured `browser_closed` error on next call instead of leaking raw Playwright exceptions)
 - seq counter + ring buffer + snapshot cache + capture store
 
-Subclasses only implement 29 atomic `_xxx_impl` operations (one per action kind, one per snapshot mode primitive, one for tab/frame ops, etc.):
+Subclasses only implement 45 atomic `_xxx_impl` operations (one per action kind, one per snapshot mode primitive, one for tab/frame ops, plus the Phase 7a I/O atoms and the Phase 7b CDP transport atoms):
 
 ```python
 class BrowserContextBase(ABC):
@@ -90,7 +90,7 @@ class BrowserContextBase(ABC):
     async def _click_impl(self, *, target, x, y, button, click_count) -> dict[str, Any]: ...
     @abstractmethod
     async def _screenshot_impl(self, *, full_page, fmt, quality) -> bytes: ...
-    # ... 26 more
+    # ... 42 more
 ```
 
 The daemon interacts only with the base class. Backend selection happens at launch time and is transparent to everything above.

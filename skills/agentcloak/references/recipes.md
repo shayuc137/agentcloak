@@ -88,6 +88,47 @@ cloak click 5               # make some change
 cloak snapshot --diff       # shows [+] added, [~] changed, removed summary
 ```
 
+## Wait for Fonts Before Screenshot
+
+Web fonts load asynchronously — screenshots taken too early show fallback fonts. Combine `wait` conditions for reliable visual captures:
+
+```bash
+cloak navigate "https://example.com" --snap
+cloak wait --load networkidle                          # SPA data + lazy assets settle
+cloak wait --js "document.fonts.ready.then(() => true)" # all font faces loaded
+cloak screenshot --format png --full-page               # pixel-perfect capture
+```
+
+`--js` expressions must return a truthy value. For Promises like `document.fonts.ready`, wrap with `.then(() => true)`.
+
+Other useful wait-then-screenshot patterns:
+
+```bash
+# Wait for a specific element to render before capturing
+cloak wait --selector ".chart-rendered"
+cloak screenshot
+
+# Wait for client-side routing to complete
+cloak click 5                              # navigation link
+cloak wait --url "**/dashboard"
+cloak screenshot
+```
+
+## Screenshot Format Choice
+
+| Format | When to use | Size |
+|--------|------------|------|
+| `jpeg` (default) | Layout checks, page state verification, agent observe-act loops | ~4-10x smaller |
+| `png` | UI design verification, OCR, vision models, pixel-level comparison | Lossless |
+
+```bash
+cloak screenshot                           # JPEG quality 80 (CLI default)
+cloak screenshot --format png              # lossless for design work
+cloak screenshot --format jpeg --quality 50 # smaller for token budgets
+```
+
+MCP tools default to JPEG quality 50 (configurable via `browser.mcp_screenshot_quality`).
+
 ## Action with Snapshot (save a round trip)
 
 ```bash

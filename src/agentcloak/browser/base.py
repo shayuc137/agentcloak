@@ -57,6 +57,7 @@ if TYPE_CHECKING:
         RouteManager,
         RouteRule,
         ScriptManager,
+        SourceMapManager,
         StreamingMonitor,
     )
     from agentcloak.core.types import StealthTier
@@ -278,15 +279,16 @@ class BrowserContextBase(ABC):
         self._cdp_event_handlers: dict[str, list[Callable[[dict[str, Any]], None]]] = {}
         self._enabled_domains: set[str] = set()
 
-        # 7b T1/T2/T3: reverse-engineering managers, constructed lazily on first
-        # use so a session that never touches them pays nothing.
+        # 7b T1/T2/T3/T4: reverse-engineering managers, constructed lazily on
+        # first use so a session that never touches them pays nothing.
         # ``script_manager`` / ``route_manager`` / ``streaming_monitor`` /
-        # ``debugger`` are the public accessors below; the slots stay ``None``
-        # until then.
+        # ``debugger`` / ``sourcemap`` are the public accessors below; the slots
+        # stay ``None`` until then.
         self._script_mgr: ScriptManager | None = None
         self._route_mgr: RouteManager | None = None
         self._streaming_mgr: StreamingMonitor | None = None
         self._debugger_mgr: DebuggerManager | None = None
+        self._sourcemap_mgr: SourceMapManager | None = None
 
         # 7b T1.2: extra HTTP headers injected on every request. Kept here so
         # ``emulation headers`` can report the active set; the backend applies
@@ -332,6 +334,20 @@ class BrowserContextBase(ABC):
 
             self._debugger_mgr = DebuggerManager(self)
         return self._debugger_mgr
+
+    @property
+    def sourcemap(self) -> SourceMapManager:
+        """Lazily-constructed source-map parser (7b T4).
+
+        Mines the debugger's script inventory for ``sourceMapURL``s and parses
+        them on demand. Pure data work — no CDP domain of its own — so it stays
+        free until an agent actually resolves a position.
+        """
+        if self._sourcemap_mgr is None:
+            from agentcloak.browser.managers import SourceMapManager
+
+            self._sourcemap_mgr = SourceMapManager(self)
+        return self._sourcemap_mgr
 
     @property
     def seq(self) -> int:

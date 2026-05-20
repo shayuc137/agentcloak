@@ -1502,6 +1502,39 @@ class DaemonClient:
             "POST", "/debugger/skip-pauses", json_body={"skip": skip}
         )
 
+    # --- SourceMap (async, 7b T4) ---
+
+    async def sourcemap_list(self) -> dict[str, Any]:
+        return await self._send_async("GET", "/sourcemap/list")
+
+    async def sourcemap_get(self, *, script_id: str) -> dict[str, Any]:
+        return await self._send_async(
+            "POST", "/sourcemap/get", json_body={"script_id": script_id}
+        )
+
+    async def sourcemap_lookup(
+        self, *, script_id: str, line: int, column: int = 0
+    ) -> dict[str, Any]:
+        return await self._send_async(
+            "POST",
+            "/sourcemap/lookup",
+            json_body={"script_id": script_id, "line": line, "column": column},
+        )
+
+    async def sourcemap_sources(self, *, script_id: str) -> dict[str, Any]:
+        return await self._send_async(
+            "POST", "/sourcemap/sources", json_body={"script_id": script_id}
+        )
+
+    async def sourcemap_source_content(
+        self, *, script_id: str, source_path: str
+    ) -> dict[str, Any]:
+        return await self._send_async(
+            "POST",
+            "/sourcemap/source-content",
+            json_body={"script_id": script_id, "source_path": source_path},
+        )
+
 
 # ----------------------------------------------------------------------
 # Body / param builders — defined once, used by both sync and async API.

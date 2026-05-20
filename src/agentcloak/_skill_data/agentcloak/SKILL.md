@@ -138,6 +138,11 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak debugger scope-variables OBJECT_ID` / `evaluate CALL_FRAME_ID EXPR` | Expand a scope object's properties / evaluate in a paused frame (objectId + callFrameId come from `paused-info`) |
 | `cloak debugger scripts` / `script-source SCRIPT_ID` / `search SCRIPT_ID QUERY` | List parsed scripts / read a source / grep within one (`--regex`) |
 | `cloak debugger skip-pauses` | Ignore all breakpoints + `debugger;` statements (defeats anti-debug loops) |
+| `cloak sourcemap list` | List scripts that have a sourceMapURL (requires debugger enabled) |
+| `cloak sourcemap get SCRIPT_ID` | Download + parse the .map file; shows sources, mapping count, metadata |
+| `cloak sourcemap lookup SCRIPT_ID --line N --column N` | Reverse lookup: compiled line:col → original source file + line:col |
+| `cloak sourcemap sources SCRIPT_ID` | List original source files in the map |
+| `cloak sourcemap source-content SCRIPT_ID SOURCE_PATH` | Read the original source text for a file in the map |
 
 ### Management
 

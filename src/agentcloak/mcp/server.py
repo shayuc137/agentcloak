@@ -86,6 +86,7 @@ def create_server() -> object:
         route,
         script,
         serve,
+        sourcemap,
         storage,
         streaming,
         upload,
@@ -137,6 +138,7 @@ def create_server() -> object:
     graphql.register(mcp, client)
     streaming.register(mcp, client)
     debugger.register(mcp, client)
+    sourcemap.register(mcp, client)
 
     return mcp
 

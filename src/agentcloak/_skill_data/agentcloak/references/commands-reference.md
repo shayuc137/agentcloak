@@ -602,6 +602,44 @@ Read this file when you need full parameter detail. For the common path, the qui
 - Query:
   - `since` (integer, default: 0) — Return SSE events with seq greater than this value.
 
+## Source Maps
+
+### `GET /sourcemap/list`
+
+- CLI: `cloak sourcemap list`
+- MCP: `agentcloak_sourcemap (action=list)`
+
+### `POST /sourcemap/get`
+
+- CLI: `cloak sourcemap get SCRIPT_ID`
+- MCP: `agentcloak_sourcemap (action=get)`
+- Body:
+  - `script_id` (string, default: *required*) — Script id from '/sourcemap/list'.
+
+### `POST /sourcemap/lookup`
+
+- CLI: `cloak sourcemap lookup SCRIPT_ID --line N --column N`
+- MCP: `agentcloak_sourcemap (action=lookup)`
+- Body:
+  - `script_id` (string, default: *required*) — Script id from '/sourcemap/list'.
+  - `line` (integer, default: *required*) — Zero-based generated (compiled) line number.
+  - `column` (integer, default: 0) — Zero-based generated column number.
+
+### `POST /sourcemap/sources`
+
+- CLI: `cloak sourcemap sources SCRIPT_ID`
+- MCP: `agentcloak_sourcemap (action=sources)`
+- Body:
+  - `script_id` (string, default: *required*) — Script id from '/sourcemap/list'.
+
+### `POST /sourcemap/source-content`
+
+- CLI: `cloak sourcemap source-content SCRIPT_ID SOURCE_PATH`
+- MCP: `agentcloak_sourcemap (action=source_content)`
+- Body:
+  - `script_id` (string, default: *required*) — Script id from '/sourcemap/list'.
+  - `source_path` (string, default: *required*) — One of the paths from '/sourcemap/sources'.
+
 ## Profiles
 
 ### `GET /profile/list`

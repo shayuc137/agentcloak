@@ -106,6 +106,11 @@ __all__ = [
     "render_serve_stop_text",
     "render_shutdown_text",
     "render_snapshot_text",
+    "render_sourcemap_get_text",
+    "render_sourcemap_list_text",
+    "render_sourcemap_lookup_text",
+    "render_sourcemap_source_content_text",
+    "render_sourcemap_sources_text",
     "render_spell_list_text",
     "render_spell_run_text",
     "render_sse_messages_text",
@@ -1552,3 +1557,75 @@ def render_debugger_search_text(data: dict[str, Any]) -> str:
         content = " ".join(str(m.get("lineContent", "") or "").split())
         lines.append(f"{line_no}: {content}")
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# SourceMap (7b T4)
+# ---------------------------------------------------------------------------
+
+
+def render_sourcemap_list_text(data: dict[str, Any]) -> str:
+    """Render ``/sourcemap/list`` — one ``<script_id> <url>`` per mapped script."""
+    maps: list[Any] = list(data.get("maps") or [])
+    if not maps:
+        return "no source maps"
+    lines: list[str] = []
+    for raw in maps:
+        if not isinstance(raw, dict):
+            continue
+        entry = _as_dict(raw)
+        sid = str(entry.get("script_id", "") or "")
+        url = str(entry.get("url", "") or "<inline>")
+        lines.append(f"{sid} {url}")
+    return "\n".join(lines)
+
+
+def render_sourcemap_get_text(data: dict[str, Any]) -> str:
+    """Render ``/sourcemap/get`` — a compact metadata summary line.
+
+    Leads with the source/mapping counts an agent uses to decide whether the
+    map is worth walking, then lists the source paths (one per line) so the
+    next ``lookup`` / ``source-content`` call has the paths to hand.
+    """
+    sources: list[Any] = list(data.get("sources") or [])
+    mapping_count = int(data.get("mapping_count", 0) or 0)
+    has_content = bool(data.get("has_sources_content"))
+    content_note = " with-content" if has_content else ""
+    header = (
+        f"source map: {len(sources)} sources, {mapping_count} mappings{content_note}"
+    )
+    lines = [header, *(str(s) for s in sources)]
+    return "\n".join(lines)
+
+
+def render_sourcemap_lookup_text(data: dict[str, Any]) -> str:
+    """Render ``/sourcemap/lookup`` — ``<source>:<line>:<col>[ name]`` or no match."""
+    if not data.get("matched"):
+        return "no mapping"
+    source = str(data.get("source", "") or "")
+    line = data.get("original_line", "")
+    col = data.get("original_column", "")
+    name = str(data.get("name", "") or "")
+    suffix = f" {name}" if name else ""
+    return f"{source}:{line}:{col}{suffix}"
+
+
+def render_sourcemap_sources_text(data: dict[str, Any]) -> str:
+    """Render ``/sourcemap/sources`` — one source path per line."""
+    sources: list[Any] = list(data.get("sources") or [])
+    if not sources:
+        return "no sources"
+    return "\n".join(str(s) for s in sources)
+
+
+def render_sourcemap_source_content_text(data: dict[str, Any]) -> str:
+    """Render ``/sourcemap/source-content`` — the original source text.
+
+    Returns the embedded text verbatim (pipe-friendly: ``... > out.js``). When
+    the map declares the source but ships no content for it, emit a short marker
+    on stderr-style note instead of an empty body so the agent isn't left
+    guessing whether the fetch failed.
+    """
+    if not data.get("available"):
+        return "no embedded source content"
+    return str(data.get("content", "") or "")

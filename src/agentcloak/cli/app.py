@@ -212,6 +212,7 @@ def _register_commands() -> None:
         script,
         serve_cmd,
         skill_cmd,
+        sourcemap,
         spell_cmd,
         storage_cmd,
         streaming,
@@ -372,6 +373,11 @@ def _register_commands() -> None:
         streaming.sse_app,
         name="sse",
         help="Server-Sent Events capture: read buffered events.",
+    )
+    app.add_typer(
+        sourcemap.app,
+        name="sourcemap",
+        help="Source maps: discover, parse, reverse-map compiled positions.",
     )
 
 

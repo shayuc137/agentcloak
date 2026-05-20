@@ -315,6 +315,8 @@ class PlaywrightContext(BrowserContextBase):
     _CONSOLE_LEVEL_MAP: ClassVar[dict[str, str]] = {"warning": "warn"}
 
     def _on_console(self, msg: Any) -> None:
+        if getattr(self, "_console_cdp_active", False):
+            return
         with contextlib.suppress(Exception):
             loc: dict[str, Any] = {}
             with contextlib.suppress(Exception):
@@ -904,9 +906,49 @@ class PlaywrightContext(BrowserContextBase):
     # ------------------------------------------------------------------
 
     async def _console_setup_impl(self) -> None:
-        # Listeners are registered eagerly in ``_setup_feedback_listeners`` so
-        # nothing emitted before the first query is missed. Nothing to do here.
-        return None
+        # Playwright ``page.on('console')`` is registered eagerly in
+        # ``_setup_feedback_listeners``, but CloakBrowser's patched Chromium
+        # doesn't propagate user JS ``console.log/warn/error`` calls through
+        # Playwright's event relay (only internal network-error messages fire).
+        # Work around by also listening to the CDP ``Runtime.consoleAPICalled``
+        # event, which is browser-native and reliable on all backends.
+        self._on_cdp_event("Runtime.consoleAPICalled", self._on_cdp_console)
+        self._console_cdp_active = True
+        await self._cdp_enable_domain("Runtime")
+
+    def _on_cdp_console(self, params: dict[str, Any]) -> None:
+        """Handle CDP ``Runtime.consoleAPICalled`` — reliable on all backends."""
+        with contextlib.suppress(Exception):
+            raw_type = str(params.get("type", "log"))
+            level = self._CONSOLE_LEVEL_MAP.get(raw_type, raw_type)
+            args: list[dict[str, Any]] = list(params.get("args") or [])
+            parts: list[str] = []
+            for arg in args:
+                val = arg.get("value")
+                if val is not None:
+                    parts.append(str(val))
+                else:
+                    desc = arg.get("description", "")
+                    parts.append(str(desc) if desc else str(arg.get("type", "")))
+            text = " ".join(parts)
+            url = ""
+            line_no: int | None = None
+            column_no: int | None = None
+            stack: dict[str, Any] = dict(params.get("stackTrace") or {})
+            if stack:
+                frames: list[dict[str, Any]] = list(stack.get("callFrames") or [])
+                if frames:
+                    url = str(frames[0].get("url", ""))
+                    line_no = frames[0].get("lineNumber")
+                    column_no = frames[0].get("columnNumber")
+            self._record_console_entry(
+                level=level,
+                text=text,
+                url=url,
+                line=line_no,
+                column=column_no,
+                is_error=False,
+            )
 
     # ------------------------------------------------------------------
     # Atomic: download (7a R2)

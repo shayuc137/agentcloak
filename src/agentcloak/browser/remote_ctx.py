@@ -89,6 +89,27 @@ def _pdf_options_to_cdp(options: dict[str, Any]) -> dict[str, Any]:
     return params
 
 
+def _fulfill_params(request_id: str, rule: Any) -> dict[str, Any]:
+    """Build CDP ``Fetch.fulfillRequest`` params from a fulfill rule.
+
+    CDP wants the body base64-encoded and the content type expressed as a
+    response header, unlike Playwright's named ``content_type``/``body`` args —
+    this translates the shared RouteRule shape into the bridge dialect.
+    """
+    params: dict[str, Any] = {
+        "requestId": request_id,
+        "responseCode": rule.status or 200,
+    }
+    headers: list[dict[str, str]] = []
+    if rule.content_type:
+        headers.append({"name": "Content-Type", "value": str(rule.content_type)})
+    if headers:
+        params["responseHeaders"] = headers
+    if rule.body is not None:
+        params["body"] = base64.b64encode(str(rule.body).encode()).decode()
+    return params
+
+
 class _BridgeWS(Protocol):
     """The minimal WebSocket interface the bridge context speaks to.
 
@@ -129,6 +150,14 @@ class RemoteBridgeContext(BrowserContextBase):
         # garbage-collected mid-flight.
         self._pending_captures: dict[str, dict[str, Any]] = {}
         self._capture_tasks: set[asyncio.Task[None]] = set()
+
+        # 7b T1.3: route interception state. ``_fetch_enabled`` guards the
+        # one-time ``Fetch.requestPaused`` registration; ``_route_tasks`` holds
+        # the background coroutines that resume each paused request (the CDP
+        # event callback must stay synchronous, so the actual continue/fulfill/
+        # fail is dispatched to a task).
+        self._fetch_enabled: bool = False
+        self._route_tasks: set[asyncio.Task[None]] = set()
 
     @property
     def stealth_tier(self) -> StealthTier:
@@ -1426,6 +1455,106 @@ class RemoteBridgeContext(BrowserContextBase):
 
     async def _cdp_enable_domain_impl(self, domain: str) -> None:
         await self._send("enable_domain", {"domain": domain})
+
+    # ------------------------------------------------------------------
+    # Header injection (7b T1.2)
+    # ------------------------------------------------------------------
+
+    async def _set_extra_headers_impl(self, headers: dict[str, str]) -> None:
+        # Network.setExtraHTTPHeaders needs the Network domain enabled; enabling
+        # is idempotent on the Extension side (it tracks enabled domains).
+        await self._cdp_enable_domain("Network")
+        await self._send(
+            "cdp",
+            {"method": "Network.setExtraHTTPHeaders", "params": {"headers": headers}},
+        )
+
+    # ------------------------------------------------------------------
+    # Route interception (7b T1.3)
+    # ------------------------------------------------------------------
+    # The Extension forwards every CDP event through ``feed_message`` →
+    # ``_dispatch_cdp_event``, so we register a synchronous ``Fetch.requestPaused``
+    # handler once and (re-)issue ``Fetch.enable`` whenever rules change. The
+    # handler can't await (callbacks must stay non-blocking), so it spawns a
+    # task that resumes the request via continue/fulfill/fail. Matching reuses
+    # the shared RouteManager so the disposition matches the Playwright backend.
+
+    async def _route_add_impl(self, rule: Any) -> None:
+        if not self._fetch_enabled:
+            self._on_cdp_event("Fetch.requestPaused", self._on_request_paused)
+            self._fetch_enabled = True
+        # Enable Fetch with a catch-all pattern; the per-rule decision happens
+        # in the handler. Re-enabling is harmless and keeps the pattern current.
+        await self._send(
+            "cdp",
+            {"method": "Fetch.enable", "params": {"patterns": [{"urlPattern": "*"}]}},
+        )
+
+    async def _route_remove_impl(self, pattern: str | None) -> None:
+        # When no rules remain, fully disable Fetch so requests stop pausing.
+        # The RouteManager removes the rule from its list before/after this call,
+        # so we check the live count to decide.
+        remaining = self.route_manager.list_rules()
+        if pattern is None or not remaining:
+            with contextlib.suppress(Exception):
+                await self._send("cdp", {"method": "Fetch.disable", "params": {}})
+            self._fetch_enabled = False
+
+    def _on_request_paused(self, params: dict[str, Any]) -> None:
+        """Synchronous ``Fetch.requestPaused`` callback — dispatch to a task.
+
+        Resuming a paused request is an async CDP round-trip, but event
+        callbacks must not block the dispatch loop, so we hand the work to a
+        tracked task (the same pattern the capture path uses for response
+        bodies).
+        """
+        task = asyncio.ensure_future(self._resume_paused_request(params))
+        self._route_tasks.add(task)
+        task.add_done_callback(self._route_tasks.discard)
+
+    async def _resume_paused_request(self, params: dict[str, Any]) -> None:
+        request_id = str(params.get("requestId", ""))
+        if not request_id:
+            return
+        request = cast("dict[str, Any]", params.get("request") or {})
+        url = str(request.get("url", ""))
+        method = str(request.get("method", "")) or None
+        resource_type = params.get("resourceType")
+        rule = self.route_manager.match(
+            url,
+            resource_type=str(resource_type) if resource_type else None,
+            method=method,
+        )
+        try:
+            if rule is None or rule.action == "continue":
+                await self._send(
+                    "cdp",
+                    {
+                        "method": "Fetch.continueRequest",
+                        "params": {"requestId": request_id},
+                    },
+                )
+            elif rule.action == "abort":
+                await self._send(
+                    "cdp",
+                    {
+                        "method": "Fetch.failRequest",
+                        "params": {
+                            "requestId": request_id,
+                            "errorReason": "Aborted",
+                        },
+                    },
+                )
+            elif rule.action == "fulfill":
+                await self._send(
+                    "cdp",
+                    {
+                        "method": "Fetch.fulfillRequest",
+                        "params": _fulfill_params(request_id, rule),
+                    },
+                )
+        except Exception:
+            logger.debug("route_resume_failed", request_id=request_id, exc_info=True)
 
     # ------------------------------------------------------------------
     # Capture (CDP Network domain)

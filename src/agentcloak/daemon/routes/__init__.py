@@ -31,13 +31,19 @@ from agentcloak.daemon.routes import (
     clipboard,
     console,
     download,
+    emulation,
+    graphql,
     interaction,
     lifecycle,
     pdf,
+    script,
     serve,
     spells,
     storage,
     tabs,
+)
+from agentcloak.daemon.routes import (
+    route as route_mod,
 )
 from agentcloak.daemon.services import ActionService
 
@@ -66,6 +72,11 @@ def _build_router() -> APIRouter:
         clipboard,
         pdf,
         serve,
+        # 7b T1 reverse-engineering surfaces.
+        script,
+        route_mod,
+        emulation,
+        graphql,
     ):
         merged.include_router(module.router)
     return merged

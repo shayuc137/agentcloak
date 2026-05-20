@@ -395,6 +395,84 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak serve status`
 - MCP: `agentcloak_serve (action=status)`
 
+## Init Scripts
+
+### `POST /script/add`
+
+- CLI: `cloak script add JS`
+- MCP: `agentcloak_script (action=add)`
+- Body:
+  - `js` (string, default: "") — Raw JavaScript to run before page scripts.
+  - `preset` (string, default: "") — Built-in hook preset: fetch, xhr, json_parse, crypto, or timing. Overrides 'js' when set.
+
+### `POST /script/remove`
+
+- CLI: `cloak script remove ID`
+- MCP: `agentcloak_script (action=remove)`
+- Body:
+  - `identifier` (string, default: *required*) — Identifier returned by /script/add.
+
+### `GET /script/list`
+
+- CLI: `cloak script list`
+- MCP: `agentcloak_script (action=list)`
+
+## Route Interception
+
+### `POST /route/add`
+
+- CLI: `cloak route add PATTERN`
+- MCP: `agentcloak_route (action=add)`
+- Body:
+  - `pattern` (string, default: *required*) — URL glob ('*' = any run of chars; no '*' = substring match).
+  - `action` (string, default: "continue") — Disposition: 'abort', 'fulfill', or 'continue'.
+  - `resource_type` (string, default: "") — Only match this resource type (document, xhr, image, ...).
+  - `method` (string, default: "") — Only match this HTTP method (GET, POST, ...).
+  - `status` (integer, default: 0) — Response status for 'fulfill' (default 200).
+  - `content_type` (string, default: "") — Content-Type header for a 'fulfill' response.
+  - `body` (string, default: "") — Response body for a 'fulfill' response.
+
+### `POST /route/remove`
+
+- CLI: `cloak route remove`
+- MCP: `agentcloak_route (action=remove)`
+- Body:
+  - `pattern` (string, default: "") — Pattern to remove; blank removes ALL active rules.
+
+### `GET /route/list`
+
+- CLI: `cloak route list`
+- MCP: `agentcloak_route (action=list)`
+
+## Header Injection
+
+### `POST /emulation/headers`
+
+- CLI: `cloak emulation headers`
+- MCP: `agentcloak_headers`
+- Body:
+  - `headers` (object, default: —) — Header name → value map. Empty clears all overrides.
+
+## GraphQL
+
+### `POST /graphql/introspect`
+
+- CLI: `cloak graphql introspect URL`
+- MCP: `agentcloak_graphql (action=introspect)`
+- Body:
+  - `url` (string, default: *required*) — GraphQL endpoint URL.
+  - `headers` (object, default: —) — Extra request headers (e.g. auth token).
+
+### `POST /graphql/query`
+
+- CLI: `cloak graphql query URL QUERY`
+- MCP: `agentcloak_graphql (action=query)`
+- Body:
+  - `url` (string, default: *required*) — GraphQL endpoint URL.
+  - `query` (string, default: *required*) — GraphQL query or mutation document.
+  - `variables` (object, default: —) — GraphQL variables object.
+  - `headers` (object, default: —) — Extra request headers (e.g. auth token).
+
 ## Profiles
 
 ### `GET /profile/list`

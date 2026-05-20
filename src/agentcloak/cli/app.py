@@ -34,7 +34,8 @@ _SHORTCUTS = (
 _GROUPS = (
     "browser, do, js, tab, profile, spell, capture, frame, daemon, doctor, "
     "launch, network, fetch, bridge, cookies, skill, cdp, dialog, wait, "
-    "upload, config, console, download, storage, clipboard, pdf, serve"
+    "upload, config, console, download, storage, clipboard, pdf, serve, "
+    "script, route, emulation, graphql"
 )
 _EPILOG = (
     f"Shortcuts (top-level, also documented under their groups):\n  {_SHORTCUTS}\n"
@@ -197,13 +198,17 @@ def _register_commands() -> None:
         dialog,
         doctor,
         download_cmd,
+        emulation,
         fetch,
         frame,
+        graphql,
         js,
         launch,
         network,
         pdf_cmd,
         profile,
+        route,
+        script,
         serve_cmd,
         skill_cmd,
         spell_cmd,
@@ -330,6 +335,26 @@ def _register_commands() -> None:
         serve_cmd.app,
         name="serve",
         help="Local static file server for previewing local files over http.",
+    )
+    app.add_typer(
+        script.app,
+        name="script",
+        help="Init scripts: inject/remove/list pre-page-load JS hooks.",
+    )
+    app.add_typer(
+        route.app,
+        name="route",
+        help="Network route interception: abort/fulfill/continue requests.",
+    )
+    app.add_typer(
+        emulation.app,
+        name="emulation",
+        help="Emulation: inject extra HTTP headers on every request.",
+    )
+    app.add_typer(
+        graphql.app,
+        name="graphql",
+        help="GraphQL: introspect a schema or send a query.",
     )
 
 

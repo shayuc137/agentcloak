@@ -169,6 +169,11 @@ class PlaywrightContext(BrowserContextBase):
         # closes (see ``_invalidate_cdp_session``).
         self._cdp_sessions: dict[int, Any] = {}
 
+        # 7b T1.3: registered ``page.route`` handlers keyed by the rule pattern,
+        # so ``_route_remove_impl`` can unroute a single rule by passing the
+        # exact callable Playwright registered (it matches handlers by identity).
+        self._route_handlers: dict[str, Any] = {}
+
         self._setup_network_listeners(page)
         self._setup_feedback_listeners(page)
 
@@ -1592,6 +1597,86 @@ class PlaywrightContext(BrowserContextBase):
     async def _cdp_enable_domain_impl(self, domain: str) -> None:
         session = await self._get_or_create_cdp_session()
         await session.send(f"{domain}.enable")
+
+    # ------------------------------------------------------------------
+    # Header injection (7b T1.2)
+    # ------------------------------------------------------------------
+
+    async def _set_extra_headers_impl(self, headers: dict[str, str]) -> None:
+        await self._page.set_extra_http_headers(headers)
+
+    # ------------------------------------------------------------------
+    # Route interception (7b T1.3)
+    # ------------------------------------------------------------------
+    # We register a single catch-all ``page.route("**/*")`` handler keyed by
+    # the rule's pattern string. The handler defers the actual match decision
+    # to the shared :class:`RouteManager` so abort/fulfill/continue semantics
+    # and field precedence are identical to the RemoteBridge backend (DRY —
+    # one matcher, two transports). Keying by pattern lets ``unroute`` target a
+    # single rule without disturbing the others.
+
+    async def _route_add_impl(self, rule: Any) -> None:
+        glob = self._route_glob(rule.pattern)
+
+        async def _handler(route: Any, request: Any) -> None:
+            await self._apply_route(route, request, rule)
+
+        # Stash the handler so a later ``page.unroute`` can pass the same
+        # callable (Playwright matches handlers by identity).
+        self._route_handlers[rule.pattern] = _handler
+        await self._page.route(glob, _handler)
+
+    async def _route_remove_impl(self, pattern: str | None) -> None:
+        if pattern is None:
+            for pat, handler in list(self._route_handlers.items()):
+                with contextlib.suppress(Exception):
+                    await self._page.unroute(self._route_glob(pat), handler)
+            self._route_handlers.clear()
+            return
+        handler = self._route_handlers.pop(pattern, None)
+        with contextlib.suppress(Exception):
+            await self._page.unroute(self._route_glob(pattern), handler)
+
+    @staticmethod
+    def _route_glob(pattern: str) -> str:
+        """Map a rule pattern to a Playwright route glob.
+
+        A bare substring rule (no ``*``) becomes ``*<substr>*`` so Playwright's
+        matcher fires; the precise disposition is still decided by the shared
+        RouteManager matcher inside the handler. Patterns that already contain
+        ``*`` are passed through unchanged.
+        """
+        return pattern if "*" in pattern else f"*{pattern}*"
+
+    async def _apply_route(self, route: Any, request: Any, rule: Any) -> None:
+        """Execute ``rule`` against a paused Playwright request."""
+        # Re-check via the shared matcher: the catch-all glob can over-match
+        # (e.g. ``*api*`` also matches ``api`` rules with stricter method /
+        # resource filters), so confirm the full rule actually applies before
+        # acting; otherwise let the request continue untouched.
+        applicable = self.route_manager.match(
+            request.url,
+            resource_type=getattr(request, "resource_type", None),
+            method=getattr(request, "method", None),
+        )
+        if applicable is None or applicable.pattern != rule.pattern:
+            with contextlib.suppress(Exception):
+                await route.fallback()
+            return
+
+        if rule.action == "abort":
+            await route.abort()
+            return
+        if rule.action == "fulfill":
+            kwargs: dict[str, Any] = {"status": rule.status or 200}
+            if rule.content_type:
+                kwargs["content_type"] = rule.content_type
+            if rule.body is not None:
+                kwargs["body"] = rule.body
+            await route.fulfill(**kwargs)
+            return
+        # "continue" — let it proceed unmodified.
+        await route.continue_()
 
     # ------------------------------------------------------------------
     # Atomic: raw CDP / close

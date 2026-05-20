@@ -74,6 +74,8 @@ __all__ = [
     "render_fetch_text",
     "render_frame_focus_text",
     "render_frame_list_text",
+    "render_graphql_text",
+    "render_headers_text",
     "render_health_text",
     "render_launch_text",
     "render_navigate_text",
@@ -84,7 +86,12 @@ __all__ = [
     "render_profile_delete_text",
     "render_profile_list_text",
     "render_resume_text",
+    "render_route_list_text",
+    "render_route_op_text",
     "render_screenshot_text",
+    "render_script_add_text",
+    "render_script_list_text",
+    "render_script_remove_text",
     "render_serve_status_text",
     "render_serve_stop_text",
     "render_shutdown_text",
@@ -1174,3 +1181,122 @@ def render_cookie_delete_text(data: dict[str, Any]) -> str:
     n = int(data.get("deleted", 0) or 0)
     name = str(data.get("name", "") or "")
     return f'deleted {n} cookie{"s" if n != 1 else ""} named "{name}"'
+
+
+# ---------------------------------------------------------------------------
+# Init scripts (7b T1.1)
+# ---------------------------------------------------------------------------
+
+
+def render_script_add_text(data: dict[str, Any]) -> str:
+    """Render ``/script/add`` — the identifier (pipe-friendly for removal)."""
+    identifier = str(data.get("identifier", "") or "")
+    preset = data.get("preset")
+    if not identifier:
+        return "no identifier"
+    return f"{identifier} ({preset})" if preset else identifier
+
+
+def render_script_remove_text(data: dict[str, Any]) -> str:
+    """Render ``/script/remove`` — confirmation or not-found note."""
+    return "removed" if data.get("removed") else "no such script"
+
+
+def render_script_list_text(data: dict[str, Any]) -> str:
+    """Render ``/script/list`` — one ``<identifier>: <source preview>`` per line."""
+    scripts: list[Any] = list(data.get("scripts") or [])
+    if not scripts:
+        return "no init scripts"
+    lines: list[str] = []
+    for raw in scripts:
+        if not isinstance(raw, dict):
+            continue
+        entry = _as_dict(raw)
+        ident = str(entry.get("identifier", "") or "")
+        # Collapse the source to a single line so the listing stays scannable.
+        src = " ".join(str(entry.get("source", "") or "").split())
+        lines.append(f"{ident}: {src}")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Network route interception (7b T1.3)
+# ---------------------------------------------------------------------------
+
+
+def render_route_op_text(data: dict[str, Any]) -> str:
+    """Render ``/route/add`` and ``/route/remove`` — a short state summary."""
+    count = int(data.get("count", 0) or 0)
+    removed = int(data.get("removed", 0) or 0)
+    if removed:
+        return f"removed {removed} rule{'s' if removed != 1 else ''} ({count} active)"
+    pattern = str(data.get("pattern", "") or "")
+    if pattern:
+        return f"added rule {pattern} ({count} active)"
+    return f"{count} active rules"
+
+
+def render_route_list_text(data: dict[str, Any]) -> str:
+    """Render ``/route/list`` — one ``<action> <pattern> [filters]`` per line."""
+    rules: list[Any] = list(data.get("rules") or [])
+    if not rules:
+        return "no route rules"
+    lines: list[str] = []
+    for raw in rules:
+        if not isinstance(raw, dict):
+            continue
+        rule = _as_dict(raw)
+        action = str(rule.get("action", "") or "")
+        pattern = str(rule.get("pattern", "") or "")
+        extras: list[str] = []
+        for key in ("method", "resource_type", "status", "content_type"):
+            val = rule.get(key)
+            if val:
+                extras.append(f"{key}={val}")
+        suffix = f" [{', '.join(extras)}]" if extras else ""
+        lines.append(f"{action} {pattern}{suffix}")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Header injection (7b T1.2)
+# ---------------------------------------------------------------------------
+
+
+def render_headers_text(data: dict[str, Any]) -> str:
+    """Render ``/emulation/headers`` — ``set N headers`` or a cleared note."""
+    headers = data.get("headers")
+    count = int(data.get("count", 0) or 0)
+    if count == 0:
+        return "cleared extra headers"
+    if isinstance(headers, dict):
+        names = ", ".join(sorted(_as_dict(headers).keys()))
+        return f"set {count} header{'s' if count != 1 else ''}: {names}"
+    return f"set {count} headers"
+
+
+# ---------------------------------------------------------------------------
+# GraphQL (7b T1.4)
+# ---------------------------------------------------------------------------
+
+
+def render_graphql_text(data: dict[str, Any]) -> str:
+    """Render a GraphQL response.
+
+    Prints the compact JSON of ``data`` (or ``errors``) so the agent gets the
+    structured payload directly; falls back to the raw body when the endpoint
+    returned non-JSON. The HTTP status leads so failures are obvious.
+    """
+    status = int(data.get("status", 0) or 0)
+    errors = data.get("errors")
+    payload = data.get("data")
+    raw = str(data.get("raw", "") or "")
+
+    if errors:
+        body = orjson.dumps(errors).decode()
+        return f"status={status} errors={body}"
+    if payload is not None:
+        return f"status={status} {orjson.dumps(payload).decode()}"
+    if raw:
+        return f"status={status} {raw}"
+    return f"status={status} (empty response)"

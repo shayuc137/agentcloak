@@ -56,16 +56,17 @@ class TestMCPServerCreation:
         except ImportError:
             pytest.skip("mcp package not installed")
 
-    def test_tool_count_is_29(self) -> None:
+    def test_tool_count_is_33(self) -> None:
         try:
             from agentcloak.mcp.server import create_server
 
             mcp = create_server()
             tools = mcp._tool_manager._tools  # type: ignore[union-attr]
             # 23 pre-7a tools + 6 from the 7a batch (console, download,
-            # storage, clipboard, pdf, serve).
-            assert len(tools) == 29, (
-                f"Expected 29 tools, got {len(tools)}: {sorted(tools.keys())}"
+            # storage, clipboard, pdf, serve) + 4 from the 7b T1 batch
+            # (script, route, headers, graphql).
+            assert len(tools) == 33, (
+                f"Expected 33 tools, got {len(tools)}: {sorted(tools.keys())}"
             )
         except ImportError:
             pytest.skip("mcp package not installed")
@@ -119,6 +120,10 @@ class TestMCPServerCreation:
                 "agentcloak_clipboard",
                 "agentcloak_pdf",
                 "agentcloak_serve",
+                "agentcloak_script",
+                "agentcloak_route",
+                "agentcloak_headers",
+                "agentcloak_graphql",
             }
             assert set(tools.keys()) == expected
         except ImportError:

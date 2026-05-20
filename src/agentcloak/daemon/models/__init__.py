@@ -76,6 +76,12 @@ from agentcloak.daemon.models.download import (
     DownloadUrlRequest,
     DownloadWaitRequest,
 )
+from agentcloak.daemon.models.emulation import HeadersRequest, HeadersResponse
+from agentcloak.daemon.models.graphql import (
+    GraphQLIntrospectRequest,
+    GraphQLQueryRequest,
+    GraphQLResponse,
+)
 from agentcloak.daemon.models.interaction import (
     CookieDeleteRequest,
     CookieDeleteResponse,
@@ -106,6 +112,19 @@ from agentcloak.daemon.models.lifecycle import (
     ShutdownResponse,
 )
 from agentcloak.daemon.models.pdf import PdfRequest, PdfResponse
+from agentcloak.daemon.models.route import (
+    RouteAddRequest,
+    RouteListResponse,
+    RouteOpResponse,
+    RouteRemoveRequest,
+)
+from agentcloak.daemon.models.script import (
+    ScriptAddRequest,
+    ScriptAddResponse,
+    ScriptListResponse,
+    ScriptRemoveRequest,
+    ScriptRemoveResponse,
+)
 from agentcloak.daemon.models.serve import (
     ServeStartRequest,
     ServeStatusResponse,
@@ -184,6 +203,11 @@ __all__ = [
     "FrameFocusRequest",
     "FrameFocusResponse",
     "FrameListResponse",
+    "GraphQLIntrospectRequest",
+    "GraphQLQueryRequest",
+    "GraphQLResponse",
+    "HeadersRequest",
+    "HeadersResponse",
     "HealthResponse",
     "LaunchRequest",
     "LaunchResponse",
@@ -200,7 +224,16 @@ __all__ = [
     "ProfileDeleteRequest",
     "ProfileListResponse",
     "ResumeResponse",
+    "RouteAddRequest",
+    "RouteListResponse",
+    "RouteOpResponse",
+    "RouteRemoveRequest",
     "ScreenshotResponse",
+    "ScriptAddRequest",
+    "ScriptAddResponse",
+    "ScriptListResponse",
+    "ScriptRemoveRequest",
+    "ScriptRemoveResponse",
     "ServeStartRequest",
     "ServeStatusResponse",
     "ServeStopResponse",

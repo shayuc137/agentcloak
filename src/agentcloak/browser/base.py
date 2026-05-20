@@ -51,6 +51,7 @@ from agentcloak.core.seq import RingBuffer, SeqCounter, SeqEvent
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from agentcloak.browser.managers import RouteManager, RouteRule, ScriptManager
     from agentcloak.core.types import StealthTier
 
 __all__ = [
@@ -270,9 +271,39 @@ class BrowserContextBase(ABC):
         self._cdp_event_handlers: dict[str, list[Callable[[dict[str, Any]], None]]] = {}
         self._enabled_domains: set[str] = set()
 
+        # 7b T1: reverse-engineering managers, constructed lazily on first use
+        # so a session that never touches them pays nothing. ``script_manager``
+        # and ``route_manager`` are the public accessors below; the slots stay
+        # ``None`` until then.
+        self._script_mgr: ScriptManager | None = None
+        self._route_mgr: RouteManager | None = None
+
+        # 7b T1.2: extra HTTP headers injected on every request. Kept here so
+        # ``emulation headers`` can report the active set; the backend applies
+        # them via ``_set_extra_headers_impl``.
+        self._extra_headers: dict[str, str] = {}
+
     # ------------------------------------------------------------------
     # Public properties
     # ------------------------------------------------------------------
+
+    @property
+    def script_manager(self) -> ScriptManager:
+        """Lazily-constructed init-script injector (7b T1.1)."""
+        if self._script_mgr is None:
+            from agentcloak.browser.managers import ScriptManager
+
+            self._script_mgr = ScriptManager(self)
+        return self._script_mgr
+
+    @property
+    def route_manager(self) -> RouteManager:
+        """Lazily-constructed network-route interceptor (7b T1.3)."""
+        if self._route_mgr is None:
+            from agentcloak.browser.managers import RouteManager
+
+            self._route_mgr = RouteManager(self)
+        return self._route_mgr
 
     @property
     def seq(self) -> int:
@@ -555,6 +586,37 @@ class BrowserContextBase(ABC):
         are only called once per domain and should just issue the enable.
         """
 
+    # --- Header injection (7b T1.2) ---
+
+    @abstractmethod
+    async def _set_extra_headers_impl(self, headers: dict[str, str]) -> None:
+        """Apply ``headers`` to every subsequent request.
+
+        Playwright uses ``page.set_extra_http_headers``; RemoteBridge issues
+        CDP ``Network.setExtraHTTPHeaders``. An empty dict clears the override.
+        The public :meth:`set_extra_headers` owns the audit log and the
+        ``_extra_headers`` bookkeeping.
+        """
+
+    # --- Route interception (7b T1.3) ---
+
+    @abstractmethod
+    async def _route_add_impl(self, rule: RouteRule) -> None:
+        """Start intercepting requests matching ``rule``.
+
+        Playwright registers a ``page.route`` handler; RemoteBridge derives a
+        ``Fetch.enable`` pattern and resumes paused requests in its event
+        handler. Called by :meth:`RouteManager.add` and on tab replay.
+        """
+
+    @abstractmethod
+    async def _route_remove_impl(self, pattern: str | None) -> None:
+        """Stop intercepting ``pattern`` (or everything when ``None``).
+
+        Playwright calls ``page.unroute``; RemoteBridge re-derives the live
+        ``Fetch`` patterns (disabling entirely when no rules remain).
+        """
+
     # ------------------------------------------------------------------
     # CDP event stream (7b) — shared transport for reverse-engineering
     # managers. Concrete; backends only implement the two ``_impl`` atoms
@@ -635,6 +697,33 @@ class BrowserContextBase(ABC):
         self._check_browser_alive()
         await self._cdp_enable_domain_impl(domain)
         self._enabled_domains.add(domain)
+
+    # ------------------------------------------------------------------
+    # Header injection (7b T1.2)
+    # ------------------------------------------------------------------
+
+    async def set_extra_headers(self, headers: dict[str, str]) -> dict[str, Any]:
+        """Inject ``headers`` on every subsequent request.
+
+        Reverse-engineering and API debugging often need a forged
+        ``Authorization`` / ``X-Requested-With`` / custom token on outgoing
+        requests. The headers persist until replaced; passing an empty dict
+        clears them. Audited because it silently rewrites every request — a
+        security-relevant override the operator should be able to trace.
+        """
+        self._check_browser_alive()
+        await self._set_extra_headers_impl(headers)
+        self._extra_headers = dict(headers)
+        logger.info(
+            "audit_action",
+            action="set_extra_headers",
+            header_names=sorted(headers.keys()),
+        )
+        return {"headers": dict(self._extra_headers), "count": len(self._extra_headers)}
+
+    def list_extra_headers(self) -> dict[str, str]:
+        """Return the currently-active extra headers."""
+        return dict(self._extra_headers)
 
     # ------------------------------------------------------------------
     # Browser self-healing
@@ -1139,13 +1228,32 @@ class BrowserContextBase(ABC):
         return await self._tab_list_impl()
 
     async def tab_new(self, url: str | None = None) -> dict[str, Any]:
-        return await self._tab_new_impl(url)
+        result = await self._tab_new_impl(url)
+        await self._replay_managers_on_new_page()
+        return result
 
     async def tab_close(self, tab_id: int) -> dict[str, Any]:
         return await self._tab_close_impl(tab_id)
 
     async def tab_switch(self, tab_id: int) -> dict[str, Any]:
-        return await self._tab_switch_impl(tab_id)
+        result = await self._tab_switch_impl(tab_id)
+        await self._replay_managers_on_new_page()
+        return result
+
+    async def _replay_managers_on_new_page(self) -> None:
+        """Re-apply init scripts / route rules onto the now-active page.
+
+        A new or switched-to tab inherits none of the previous page's injected
+        init scripts or ``page.route`` handlers, so the script and route
+        managers replay their tracked state. Only managers that were actually
+        used (constructed) do anything — the lazy slots stay ``None`` for
+        sessions that never touched these capabilities, keeping tab switches
+        free of overhead in the common path.
+        """
+        if self._script_mgr is not None:
+            await self._script_mgr.on_tab_switched()
+        if self._route_mgr is not None:
+            await self._route_mgr.on_tab_switched()
 
     # ------------------------------------------------------------------
     # Fetch / Close / Raw CDP

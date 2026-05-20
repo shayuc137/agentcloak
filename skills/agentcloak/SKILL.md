@@ -119,6 +119,18 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak download wait [-o dir]` | Capture the next click-triggered download |
 | `cloak download list` | List files downloaded this session |
 
+### Reverse Engineering
+
+| Command | Purpose |
+|---------|---------|
+| `cloak script add JS` / `add --preset fetch\|xhr\|json_parse\|crypto\|timing` | Inject an init script that runs before page scripts (the hook point for patching fetch/XHR/JSON.parse); presets log calls to `cloak console` |
+| `cloak script remove ID` / `list` | Remove an init script by identifier / list active ones |
+| `cloak route add PATTERN --action abort\|fulfill\|continue` | Intercept matching requests; `--status`/`--content-type`/`--body` shape a `fulfill` response, `--method`/`--resource-type` narrow the match |
+| `cloak route remove [PATTERN]` / `list` | Remove a route rule (omit PATTERN to clear all) / list active rules |
+| `cloak emulation headers -H 'Name: value'` | Inject extra HTTP headers on every request (forged auth/tokens); no `-H` clears them |
+| `cloak graphql introspect URL` | Run the standard `__schema` introspection query (via the session's cookies) |
+| `cloak graphql query URL QUERY [--variables '{...}']` | Send an arbitrary GraphQL operation |
+
 ### Management
 
 | Command | Purpose |

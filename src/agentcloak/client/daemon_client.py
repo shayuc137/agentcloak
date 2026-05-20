@@ -1299,6 +1299,91 @@ class DaemonClient:
             body["domain"] = domain
         return await self._send_async("POST", "/cookies/delete", json_body=body)
 
+    # --- Init scripts (async, 7b T1.1) ---
+
+    async def script_add(self, *, js: str = "", preset: str = "") -> dict[str, Any]:
+        body: dict[str, Any] = {}
+        if js:
+            body["js"] = js
+        if preset:
+            body["preset"] = preset
+        return await self._send_async("POST", "/script/add", json_body=body)
+
+    async def script_remove(self, *, identifier: str) -> dict[str, Any]:
+        return await self._send_async(
+            "POST", "/script/remove", json_body={"identifier": identifier}
+        )
+
+    async def script_list(self) -> dict[str, Any]:
+        return await self._send_async("GET", "/script/list")
+
+    # --- Network route interception (async, 7b T1.3) ---
+
+    async def route_add(
+        self,
+        *,
+        pattern: str,
+        action: str = "continue",
+        resource_type: str = "",
+        method: str = "",
+        status: int = 0,
+        content_type: str = "",
+        body: str = "",
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"pattern": pattern, "action": action}
+        if resource_type:
+            payload["resource_type"] = resource_type
+        if method:
+            payload["method"] = method
+        if status:
+            payload["status"] = status
+        if content_type:
+            payload["content_type"] = content_type
+        if body:
+            payload["body"] = body
+        return await self._send_async("POST", "/route/add", json_body=payload)
+
+    async def route_remove(self, *, pattern: str = "") -> dict[str, Any]:
+        body: dict[str, Any] = {}
+        if pattern:
+            body["pattern"] = pattern
+        return await self._send_async("POST", "/route/remove", json_body=body)
+
+    async def route_list(self) -> dict[str, Any]:
+        return await self._send_async("GET", "/route/list")
+
+    # --- Header injection (async, 7b T1.2) ---
+
+    async def emulation_headers(self, *, headers: dict[str, str]) -> dict[str, Any]:
+        return await self._send_async(
+            "POST", "/emulation/headers", json_body={"headers": headers}
+        )
+
+    # --- GraphQL (async, 7b T1.4) ---
+
+    async def graphql_introspect(
+        self, *, url: str, headers: dict[str, str] | None = None
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"url": url}
+        if headers:
+            payload["headers"] = headers
+        return await self._send_async("POST", "/graphql/introspect", json_body=payload)
+
+    async def graphql_query(
+        self,
+        *,
+        url: str,
+        query: str,
+        variables: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"url": url, "query": query}
+        if variables:
+            payload["variables"] = variables
+        if headers:
+            payload["headers"] = headers
+        return await self._send_async("POST", "/graphql/query", json_body=payload)
+
 
 # ----------------------------------------------------------------------
 # Body / param builders — defined once, used by both sync and async API.

@@ -368,15 +368,22 @@ spec 更新：`browser/browser-backend-contract.md`（Protocol → ABC）、`dep
 - [x] CLI 全量 dogfood：37 命令组 × 真实站点（github/binance/w3schools/graphql），4 bug + 3 UX 已修，零残留 blocking issue
 - Deliverable: **三平台可用，daemon 长期运行可靠，连接中断自动恢复，错误处理无盲区**
 
-#### 6f: Dogfood 遗留优化
+#### 6f: DX 优化 Backlog
 
-> 来源：CLI full-surface dogfood（2026-05-20）发现的体验改善项。
+> 来源：CLI dogfood（2026-05-20）+ 逆向实战（Discuz! + B2 WordPress）发现的体验改善项。
 
+**Dogfood 遗留（CLI 全量测试）**：
 - [ ] **upload 自动查找隐藏 file input** — `upload -f photo.jpg` 不指定 `--index` 时自动 `querySelectorAll('input[type=file]')` 查找（含 `display:none`），支持 `--nth N` 选择第 N 个。解决现代站 drag-drop 上传无可见 file input 的问题
 - [ ] **navigate 后自动 WS/SSE 监听** — 和 console CDP 同模式，navigate 尾部调 `streaming_monitor.ensure_listening()` 避免早期 WS 连接丢失
 - [ ] **download wait --click N** — arm waiter → click [N] → await download，一条命令完成点击触发下载。解决 agent 单线程无法并发 wait + click 的问题
 - [ ] **sourcemap 404 错误信息优化** — fetch 返回非 JSON（HTML 404）时报 "sourcemap fetch returned non-JSON (status 404)" 而非 "parse failed"
-- Deliverable: **agent 真实场景下的四个常见摩擦点消除**
+
+**逆向实战发现**：
+- [ ] **daemon 版本一致性检查** — daemon start 时输出 route 数量，doctor 检查 daemon 版本和本地 package 是否一致。CLI 收到 404 时提示"route 不存在，尝试重启 daemon"。来源：逆向过程中 daemon 跑旧版本（41 routes vs 99），`script add` 返回 404 花了几分钟才定位
+- [ ] **click --force 跳过 pointer check** — 被 CSS overlay 遮挡的元素无法点击，当前只能 `evaluate` 绕过。加 `--force` flag 跳过 Playwright 的 pointer_events 检查。错误信息提示 "element is covered; use --force or evaluate"。来源：B2 主题 not-allow-down overlay 遮挡下载按钮
+- [ ] **debugger search 支持 URL 模式** — 当前只能按 script ID 搜索，navigate 后 ID 作废。支持 `--url "main.js"` 按文件名匹配后搜索。来源：帖子页找到 main.js(id=34)，navigate 到下载页后 search 报错 "No script for id: 34"
+- [ ] **逆向 evaluate presets** — Vue/React 组件内省（`--preset vue-inspect` 自动枚举 `__vue__.$data/methods`）、JWT 解码等常见逆向操作快捷方式
+- Deliverable: **CLI 交互摩擦点 + 逆向工作流 DX 优化**
 
 ### Phase 7: 浏览器能力补全 + 网页逆向
 

@@ -80,9 +80,10 @@ GROUPS: list[tuple[str, list[str]]] = [
 ]
 
 # Route → CLI command mapping. The CLI command tree uses typer groups
-# (``cloak browser navigate``, ``cloak do click``); some routes also have a
-# top-level shortcut (``cloak navigate``). We list the canonical full form —
-# agents can shorten if they know the alias.
+# (``cloak browser navigate``, ``cloak do click``); most routes also have a
+# top-level shortcut (``cloak navigate``, ``cloak click``). We list the form
+# agents reach for most — the top-level shortcut where one exists, the group
+# form otherwise (e.g. ``cloak do batch`` has no top-level alias).
 ROUTE_TO_CLI: dict[str, str] = {
     "/health": "cloak doctor",
     "/shutdown": "cloak daemon stop",
@@ -92,7 +93,7 @@ ROUTE_TO_CLI: dict[str, str] = {
     "/snapshot": "cloak snapshot",
     "/screenshot": "cloak screenshot",
     "/network": "cloak network",
-    "/action": "cloak do <kind>",
+    "/action": "cloak click|fill|type|scroll|hover|select|press|keydown|keyup N",
     "/action/batch": "cloak do batch --calls-file FILE",
     "/dialog/status": "cloak dialog status",
     "/dialog/handle": "cloak dialog accept|dismiss",

@@ -31,62 +31,62 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak navigate URL`
 - MCP: `agentcloak_navigate`
 - Body:
-  - `url` (string, default: *required*)
-  - `timeout` (number, default: 30.0)
-  - `include_snapshot` (boolean, default: false)
-  - `snapshot_mode` (enum("compact" | "accessible"), default: "compact")
+  - `url` (string, default: *required*) — Target URL (http/https/about). file/data/javascript schemes blocked.
+  - `timeout` (number, default: 30.0) — Navigation timeout in seconds before giving up.
+  - `include_snapshot` (boolean, default: false) — Attach a snapshot so you observe+act in one round-trip.
+  - `snapshot_mode` (enum("compact" | "accessible"), default: "compact") — Snapshot density: compact (token-lean) or accessible (full ARIA).
 
 ### `GET /snapshot`
 
 - CLI: `cloak snapshot`
 - MCP: `agentcloak_snapshot`
 - Query:
-  - `mode` (string, default: "compact")
-  - `max_nodes` (integer, default: -1)
-  - `max_chars` (integer, default: 0)
-  - `focus` (integer, default: 0)
-  - `offset` (integer, default: 0)
-  - `include_selector_map` (boolean, default: false)
-  - `frames` (boolean, default: false)
-  - `diff` (boolean, default: false)
+  - `mode` (string, default: "compact") — Density: compact (token-lean), accessible (full ARIA), or raw.
+  - `max_nodes` (integer, default: -1) — Node cap. -1 auto-caps compact; 0 full tree; >0 explicit cap.
+  - `max_chars` (integer, default: 0) — Character budget for the tree text; 0 means no character cap.
+  - `focus` (integer, default: 0) — Element [N] to expand into; shows subtree with breadcrumb.
+  - `offset` (integer, default: 0) — Node offset for paging through a large tree.
+  - `include_selector_map` (boolean, default: false) — Include the [N] → element selector map in the response.
+  - `frames` (boolean, default: false) — Merge child iframe accessibility trees into the snapshot.
+  - `diff` (boolean, default: false) — Mark [+] added / [~] changed nodes versus the previous snapshot.
 
 ### `GET /screenshot`
 
 - CLI: `cloak screenshot`
 - MCP: `agentcloak_screenshot`
 - Query:
-  - `full_page` (boolean, default: false)
-  - `format` (string, default: "jpeg")
-  - `quality` (integer | null, default: —)
+  - `full_page` (boolean, default: false) — Capture the full scrollable page instead of the viewport.
+  - `format` (string, default: "jpeg") — Format: jpeg (smaller) or png (lossless, better for OCR/design).
+  - `quality` (integer | null, default: —) — JPEG quality 1-100; unset uses the default. Ignored for png.
 
 ### `GET /network`
 
 - CLI: `cloak network`
 - MCP: `agentcloak_network`
 - Query:
-  - `since` (string, default: "0")
+  - `since` (string, default: "0") — Requests after this seq, or 'last_action' for the last action.
 
 ## Interaction
 
 ### `POST /action`
 
-- CLI: `cloak do <kind>`
+- CLI: `cloak click|fill|type|scroll|hover|select|press|keydown|keyup N`
 - MCP: `agentcloak_action`
 - Body:
-  - `kind` (string, default: *required*)
-  - `index` (integer | null, default: —)
-  - `target` (string, default: "")
-  - `include_snapshot` (boolean, default: false)
-  - `snapshot_mode` (enum("compact" | "accessible"), default: "compact")
+  - `kind` (string, default: *required*) — Verb: click/fill/type/scroll/hover/select/press/keydown/keyup.
+  - `index` (integer | null, default: —) — Element [N] from snapshot. Preferred over target/coordinates.
+  - `target` (string, default: "") — Element selector or 'x,y' coordinate fallback when no index.
+  - `include_snapshot` (boolean, default: false) — Attach a snapshot after the action to see the result.
+  - `snapshot_mode` (enum("compact" | "accessible"), default: "compact") — Snapshot density: compact (token-lean) or accessible (full ARIA).
 
 ### `POST /action/batch`
 
 - CLI: `cloak do batch --calls-file FILE`
 - MCP: `(CLI-only — not exposed via MCP)`
 - Body:
-  - `actions` (array<object>, default: —)
-  - `sleep` (number, default: 0.0)
-  - `settle_timeout` (integer, default: 2000)
+  - `actions` (array<object>, default: —) — Ordered action objects; may reference prior results via $N.path.
+  - `sleep` (number, default: 0.0) — Seconds to pause between actions to let the page settle.
+  - `settle_timeout` (integer, default: 2000) — Max ms to wait for navigation/network to settle per action.
 
 ## Dialog & Wait
 
@@ -100,18 +100,18 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak dialog accept|dismiss`
 - MCP: `agentcloak_dialog (action=accept|dismiss)`
 - Body:
-  - `action` (string, default: "accept")
-  - `text` (string | null, default: —)
+  - `action` (string, default: "accept") — How to resolve the pending dialog: accept or dismiss.
+  - `text` (string | null, default: —) — Text to enter when accepting a prompt() dialog.
 
 ### `POST /wait`
 
 - CLI: `cloak wait --<condition>`
 - MCP: `agentcloak_wait`
 - Body:
-  - `condition` (string, default: "ms")
-  - `value` (string, default: "1000")
-  - `timeout` (integer, default: 30000)
-  - `state` (string, default: "visible")
+  - `condition` (string, default: "ms") — What to wait on: selector, url, load, js, or ms (fixed delay).
+  - `value` (string, default: "1000") — Operand: selector, URL pattern, load state, JS expr, or ms.
+  - `timeout` (integer, default: 30000) — Max ms to wait before the condition is considered failed.
+  - `state` (string, default: "visible") — For selector waits: visible, hidden, attached, or detached.
 
 ## Frames & Tabs
 
@@ -125,9 +125,9 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak frame focus`
 - MCP: `agentcloak_frame (action=focus)`
 - Body:
-  - `name` (string | null, default: —)
-  - `url` (string | null, default: —)
-  - `main` (boolean, default: false)
+  - `name` (string | null, default: —) — Focus the frame whose name/id matches this value.
+  - `url` (string | null, default: —) — Focus the frame whose URL contains this substring.
+  - `main` (boolean, default: false) — Return focus to the top-level main frame.
 
 ### `GET /tabs`
 
@@ -139,21 +139,21 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak tab new`
 - MCP: `agentcloak_tab (action=new)`
 - Body:
-  - `url` (string | null, default: —)
+  - `url` (string | null, default: —) — URL to open in the new tab; blank opens about:blank.
 
 ### `POST /tab/close`
 
 - CLI: `cloak tab close`
 - MCP: `agentcloak_tab (action=close)`
 - Body:
-  - `tab_id` (integer, default: *required*)
+  - `tab_id` (integer, default: *required*) — Tab id (from tab list) to close.
 
 ### `POST /tab/switch`
 
 - CLI: `cloak tab switch`
 - MCP: `agentcloak_tab (action=switch)`
 - Body:
-  - `tab_id` (integer, default: *required*)
+  - `tab_id` (integer, default: *required*) — Tab id (from tab list) to make active.
 
 ## Content & Fetch
 
@@ -162,20 +162,20 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak js evaluate`
 - MCP: `agentcloak_evaluate`
 - Body:
-  - `js` (string, default: *required*)
-  - `world` (enum("main" | "isolated"), default: "main")
-  - `max_return_size` (integer, default: 50000)
+  - `js` (string, default: *required*) — JavaScript expression or function body to evaluate in the page.
+  - `world` (enum("main" | "isolated"), default: "main") — World: main (sees site globals) or isolated (sandboxed).
+  - `max_return_size` (integer, default: 50000) — Max serialized result bytes; larger results are truncated.
 
 ### `POST /fetch`
 
 - CLI: `cloak fetch URL`
 - MCP: `agentcloak_fetch`
 - Body:
-  - `url` (string, default: *required*)
-  - `method` (string, default: "GET")
-  - `body` (string | null, default: —)
-  - `headers` (object | null, default: —)
-  - `timeout` (number, default: 30.0)
+  - `url` (string, default: *required*) — Target URL fetched with the browser's cookies and TLS fingerprint.
+  - `method` (string, default: "GET") — HTTP method (GET, POST, PUT, DELETE, ...).
+  - `body` (string | null, default: —) — Request body string for POST/PUT requests.
+  - `headers` (object | null, default: —) — Extra request headers merged on top of the browser defaults.
+  - `timeout` (number, default: 30.0) — Request timeout in seconds.
 
 ## Upload
 
@@ -184,8 +184,8 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak upload --index N --file PATH`
 - MCP: `agentcloak_upload`
 - Body:
-  - `index` (integer, default: *required*)
-  - `files` (array<string>, default: *required*)
+  - `index` (integer, default: *required*) — Element [N] of the file input to attach files to.
+  - `files` (array<string>, default: *required*) — Absolute file paths the daemon reads and hands to the file input.
 
 ## Capture
 
@@ -209,14 +209,14 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak capture export`
 - MCP: `agentcloak_capture_query (action=export)`
 - Query:
-  - `format` (string, default: "har")
+  - `format` (string, default: "har") — Export format: har (HAR 1.2) or json (raw capture entries).
 
 ### `GET /capture/analyze`
 
 - CLI: `cloak capture analyze`
 - MCP: `agentcloak_capture_query (action=analyze)`
 - Query:
-  - `domain` (string | null, default: —)
+  - `domain` (string | null, default: —) — Restrict pattern analysis to requests on this domain.
 
 ### `POST /capture/clear`
 
@@ -228,8 +228,8 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak capture replay`
 - MCP: `agentcloak_capture_control (action=replay)`
 - Body:
-  - `url` (string, default: *required*)
-  - `method` (string, default: "GET")
+  - `url` (string, default: *required*) — URL of a captured request to replay outside the browser.
+  - `method` (string, default: "GET") — HTTP method to match against the captured request.
 
 ## Cookies & CDP
 
@@ -238,14 +238,14 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak cookies export`
 - MCP: `agentcloak_cookies (action=export)`
 - Body:
-  - `url` (string | null, default: —)
+  - `url` (string | null, default: —) — Scope to this URL's cookies; omit to export all.
 
 ### `POST /cookies/import`
 
 - CLI: `cloak cookies import`
 - MCP: `agentcloak_cookies (action=import)`
 - Body:
-  - `cookies` (array<object>, default: *required*)
+  - `cookies` (array<object>, default: *required*) — Cookie objects (name/value/domain/path) to inject.
 
 ### `GET /cdp/endpoint`
 
@@ -264,21 +264,21 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak profile create NAME`
 - MCP: `agentcloak_profile (action=create)`
 - Body:
-  - `name` (string, default: *required*)
+  - `name` (string, default: *required*) — Name for the new empty browser profile directory.
 
 ### `POST /profile/delete`
 
 - CLI: `cloak profile delete NAME`
 - MCP: `agentcloak_profile (action=delete)`
 - Body:
-  - `name` (string, default: *required*)
+  - `name` (string, default: *required*) — Name of the profile directory to delete.
 
 ### `POST /profile/create-from-current`
 
 - CLI: `cloak profile create NAME --from-current`
 - MCP: `agentcloak_profile (action=create, from_current=true)`
 - Body:
-  - `name` (string, default: *required*)
+  - `name` (string, default: *required*) — Name to save the current live session (cookies/storage) under.
 
 ## Spells
 
@@ -292,8 +292,8 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak spell run NAME`
 - MCP: `agentcloak_spell_run`
 - Body:
-  - `name` (string, default: *required*)
-  - `args` (object, default: —)
+  - `name` (string, default: *required*) — Registered spell name to execute (see spell list).
+  - `args` (object, default: —) — Keyword arguments passed to the spell's parameters.
 
 ## Bridge
 
@@ -302,15 +302,15 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak bridge claim`
 - MCP: `agentcloak_bridge (action=claim)`
 - Body:
-  - `tab_id` (integer | null, default: —)
-  - `url_pattern` (string | null, default: —)
+  - `tab_id` (integer | null, default: —) — Specific Chrome tab id to take over via the bridge.
+  - `url_pattern` (string | null, default: —) — Claim the first open tab whose URL matches this pattern.
 
 ### `POST /bridge/finalize`
 
 - CLI: `cloak bridge finalize`
 - MCP: `agentcloak_bridge (action=finalize)`
 - Body:
-  - `mode` (string, default: "close")
+  - `mode` (string, default: "close") — Session end: close, handoff (return to user), or deliverable.
 
 ### `POST /bridge/token/reset`
 
@@ -324,8 +324,8 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak launch`
 - MCP: `agentcloak_launch`
 - Body:
-  - `tier` (enum("auto" | "cloak" | "playwright" | "remote_bridge"), default: "auto")
-  - `profile` (string | null, default: —)
+  - `tier` (enum("auto" | "cloak" | "playwright" | "remote_bridge"), default: "auto") — Backend: cloak (stealth), playwright, remote_bridge, or auto.
+  - `profile` (string | null, default: —) — Profile to load; local tiers only, ignored for remote_bridge.
 
 
 _End of generated content. Updates flow from `daemon/models/` + `daemon/routes/`; run `python scripts/generate_skill.py --write` after changing routes._

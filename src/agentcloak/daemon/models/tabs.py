@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 __all__ = [
     "TabCloseRequest",
@@ -21,15 +21,17 @@ class TabListResponse(BaseModel):
 
 
 class TabNewRequest(BaseModel):
-    url: str | None = None
+    url: str | None = Field(
+        None, description="URL to open in the new tab; blank opens about:blank."
+    )
 
 
 class TabCloseRequest(BaseModel):
-    tab_id: int
+    tab_id: int = Field(description="Tab id (from tab list) to close.")
 
 
 class TabSwitchRequest(BaseModel):
-    tab_id: int
+    tab_id: int = Field(description="Tab id (from tab list) to make active.")
 
 
 class TabOpResponse(BaseModel):

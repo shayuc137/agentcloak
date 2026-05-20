@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from agentcloak.daemon.dependencies import BrowserCtxDep  # noqa: TC001
 from agentcloak.daemon.models import (
@@ -54,7 +54,10 @@ async def handle_capture_status(ctx: BrowserCtxDep) -> dict[str, Any]:
 
 @router.get("/capture/export", response_model=OkEnvelope[CaptureExportResponse])
 async def handle_capture_export(
-    ctx: BrowserCtxDep, format: str = "har"
+    ctx: BrowserCtxDep,
+    format: str = Query(
+        "har", description="Export format: har (HAR 1.2) or json (raw capture entries)."
+    ),
 ) -> dict[str, Any]:
     service = CaptureService(ctx.capture_store)
     result = service.export(fmt=format)
@@ -63,7 +66,10 @@ async def handle_capture_export(
 
 @router.get("/capture/analyze", response_model=OkEnvelope[CaptureAnalyzeResponse])
 async def handle_capture_analyze(
-    ctx: BrowserCtxDep, domain: str | None = None
+    ctx: BrowserCtxDep,
+    domain: str | None = Query(
+        None, description="Restrict pattern analysis to requests on this domain."
+    ),
 ) -> dict[str, Any]:
     service = CaptureService(ctx.capture_store)
     try:

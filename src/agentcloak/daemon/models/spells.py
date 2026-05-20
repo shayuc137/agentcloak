@@ -29,8 +29,11 @@ __all__ = [
 
 
 class SpellRunRequest(BaseModel):
-    name: str
-    args: dict[str, Any] = Field(default_factory=lambda: {})
+    name: str = Field(description="Registered spell name to execute (see spell list).")
+    args: dict[str, Any] = Field(
+        default_factory=lambda: {},
+        description="Keyword arguments passed to the spell's parameters.",
+    )
 
 
 class SpellRunResponse(BaseModel):
@@ -46,7 +49,7 @@ class SpellListResponse(BaseModel):
 
 
 class ProfileCreateRequest(BaseModel):
-    name: str
+    name: str = Field(description="Name for the new empty browser profile directory.")
 
 
 class ProfileCreateResponse(BaseModel):
@@ -65,7 +68,7 @@ class ProfileCreateResponse(BaseModel):
 
 
 class ProfileDeleteRequest(BaseModel):
-    name: str
+    name: str = Field(description="Name of the profile directory to delete.")
 
 
 class ProfileListResponse(BaseModel):
@@ -74,7 +77,9 @@ class ProfileListResponse(BaseModel):
 
 
 class ProfileCreateFromCurrentRequest(BaseModel):
-    name: str
+    name: str = Field(
+        description="Name to save the current live session (cookies/storage) under."
+    )
 
 
 class ProfileCreateFromCurrentResponse(BaseModel):

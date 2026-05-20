@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 __all__ = [
     "CDPEndpointResponse",
@@ -83,8 +83,14 @@ class LaunchRequest(BaseModel):
     has loaded, so the field is ignored.
     """
 
-    tier: Literal["auto", "cloak", "playwright", "remote_bridge"] = "auto"
-    profile: str | None = None
+    tier: Literal["auto", "cloak", "playwright", "remote_bridge"] = Field(
+        "auto",
+        description="Backend: cloak (stealth), playwright, remote_bridge, or auto.",
+    )
+    profile: str | None = Field(
+        None,
+        description="Profile to load; local tiers only, ignored for remote_bridge.",
+    )
 
 
 class LaunchResponse(BaseModel):

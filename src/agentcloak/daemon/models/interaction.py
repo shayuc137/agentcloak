@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from agentcloak.daemon.models._defaults import DEFAULT_ACTION_TIMEOUT
 
@@ -34,7 +34,10 @@ __all__ = [
 
 
 class CookiesExportRequest(BaseModel):
-    url: str | None = None
+    url: str | None = Field(
+        None,
+        description="Scope to this URL's cookies; omit to export all.",
+    )
 
 
 class CookiesExportResponse(BaseModel):
@@ -43,7 +46,9 @@ class CookiesExportResponse(BaseModel):
 
 
 class CookiesImportRequest(BaseModel):
-    cookies: list[dict[str, Any]]
+    cookies: list[dict[str, Any]] = Field(
+        description="Cookie objects (name/value/domain/path) to inject."
+    )
 
 
 class CookiesImportResponse(BaseModel):
@@ -59,8 +64,12 @@ class DialogStatusResponse(BaseModel):
 
 
 class DialogHandleRequest(BaseModel):
-    action: str = "accept"
-    text: str | None = None
+    action: str = Field(
+        "accept", description="How to resolve the pending dialog: accept or dismiss."
+    )
+    text: str | None = Field(
+        None, description="Text to enter when accepting a prompt() dialog."
+    )
 
 
 class DialogHandleResponse(BaseModel):
@@ -73,10 +82,22 @@ class DialogHandleResponse(BaseModel):
 
 
 class WaitRequest(BaseModel):
-    condition: str = "ms"
-    value: str = "1000"
-    timeout: int = DEFAULT_ACTION_TIMEOUT
-    state: str = "visible"
+    condition: str = Field(
+        "ms",
+        description="What to wait on: selector, url, load, js, or ms (fixed delay).",
+    )
+    value: str = Field(
+        "1000",
+        description="Operand: selector, URL pattern, load state, JS expr, or ms.",
+    )
+    timeout: int = Field(
+        DEFAULT_ACTION_TIMEOUT,
+        description="Max ms to wait before the condition is considered failed.",
+    )
+    state: str = Field(
+        "visible",
+        description="For selector waits: visible, hidden, attached, or detached.",
+    )
 
 
 class WaitResponse(BaseModel):
@@ -89,8 +110,10 @@ class WaitResponse(BaseModel):
 
 
 class UploadRequest(BaseModel):
-    index: int
-    files: list[str]
+    index: int = Field(description="Element [N] of the file input to attach files to.")
+    files: list[str] = Field(
+        description="Absolute file paths the daemon reads and hands to the file input."
+    )
 
 
 class UploadResponse(BaseModel):
@@ -108,9 +131,13 @@ class FrameListResponse(BaseModel):
 
 
 class FrameFocusRequest(BaseModel):
-    name: str | None = None
-    url: str | None = None
-    main: bool = False
+    name: str | None = Field(
+        None, description="Focus the frame whose name/id matches this value."
+    )
+    url: str | None = Field(
+        None, description="Focus the frame whose URL contains this substring."
+    )
+    main: bool = Field(False, description="Return focus to the top-level main frame.")
 
 
 class FrameFocusResponse(BaseModel):

@@ -8,7 +8,7 @@ documented in :mod:`agentcloak.daemon.services.bridge_service`.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 __all__ = [
     "BridgeClaimRequest",
@@ -19,12 +19,19 @@ __all__ = [
 
 
 class BridgeClaimRequest(BaseModel):
-    tab_id: int | None = None
-    url_pattern: str | None = None
+    tab_id: int | None = Field(
+        None, description="Specific Chrome tab id to take over via the bridge."
+    )
+    url_pattern: str | None = Field(
+        None, description="Claim the first open tab whose URL matches this pattern."
+    )
 
 
 class BridgeFinalizeRequest(BaseModel):
-    mode: str = "close"
+    mode: str = Field(
+        "close",
+        description="Session end: close, handoff (return to user), or deliverable.",
+    )
 
 
 class BridgeOpResponse(BaseModel):

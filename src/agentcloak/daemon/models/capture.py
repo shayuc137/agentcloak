@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 __all__ = [
     "CaptureAnalyzeResponse",
@@ -55,8 +55,12 @@ class CaptureAnalyzeResponse(BaseModel):
 
 
 class CaptureReplayRequest(BaseModel):
-    url: str
-    method: str = "GET"
+    url: str = Field(
+        description="URL of a captured request to replay outside the browser."
+    )
+    method: str = Field(
+        "GET", description="HTTP method to match against the captured request."
+    )
 
 
 class CaptureReplayResponse(BaseModel):

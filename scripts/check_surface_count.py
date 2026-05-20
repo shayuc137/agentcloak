@@ -206,6 +206,21 @@ def check_cli_bindings(commands: dict[str, set[str]]) -> list[str]:
 
         head = tokens[0]
 
+        # Pipe-separated top-level shortcuts (``cloak click|fill|type|...``):
+        # a route like ``/action`` fans out to several top-level commands, so
+        # the binding lists them all. Every alternative must be a registered
+        # shortcut — stricter than a ``<placeholder>`` (which only requires one
+        # subcommand to exist), and it documents the real command list for
+        # agents reading commands-reference.md.
+        if "|" in head:
+            missing_heads = sorted(h for h in head.split("|") if h not in top_level)
+            if missing_heads:
+                errors.append(
+                    f"Route {route} maps to '{cli_str}' but these top-level "
+                    f"shortcut(s) are not registered: {missing_heads}"
+                )
+            continue
+
         # Top-level shortcut path (cloak navigate / cloak click / ...).
         if head in top_level:
             continue

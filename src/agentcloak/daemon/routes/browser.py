@@ -9,7 +9,7 @@ from typing import Any
 
 import orjson
 import structlog
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 # ``screenshot_to_base64`` lives on the abstract base module so daemon code
 # stays backend-agnostic (layer isolation: daemon → BrowserContextBase).
@@ -83,9 +83,18 @@ async def handle_navigate(
 async def handle_screenshot(
     ctx: BrowserCtxDep,
     config: ConfigDep,
-    full_page: bool = False,
-    format: str = "jpeg",
-    quality: int | None = None,
+    full_page: bool = Query(
+        False,
+        description="Capture the full scrollable page instead of the viewport.",
+    ),
+    format: str = Query(
+        "jpeg",
+        description="Format: jpeg (smaller) or png (lossless, better for OCR/design).",
+    ),
+    quality: int | None = Query(
+        None,
+        description="JPEG quality 1-100; unset uses the default. Ignored for png.",
+    ),
 ) -> dict[str, Any]:
     # ``quality=None`` resolves to the configured default. CLI callers leave
     # this unset and inherit the file/env default; MCP tools pass an explicit
@@ -106,14 +115,32 @@ async def handle_snapshot(
     ctx: BrowserCtxDep,
     config: ConfigDep,
     snapshot_cache: SnapshotCacheDep,
-    mode: str = "compact",
-    max_nodes: int = -1,
-    max_chars: int = 0,
-    focus: int = 0,
-    offset: int = 0,
-    include_selector_map: bool = False,
-    frames: bool = False,
-    diff: bool = False,
+    mode: str = Query(
+        "compact",
+        description="Density: compact (token-lean), accessible (full ARIA), or raw.",
+    ),
+    max_nodes: int = Query(
+        -1,
+        description="Node cap. -1 auto-caps compact; 0 full tree; >0 explicit cap.",
+    ),
+    max_chars: int = Query(
+        0, description="Character budget for the tree text; 0 means no character cap."
+    ),
+    focus: int = Query(
+        0,
+        description="Element [N] to expand into; shows subtree with breadcrumb.",
+    ),
+    offset: int = Query(0, description="Node offset for paging through a large tree."),
+    include_selector_map: bool = Query(
+        False, description="Include the [N] → element selector map in the response."
+    ),
+    frames: bool = Query(
+        False, description="Merge child iframe accessibility trees into the snapshot."
+    ),
+    diff: bool = Query(
+        False,
+        description="Mark [+] added / [~] changed nodes versus the previous snapshot.",
+    ),
 ) -> dict[str, Any]:
     # ``-1`` = unspecified → cap compact mode at config.browser.snapshot_max_nodes
     # (busy pages exceed agent budgets); ``0`` = explicit full tree; ``>0``
@@ -173,7 +200,13 @@ async def handle_evaluate(body: EvaluateRequest, ctx: BrowserCtxDep) -> dict[str
 
 
 @router.get("/network", response_model=OkEnvelope[NetworkResponse])
-async def handle_network(ctx: BrowserCtxDep, since: str = "0") -> dict[str, Any]:
+async def handle_network(
+    ctx: BrowserCtxDep,
+    since: str = Query(
+        "0",
+        description="Requests after this seq, or 'last_action' for the last action.",
+    ),
+) -> dict[str, Any]:
     since_value: int | str = int(since) if since.isdigit() else since
     reqs = await ctx.network(since=since_value)
     data = {"requests": reqs, "count": len(reqs)}

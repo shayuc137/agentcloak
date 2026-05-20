@@ -39,10 +39,23 @@ __all__ = [
 
 
 class NavigateRequest(BaseModel):
-    url: str
-    timeout: float = DEFAULT_NAVIGATE_TIMEOUT
-    include_snapshot: bool = False
-    snapshot_mode: Literal["compact", "accessible"] = "compact"
+    url: str = Field(
+        description=(
+            "Target URL (http/https/about). file/data/javascript schemes blocked."
+        )
+    )
+    timeout: float = Field(
+        DEFAULT_NAVIGATE_TIMEOUT,
+        description="Navigation timeout in seconds before giving up.",
+    )
+    include_snapshot: bool = Field(
+        False,
+        description="Attach a snapshot so you observe+act in one round-trip.",
+    )
+    snapshot_mode: Literal["compact", "accessible"] = Field(
+        "compact",
+        description="Snapshot density: compact (token-lean) or accessible (full ARIA).",
+    )
 
 
 class _SnapshotAttachment(BaseModel):
@@ -100,9 +113,17 @@ class SnapshotResponse(BaseModel):
 
 
 class EvaluateRequest(BaseModel):
-    js: str
-    world: Literal["main", "isolated"] = "main"
-    max_return_size: int = DEFAULT_MAX_RETURN_SIZE
+    js: str = Field(
+        description="JavaScript expression or function body to evaluate in the page."
+    )
+    world: Literal["main", "isolated"] = Field(
+        "main",
+        description="World: main (sees site globals) or isolated (sandboxed).",
+    )
+    max_return_size: int = Field(
+        DEFAULT_MAX_RETURN_SIZE,
+        description="Max serialized result bytes; larger results are truncated.",
+    )
 
 
 class EvaluateResponse(BaseModel):
@@ -129,11 +150,25 @@ class ActionRequest(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    kind: str
-    index: int | None = None
-    target: str = ""
-    include_snapshot: bool = False
-    snapshot_mode: Literal["compact", "accessible"] = "compact"
+    kind: str = Field(
+        description="Verb: click/fill/type/scroll/hover/select/press/keydown/keyup.",
+    )
+    index: int | None = Field(
+        None,
+        description="Element [N] from snapshot. Preferred over target/coordinates.",
+    )
+    target: str = Field(
+        "",
+        description="Element selector or 'x,y' coordinate fallback when no index.",
+    )
+    include_snapshot: bool = Field(
+        False,
+        description="Attach a snapshot after the action to see the result.",
+    )
+    snapshot_mode: Literal["compact", "accessible"] = Field(
+        "compact",
+        description="Snapshot density: compact (token-lean) or accessible (full ARIA).",
+    )
 
 
 class ActionResponse(BaseModel):
@@ -145,9 +180,17 @@ class ActionResponse(BaseModel):
 
 
 class BatchActionRequest(BaseModel):
-    actions: list[dict[str, Any]] = Field(default_factory=lambda: [])
-    sleep: float = 0.0
-    settle_timeout: int = DEFAULT_BATCH_SETTLE_TIMEOUT
+    actions: list[dict[str, Any]] = Field(
+        default_factory=lambda: [],
+        description="Ordered action objects; may reference prior results via $N.path.",
+    )
+    sleep: float = Field(
+        0.0, description="Seconds to pause between actions to let the page settle."
+    )
+    settle_timeout: int = Field(
+        DEFAULT_BATCH_SETTLE_TIMEOUT,
+        description="Max ms to wait for navigation/network to settle per action.",
+    )
 
 
 class BatchActionResponse(BaseModel):
@@ -162,11 +205,19 @@ class BatchActionResponse(BaseModel):
 
 
 class FetchRequest(BaseModel):
-    url: str
-    method: str = "GET"
-    body: str | None = None
-    headers: dict[str, str] | None = None
-    timeout: float = DEFAULT_NAVIGATE_TIMEOUT
+    url: str = Field(
+        description="Target URL fetched with the browser's cookies and TLS fingerprint."
+    )
+    method: str = Field("GET", description="HTTP method (GET, POST, PUT, DELETE, ...).")
+    body: str | None = Field(
+        None, description="Request body string for POST/PUT requests."
+    )
+    headers: dict[str, str] | None = Field(
+        None, description="Extra request headers merged on top of the browser defaults."
+    )
+    timeout: float = Field(
+        DEFAULT_NAVIGATE_TIMEOUT, description="Request timeout in seconds."
+    )
 
 
 class FetchResponse(BaseModel):

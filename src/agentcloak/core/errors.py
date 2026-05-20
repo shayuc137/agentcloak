@@ -7,6 +7,7 @@ __all__ = [
     "BackendError",
     "BrowserTimeoutError",
     "DaemonConnectionError",
+    "DebuggerPausedError",
     "DialogBlockedError",
     "ElementNotFoundError",
     "NavigationError",
@@ -93,4 +94,34 @@ class DialogBlockedError(AgentBrowserError):
     def to_dict(self) -> dict[str, Any]:
         payload = super().to_dict()
         payload["dialog"] = self.dialog
+        return payload
+
+
+class DebuggerPausedError(AgentBrowserError):
+    """Page execution is paused at a breakpoint, blocking new page actions.
+
+    Mirrors :class:`DialogBlockedError`: the requested action is valid but the
+    page can't run it while execution is suspended in the debugger. Carries a
+    compact ``paused_info`` summary (stop reason, top frame) so the agent knows
+    where it's stuck. Status code 409 (Conflict) because page state — not the
+    request — prevents the operation. Clear it with ``debugger resume`` or a
+    ``debugger step`` command.
+    """
+
+    status_code = 409
+
+    def __init__(
+        self,
+        *,
+        error: str,
+        hint: str,
+        action: str,
+        paused_info: dict[str, Any],
+    ) -> None:
+        super().__init__(error=error, hint=hint, action=action)
+        self.paused_info = paused_info
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = super().to_dict()
+        payload["paused_info"] = self.paused_info
         return payload

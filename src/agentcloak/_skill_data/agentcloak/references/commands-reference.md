@@ -473,6 +473,114 @@ Read this file when you need full parameter detail. For the common path, the qui
   - `variables` (object, default: —) — GraphQL variables object.
   - `headers` (object, default: —) — Extra request headers (e.g. auth token).
 
+## Debugger
+
+### `POST /debugger/enable`
+
+- CLI: `cloak debugger enable`
+- MCP: `agentcloak_debugger (action=enable)`
+
+### `POST /debugger/disable`
+
+- CLI: `cloak debugger disable`
+- MCP: `agentcloak_debugger (action=disable)`
+
+### `POST /debugger/breakpoint/set`
+
+- CLI: `cloak debugger breakpoint-set URL LINE`
+- MCP: `agentcloak_debugger (action=breakpoint_set)`
+- Body:
+  - `url` (string, default: *required*) — URL regex identifying the script to break in.
+  - `line` (integer, default: *required*) — Zero-based line number to break on.
+  - `condition` (string, default: "") — Optional JS expression; break only when it is truthy.
+
+### `POST /debugger/breakpoint/remove`
+
+- CLI: `cloak debugger breakpoint-remove ID`
+- MCP: `agentcloak_debugger (action=breakpoint_remove)`
+- Body:
+  - `breakpoint_id` (string, default: *required*) — The breakpoint id returned by 'set'.
+
+### `GET /debugger/breakpoint/list`
+
+- CLI: `cloak debugger breakpoint-list`
+- MCP: `agentcloak_debugger (action=breakpoint_list)`
+
+### `POST /debugger/xhr-breakpoint/set`
+
+- CLI: `cloak debugger xhr-set PATTERN`
+- MCP: `agentcloak_debugger (action=xhr_set)`
+- Body:
+  - `url_pattern` (string, default: "") — URL substring to break on; empty matches every XHR/fetch.
+
+### `POST /debugger/xhr-breakpoint/remove`
+
+- CLI: `cloak debugger xhr-remove PATTERN`
+- MCP: `agentcloak_debugger (action=xhr_remove)`
+- Body:
+  - `url_pattern` (string, default: "") — URL substring to break on; empty matches every XHR/fetch.
+
+### `POST /debugger/resume`
+
+- CLI: `cloak debugger resume`
+- MCP: `agentcloak_debugger (action=resume)`
+
+### `POST /debugger/step`
+
+- CLI: `cloak debugger step`
+- MCP: `agentcloak_debugger (action=step)`
+- Body:
+  - `type` (string, default: "over") — Step granularity: 'over', 'into', or 'out'.
+
+### `GET /debugger/paused-info`
+
+- CLI: `cloak debugger paused-info`
+- MCP: `agentcloak_debugger (action=paused_info)`
+
+### `POST /debugger/scope-variables`
+
+- CLI: `cloak debugger scope-variables OBJECT_ID`
+- MCP: `agentcloak_debugger (action=scope_variables)`
+- Body:
+  - `object_id` (string, default: *required*) — CDP objectId from a call frame's scopeChain[].object.objectId.
+
+### `POST /debugger/evaluate`
+
+- CLI: `cloak debugger evaluate CALL_FRAME_ID EXPRESSION`
+- MCP: `agentcloak_debugger (action=evaluate)`
+- Body:
+  - `call_frame_id` (string, default: *required*) — CDP callFrameId from a frame in the paused info.
+  - `expression` (string, default: *required*) — JS expression to evaluate in that frame.
+
+### `GET /debugger/scripts`
+
+- CLI: `cloak debugger scripts`
+- MCP: `agentcloak_debugger (action=scripts)`
+
+### `POST /debugger/script-source`
+
+- CLI: `cloak debugger script-source SCRIPT_ID`
+- MCP: `agentcloak_debugger (action=script_source)`
+- Body:
+  - `script_id` (string, default: *required*) — The script id from '/debugger/scripts'.
+
+### `POST /debugger/search`
+
+- CLI: `cloak debugger search SCRIPT_ID QUERY`
+- MCP: `agentcloak_debugger (action=search)`
+- Body:
+  - `script_id` (string, default: *required*) — The script id to search in.
+  - `query` (string, default: *required*) — Substring (or regex) to match.
+  - `is_regex` (boolean, default: false) — Treat 'query' as a regex.
+  - `case_sensitive` (boolean, default: false) — Case-sensitive match.
+
+### `POST /debugger/skip-pauses`
+
+- CLI: `cloak debugger skip-pauses`
+- MCP: `agentcloak_debugger (action=skip_pauses)`
+- Body:
+  - `skip` (boolean, default: *required*) — True ignores every pause (anti-anti-debug).
+
 ## Streaming
 
 ### `GET /ws/list`

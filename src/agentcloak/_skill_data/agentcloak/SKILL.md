@@ -133,6 +133,11 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak ws list` | List tracked WebSocket connections (capture turns on lazily; cleared on navigation) |
 | `cloak ws messages [--since N]` | Read buffered WebSocket frames (→ sent, ← received); page with `--since` like `console` |
 | `cloak sse messages [--since N]` | Read buffered Server-Sent Events; page with `--since` |
+| `cloak debugger breakpoint-set URL LINE [--condition]` | Set a URL breakpoint (regex match); enables the debugger lazily. `xhr-set PATTERN` breaks on matching XHRs |
+| `cloak debugger paused-info` / `step --type over\|into\|out` / `resume` | Inspect the pause (reason + call stack with callFrameIds), step, or resume. Page actions return `debugger_paused` while suspended |
+| `cloak debugger scope-variables OBJECT_ID` / `evaluate CALL_FRAME_ID EXPR` | Expand a scope object's properties / evaluate in a paused frame (objectId + callFrameId come from `paused-info`) |
+| `cloak debugger scripts` / `script-source SCRIPT_ID` / `search SCRIPT_ID QUERY` | List parsed scripts / read a source / grep within one (`--regex`) |
+| `cloak debugger skip-pauses` | Ignore all breakpoints + `debugger;` statements (defeats anti-debug loops) |
 
 ### Management
 

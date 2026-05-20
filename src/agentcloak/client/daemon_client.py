@@ -1399,6 +1399,109 @@ class DaemonClient:
             payload["headers"] = headers
         return await self._send_async("POST", "/graphql/query", json_body=payload)
 
+    # --- Debugger (async, 7b T3) ---
+
+    async def debugger_enable(self) -> dict[str, Any]:
+        return await self._send_async("POST", "/debugger/enable")
+
+    async def debugger_disable(self) -> dict[str, Any]:
+        return await self._send_async("POST", "/debugger/disable")
+
+    async def debugger_breakpoint_set(
+        self, *, url: str, line: int, condition: str = ""
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {"url": url, "line": line}
+        if condition:
+            body["condition"] = condition
+        return await self._send_async(
+            "POST", "/debugger/breakpoint/set", json_body=body
+        )
+
+    async def debugger_breakpoint_remove(self, *, breakpoint_id: str) -> dict[str, Any]:
+        return await self._send_async(
+            "POST",
+            "/debugger/breakpoint/remove",
+            json_body={"breakpoint_id": breakpoint_id},
+        )
+
+    async def debugger_breakpoint_list(self) -> dict[str, Any]:
+        return await self._send_async("GET", "/debugger/breakpoint/list")
+
+    async def debugger_xhr_breakpoint_set(
+        self, *, url_pattern: str = ""
+    ) -> dict[str, Any]:
+        return await self._send_async(
+            "POST",
+            "/debugger/xhr-breakpoint/set",
+            json_body={"url_pattern": url_pattern},
+        )
+
+    async def debugger_xhr_breakpoint_remove(
+        self, *, url_pattern: str = ""
+    ) -> dict[str, Any]:
+        return await self._send_async(
+            "POST",
+            "/debugger/xhr-breakpoint/remove",
+            json_body={"url_pattern": url_pattern},
+        )
+
+    async def debugger_resume(self) -> dict[str, Any]:
+        return await self._send_async("POST", "/debugger/resume")
+
+    async def debugger_step(self, *, type: str = "over") -> dict[str, Any]:
+        return await self._send_async(
+            "POST", "/debugger/step", json_body={"type": type}
+        )
+
+    async def debugger_paused_info(self) -> dict[str, Any]:
+        return await self._send_async("GET", "/debugger/paused-info")
+
+    async def debugger_scope_variables(self, *, object_id: str) -> dict[str, Any]:
+        return await self._send_async(
+            "POST", "/debugger/scope-variables", json_body={"object_id": object_id}
+        )
+
+    async def debugger_evaluate(
+        self, *, call_frame_id: str, expression: str
+    ) -> dict[str, Any]:
+        return await self._send_async(
+            "POST",
+            "/debugger/evaluate",
+            json_body={"call_frame_id": call_frame_id, "expression": expression},
+        )
+
+    async def debugger_scripts(self) -> dict[str, Any]:
+        return await self._send_async("GET", "/debugger/scripts")
+
+    async def debugger_script_source(self, *, script_id: str) -> dict[str, Any]:
+        return await self._send_async(
+            "POST", "/debugger/script-source", json_body={"script_id": script_id}
+        )
+
+    async def debugger_search(
+        self,
+        *,
+        script_id: str,
+        query: str,
+        is_regex: bool = False,
+        case_sensitive: bool = False,
+    ) -> dict[str, Any]:
+        return await self._send_async(
+            "POST",
+            "/debugger/search",
+            json_body={
+                "script_id": script_id,
+                "query": query,
+                "is_regex": is_regex,
+                "case_sensitive": case_sensitive,
+            },
+        )
+
+    async def debugger_skip_pauses(self, *, skip: bool) -> dict[str, Any]:
+        return await self._send_async(
+            "POST", "/debugger/skip-pauses", json_body={"skip": skip}
+        )
+
 
 # ----------------------------------------------------------------------
 # Body / param builders — defined once, used by both sync and async API.

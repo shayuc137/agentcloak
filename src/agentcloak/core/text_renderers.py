@@ -48,6 +48,8 @@ def _as_dict(value: Any) -> dict[str, Any]:
 __all__ = [
     "render_action_text",
     "render_batch_text",
+    "render_breakpoint_list_text",
+    "render_breakpoint_set_text",
     "render_bridge_claim_text",
     "render_bridge_finalize_text",
     "render_capture_analyze_text",
@@ -64,6 +66,10 @@ __all__ = [
     "render_cookies_clear_text",
     "render_cookies_export_text",
     "render_cookies_import_text",
+    "render_debugger_evaluate_text",
+    "render_debugger_op_text",
+    "render_debugger_search_text",
+    "render_debugger_state_text",
     "render_dialog_handle_text",
     "render_dialog_status_text",
     "render_doctor_detail_text",
@@ -80,6 +86,7 @@ __all__ = [
     "render_launch_text",
     "render_navigate_text",
     "render_network_text",
+    "render_paused_info_text",
     "render_pdf_text",
     "render_profile_create_from_current_text",
     "render_profile_create_text",
@@ -88,10 +95,13 @@ __all__ = [
     "render_resume_text",
     "render_route_list_text",
     "render_route_op_text",
+    "render_scope_variables_text",
     "render_screenshot_text",
     "render_script_add_text",
     "render_script_list_text",
     "render_script_remove_text",
+    "render_script_source_text",
+    "render_scripts_list_text",
     "render_serve_status_text",
     "render_serve_stop_text",
     "render_shutdown_text",
@@ -1369,4 +1379,176 @@ def render_sse_messages_text(data: dict[str, Any]) -> str:
         payload = " ".join(str(event.get("data", "") or "").split())
         prefix = f"{seq} [{name}]" if name else f"{seq}"
         lines.append(f"{prefix} {payload}")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Debugger (7b T3)
+# ---------------------------------------------------------------------------
+
+
+def render_debugger_state_text(data: dict[str, Any]) -> str:
+    """Render the debugger state summary (enable/disable/resume/xhr/skip)."""
+    enabled = "enabled" if data.get("enabled") else "disabled"
+    paused = " paused" if data.get("paused") else ""
+    bp = int(data.get("breakpoint_count", 0) or 0)
+    xhr = int(data.get("xhr_breakpoint_count", 0) or 0)
+    return f"debugger {enabled}{paused} ({bp} breakpoints, {xhr} xhr)"
+
+
+def render_debugger_op_text(data: dict[str, Any]) -> str:
+    """Render a remove-style op — confirmation plus the resulting state."""
+    note = "removed" if data.get("removed") else "not tracked"
+    return f"{note}; {render_debugger_state_text(data)}"
+
+
+def render_breakpoint_set_text(data: dict[str, Any]) -> str:
+    """Render ``/debugger/breakpoint/set`` — the id (pipe-friendly for removal)."""
+    bp = data.get("breakpoint")
+    if isinstance(bp, dict):
+        info = _as_dict(bp)
+        bid = str(info.get("breakpoint_id", "") or "")
+        url = str(info.get("url", "") or "")
+        line = info.get("line", "")
+        if bid:
+            return f"{bid} ({url}:{line})"
+    return "no breakpoint id"
+
+
+def render_breakpoint_list_text(data: dict[str, Any]) -> str:
+    """Render ``/debugger/breakpoint/list`` — one breakpoint/pattern per line."""
+    bps: list[Any] = list(data.get("breakpoints") or [])
+    xhr: list[Any] = list(data.get("xhr_patterns") or [])
+    if not bps and not xhr:
+        return "no breakpoints"
+    lines: list[str] = []
+    for raw in bps:
+        if not isinstance(raw, dict):
+            continue
+        bp = _as_dict(raw)
+        bid = str(bp.get("breakpoint_id", "") or "")
+        url = str(bp.get("url", "") or "")
+        line = bp.get("line", "")
+        cond = str(bp.get("condition", "") or "")
+        suffix = f" if {cond}" if cond else ""
+        lines.append(f"{bid} {url}:{line}{suffix}")
+    for pattern in xhr:
+        shown = str(pattern) if pattern else "(any)"
+        lines.append(f"xhr {shown}")
+    return "\n".join(lines)
+
+
+def _render_call_frames(frames: list[Any]) -> list[str]:
+    """Render call frames as ``#N functionName (scriptId:line) [callFrameId]``."""
+    lines: list[str] = []
+    for i, raw in enumerate(frames):
+        if not isinstance(raw, dict):
+            continue
+        frame = _as_dict(raw)
+        fn = str(frame.get("functionName", "") or "<anonymous>")
+        loc = frame.get("location")
+        loc_str = ""
+        if isinstance(loc, dict):
+            location = _as_dict(loc)
+            loc_str = f"{location.get('scriptId', '')}:{location.get('lineNumber', '')}"
+        cfid = str(frame.get("callFrameId", "") or "")
+        lines.append(f"#{i} {fn} ({loc_str}) [{cfid}]")
+    return lines
+
+
+def render_paused_info_text(data: dict[str, Any]) -> str:
+    """Render ``/debugger/paused-info`` and ``/debugger/step`` — paused snapshot.
+
+    Shows the stop reason then the call stack, one frame per line. Each frame
+    ends with its ``callFrameId`` in brackets so an agent can copy it straight
+    into ``debugger evaluate``.
+    """
+    if not data.get("paused"):
+        return "not paused"
+    reason = str(data.get("reason", "") or "")
+    frames: list[Any] = list(data.get("call_frames") or [])
+    header = f"paused ({reason})" if reason else "paused"
+    lines = [header, *_render_call_frames(frames)]
+    return "\n".join(lines)
+
+
+def render_scope_variables_text(data: dict[str, Any]) -> str:
+    """Render ``/debugger/scope-variables`` — one ``name = value`` per line."""
+    variables: list[Any] = list(data.get("variables") or [])
+    if not variables:
+        return "no variables"
+    lines: list[str] = []
+    for raw in variables:
+        if not isinstance(raw, dict):
+            continue
+        var = _as_dict(raw)
+        name = str(var.get("name", "") or "")
+        value = var.get("value")
+        rendered = "<unavailable>"
+        if isinstance(value, dict):
+            v = _as_dict(value)
+            # Prefer a concrete value; fall back to description (functions,
+            # objects) then the bare type.
+            if "value" in v:
+                rendered = str(v.get("value"))
+            elif v.get("description"):
+                rendered = str(v.get("description"))
+            else:
+                rendered = str(v.get("type", "") or "")
+        lines.append(f"{name} = {rendered}")
+    return "\n".join(lines)
+
+
+def render_debugger_evaluate_text(data: dict[str, Any]) -> str:
+    """Render ``/debugger/evaluate`` — the value, or the thrown exception."""
+    exc = data.get("exception")
+    if exc:
+        body = orjson.dumps(exc).decode()
+        return f"exception {body}"
+    result = data.get("result")
+    if isinstance(result, dict):
+        r = _as_dict(result)
+        if "value" in r:
+            return str(r.get("value"))
+        if r.get("description"):
+            return str(r.get("description"))
+        return str(r.get("type", "") or "(no value)")
+    return "(no value)"
+
+
+def render_scripts_list_text(data: dict[str, Any]) -> str:
+    """Render ``/debugger/scripts`` — one ``<script_id> <url>[ map]`` per line."""
+    scripts: list[Any] = list(data.get("scripts") or [])
+    if not scripts:
+        return "no scripts"
+    lines: list[str] = []
+    for raw in scripts:
+        if not isinstance(raw, dict):
+            continue
+        s = _as_dict(raw)
+        sid = str(s.get("script_id", "") or "")
+        url = str(s.get("url", "") or "<inline>")
+        has_map = " [map]" if s.get("source_map_url") else ""
+        lines.append(f"{sid} {url}{has_map}")
+    return "\n".join(lines)
+
+
+def render_script_source_text(data: dict[str, Any]) -> str:
+    """Render ``/debugger/script-source`` — the raw source text."""
+    return str(data.get("source", "") or "")
+
+
+def render_debugger_search_text(data: dict[str, Any]) -> str:
+    """Render ``/debugger/search`` — one ``<line>: <content>`` per match."""
+    matches: list[Any] = list(data.get("matches") or [])
+    if not matches:
+        return "no matches"
+    lines: list[str] = []
+    for raw in matches:
+        if not isinstance(raw, dict):
+            continue
+        m = _as_dict(raw)
+        line_no = m.get("lineNumber", "")
+        content = " ".join(str(m.get("lineContent", "") or "").split())
+        lines.append(f"{line_no}: {content}")
     return "\n".join(lines)

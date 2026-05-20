@@ -42,6 +42,7 @@ from agentcloak.core.config import BrowserConfig
 from agentcloak.core.errors import (
     BackendError,
     BrowserTimeoutError,
+    DebuggerPausedError,
     DialogBlockedError,
     ElementNotFoundError,
     NavigationError,
@@ -52,6 +53,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from agentcloak.browser.managers import (
+        DebuggerManager,
         RouteManager,
         RouteRule,
         ScriptManager,
@@ -276,13 +278,15 @@ class BrowserContextBase(ABC):
         self._cdp_event_handlers: dict[str, list[Callable[[dict[str, Any]], None]]] = {}
         self._enabled_domains: set[str] = set()
 
-        # 7b T1/T2: reverse-engineering managers, constructed lazily on first
+        # 7b T1/T2/T3: reverse-engineering managers, constructed lazily on first
         # use so a session that never touches them pays nothing.
-        # ``script_manager`` / ``route_manager`` / ``streaming_monitor`` are the
-        # public accessors below; the slots stay ``None`` until then.
+        # ``script_manager`` / ``route_manager`` / ``streaming_monitor`` /
+        # ``debugger`` are the public accessors below; the slots stay ``None``
+        # until then.
         self._script_mgr: ScriptManager | None = None
         self._route_mgr: RouteManager | None = None
         self._streaming_mgr: StreamingMonitor | None = None
+        self._debugger_mgr: DebuggerManager | None = None
 
         # 7b T1.2: extra HTTP headers injected on every request. Kept here so
         # ``emulation headers`` can report the active set; the backend applies
@@ -319,6 +323,15 @@ class BrowserContextBase(ABC):
 
             self._streaming_mgr = StreamingMonitor(self)
         return self._streaming_mgr
+
+    @property
+    def debugger(self) -> DebuggerManager:
+        """Lazily-constructed CDP debugger manager (7b T3)."""
+        if self._debugger_mgr is None:
+            from agentcloak.browser.managers import DebuggerManager
+
+            self._debugger_mgr = DebuggerManager(self)
+        return self._debugger_mgr
 
     @property
     def seq(self) -> int:
@@ -794,6 +807,7 @@ class BrowserContextBase(ABC):
     async def navigate(
         self, url: str, *, timeout: float | None = None
     ) -> dict[str, Any]:
+        self._check_debugger_paused()
         self._check_browser_alive()
         if timeout is None:
             timeout = float(self._browser_config.navigation_timeout)
@@ -859,6 +873,7 @@ class BrowserContextBase(ABC):
         offset: int = 0,
         frames: bool = False,
     ) -> PageSnapshot:
+        self._check_debugger_paused()
         self._check_browser_alive()
         self._check_page_valid()
         # ``content`` joins ``accessible``/``compact`` on the unified AX-tree
@@ -932,6 +947,7 @@ class BrowserContextBase(ABC):
         return result.snapshot
 
     async def evaluate(self, js: str, *, world: str = "main") -> Any:
+        self._check_debugger_paused()
         self._check_browser_alive()
         self._check_page_valid()
         try:
@@ -982,6 +998,7 @@ class BrowserContextBase(ABC):
         # I/O, independent of how the bytes were produced). The daemon route
         # inspects ``output_path`` to decide whether to base64 the bytes or
         # return ``{path, size}``.
+        self._check_debugger_paused()
         self._check_browser_alive()
         self._check_page_valid()
         if quality is None:
@@ -1027,6 +1044,24 @@ class BrowserContextBase(ABC):
             action="use 'dialog accept' or 'dialog dismiss'",
             dialog=dialog,
         )
+
+    def _check_debugger_paused(self) -> None:
+        """Raise :class:`DebuggerPausedError` if execution is paused (7b T3).
+
+        Symmetric with :meth:`_raise_if_dialog_blocked`: a page-bound action
+        (navigate, click, evaluate, screenshot, ...) can't run while execution is
+        suspended at a breakpoint — the page's JS isn't servicing events. Debugger
+        commands themselves (resume/step/inspect) are exempt; they're how the
+        agent gets *out* of the paused state. The guard is a cheap attribute peek
+        in the common case (no debugger constructed → ``_debugger_mgr is None``).
+        """
+        if self._debugger_mgr is not None and self._debugger_mgr.is_paused:
+            raise DebuggerPausedError(
+                error="debugger_paused",
+                hint="Page execution is paused at a breakpoint",
+                action="use 'debugger resume' or 'debugger step' first",
+                paused_info=self._debugger_mgr.get_paused_summary(),
+            )
 
     def _dispatch_dialog_event(
         self,
@@ -1116,6 +1151,7 @@ class BrowserContextBase(ABC):
     ) -> dict[str, Any]:
         if timeout is None:
             timeout = self._browser_config.action_timeout
+        self._check_debugger_paused()
         self._check_browser_alive()
         # Selector and JS conditions evaluate against the live page; if the
         # last navigate failed, waiting against the stale page is the same
@@ -1171,6 +1207,7 @@ class BrowserContextBase(ABC):
     async def upload(self, index: int, files: list[str]) -> dict[str, Any]:
         from pathlib import Path
 
+        self._check_debugger_paused()
         self._check_browser_alive()
         self._check_page_valid()
         validated: list[str] = []
@@ -1270,6 +1307,11 @@ class BrowserContextBase(ABC):
             await self._script_mgr.on_tab_switched()
         if self._route_mgr is not None:
             await self._route_mgr.on_tab_switched()
+        # The debugger's domain state is per-page: a switched-to tab has its own
+        # Debugger session and the old breakpoint ids are meaningless there. The
+        # manager re-inits (disable → re-enable) and re-sets every breakpoint.
+        if self._debugger_mgr is not None:
+            await self._debugger_mgr.on_tab_switched()
 
     async def _notify_managers_on_navigated(self) -> None:
         """Let event-driven managers react to a completed navigation.
@@ -1285,6 +1327,11 @@ class BrowserContextBase(ABC):
         """
         if self._streaming_mgr is not None:
             await self._streaming_mgr.on_navigated()
+        # The debugger drops its now-stale script inventory and re-applies XHR
+        # breakpoints (Chrome resets DOMDebugger state on navigation); URL
+        # breakpoints re-bind natively so they're left alone.
+        if self._debugger_mgr is not None:
+            await self._debugger_mgr.on_navigated()
 
     # ------------------------------------------------------------------
     # Fetch / Close / Raw CDP
@@ -1299,6 +1346,7 @@ class BrowserContextBase(ABC):
         headers: dict[str, str] | None = None,
         timeout: float | None = None,
     ) -> dict[str, Any]:
+        self._check_debugger_paused()
         self._check_browser_alive()
         if timeout is None:
             timeout = float(self._browser_config.navigation_timeout)
@@ -1619,6 +1667,10 @@ class BrowserContextBase(ABC):
     # ------------------------------------------------------------------
 
     async def action(self, kind: str, target: str, **kw: Any) -> dict[str, Any]:
+        # 7b T3: a breakpoint pause blocks every page action — the page's JS
+        # isn't running, so clicking/filling/etc. would hang or no-op. Surfaces
+        # a :class:`DebuggerPausedError` (409) the agent clears with resume/step.
+        self._check_debugger_paused()
         # R1: Dialog interrupts every action. ``_raise_if_dialog_blocked``
         # bubbles a :class:`DialogBlockedError` which the FastAPI exception
         # handler turns into a 409 response with dialog metadata attached.

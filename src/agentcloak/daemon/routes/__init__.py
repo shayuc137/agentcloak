@@ -30,6 +30,7 @@ from agentcloak.daemon.routes import (
     capture,
     clipboard,
     console,
+    debugger,
     download,
     emulation,
     graphql,
@@ -73,12 +74,13 @@ def _build_router() -> APIRouter:
         clipboard,
         pdf,
         serve,
-        # 7b T1/T2 reverse-engineering surfaces.
+        # 7b T1/T2/T3 reverse-engineering surfaces.
         script,
         route_mod,
         emulation,
         graphql,
         streaming,
+        debugger,
     ):
         merged.include_router(module.router)
     return merged

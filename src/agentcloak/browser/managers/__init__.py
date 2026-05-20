@@ -9,11 +9,18 @@ touching a backend session directly.
 
 T0 establishes the package and the base transport. T1 adds ScriptManager and
 RouteManager (script injection + network route interception). T2 adds
-StreamingMonitor (WebSocket/SSE capture); the debugger manager lands in T3-T4.
+StreamingMonitor (WebSocket/SSE capture). T3 adds DebuggerManager (breakpoints,
+stepping, call-stack/scope inspection); SourceMap lands in T4.
 """
 
 from __future__ import annotations
 
+from agentcloak.browser.managers.debugger_manager import (
+    BreakpointInfo,
+    DebuggerManager,
+    PausedState,
+    ScriptInfo,
+)
 from agentcloak.browser.managers.route_manager import RouteManager, RouteRule
 from agentcloak.browser.managers.script_manager import (
     PRESET_TEMPLATES,
@@ -28,8 +35,12 @@ from agentcloak.browser.managers.streaming_monitor import (
 
 __all__ = [
     "PRESET_TEMPLATES",
+    "BreakpointInfo",
+    "DebuggerManager",
+    "PausedState",
     "RouteManager",
     "RouteRule",
+    "ScriptInfo",
     "ScriptManager",
     "SseEvent",
     "StreamingMonitor",

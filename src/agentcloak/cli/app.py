@@ -35,7 +35,7 @@ _GROUPS = (
     "browser, do, js, tab, profile, spell, capture, frame, daemon, doctor, "
     "launch, network, fetch, bridge, cookies, skill, cdp, dialog, wait, "
     "upload, config, console, download, storage, clipboard, pdf, serve, "
-    "script, route, emulation, graphql, ws, sse"
+    "script, route, emulation, graphql, debugger, ws, sse"
 )
 _EPILOG = (
     f"Shortcuts (top-level, also documented under their groups):\n  {_SHORTCUTS}\n"
@@ -195,6 +195,7 @@ def _register_commands() -> None:
         console_cmd,
         cookies_cmd,
         daemon_cmd,
+        debugger,
         dialog,
         doctor,
         download_cmd,
@@ -356,6 +357,11 @@ def _register_commands() -> None:
         graphql.app,
         name="graphql",
         help="GraphQL: introspect a schema or send a query.",
+    )
+    app.add_typer(
+        debugger.app,
+        name="debugger",
+        help="Debugger: breakpoints, stepping, call stack, scope, anti-debug.",
     )
     app.add_typer(
         streaming.ws_app,

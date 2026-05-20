@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.4 (2026-05-20)
+
+Windows compatibility fixes from seed-user testing.
+
+### Bug Fixes
+
+- **Windows headed mode** — skip Xvfb virtual framebuffer on Windows; was triggering misleading `xvfb_not_found` error when `headless=false`.
+- **Session file permissions** — wrap `os.chmod` in `contextlib.suppress` for cross-platform consistency (no-op on Windows but now guarded).
+- **Windows spell directory** — user spell directory now uses `%APPDATA%` on Windows instead of Unix `.config` path.
+
 ## 0.2.3 (2026-05-17)
 
 Seed-user review round 2: bug fixes, security, snapshot optimization, network config.

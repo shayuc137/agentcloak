@@ -1121,7 +1121,8 @@ def render_storage_text(data: dict[str, Any]) -> str:
     # or null/None (missing key).
     value = data.get("value")
     if value is None:
-        return ""
+        key = data.get("key", "")
+        return f"{area}.{key} not set" if key else f"{area}Storage is empty"
     if isinstance(value, dict):
         items = _as_dict(value)
         if not items:

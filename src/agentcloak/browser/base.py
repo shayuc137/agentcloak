@@ -852,6 +852,7 @@ class BrowserContextBase(ABC):
         )
         logger.info("audit_action", action="navigate", seq=new_seq, url=url)
         result.setdefault("seq", new_seq)
+        await self._ensure_console_cdp()
         return result
 
     # ------------------------------------------------------------------
@@ -1468,6 +1469,19 @@ class BrowserContextBase(ABC):
             )
         )
 
+    async def _ensure_console_cdp(self) -> None:
+        """Activate CDP console capture if not already listening.
+
+        Called eagerly after navigate so page-load console messages are not
+        lost between page load and the first ``console show`` query.
+        Idempotent — skips if already set up.
+        """
+        if self._console_listening:
+            return
+        with contextlib.suppress(Exception):
+            await self._console_setup_impl()
+        self._console_listening = True
+
     async def console_entries(
         self,
         *,
@@ -1482,10 +1496,7 @@ class BrowserContextBase(ABC):
         kept). The returned ``seq`` is the highest console seq seen so the
         caller can pass it back as ``since`` next time.
         """
-        if not self._console_listening:
-            with contextlib.suppress(Exception):
-                await self._console_setup_impl()
-            self._console_listening = True
+        await self._ensure_console_cdp()
 
         entries = [e for e in self._console_buffer if e.seq > since]
         if level:

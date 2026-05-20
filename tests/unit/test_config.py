@@ -124,25 +124,22 @@ class TestWriteExampleConfig:
 
 
 class TestDumpConfig:
-    """``cloak config list`` output schema must stay flat for back-compat.
+    """``cloak config list`` uses dotted key names matching ``config get/set``.
 
-    Phase 6d split ``AgentcloakConfig`` into nested sub-configs but the public
-    ``dump_config`` shape is still keyed by pre-v0.3.x flat field names —
-    existing scripts and JSON consumers rely on it. This test pins that
-    contract so a future cleanup can't silently break it.
+    Phase 6d split ``AgentcloakConfig`` into nested sub-configs; ``dump_config``
+    now returns dotted keys (``section.field``) so users can copy-paste from
+    ``config list`` output directly into ``config get/set`` commands.
     """
 
-    def test_returns_all_legacy_flat_field_names(self, tmp_path: Path) -> None:
+    def test_returns_dotted_key_names(self, tmp_path: Path) -> None:
         paths = Paths(root=tmp_path)
         cfg = AgentcloakConfig()
         result = dump_config(cfg, paths)
-        # Sample a key from each section — covers ``daemon`` / ``browser`` /
-        # ``security`` / ``bridge`` translation paths in ``_FLAT_FIELD_MAP``.
-        assert "daemon_port" in result
-        assert "default_tier" in result
-        assert "domain_whitelist" in result
-        assert "bridge_token" in result
-        assert "local_idle_timeout" in result
+        assert "daemon.port" in result
+        assert "browser.default_tier" in result
+        assert "security.domain_whitelist" in result
+        assert "bridge.token" in result
+        assert "bridge.local_idle_timeout" in result
 
     def test_values_pulled_from_subconfig(self, tmp_path: Path) -> None:
         paths = Paths(root=tmp_path)
@@ -151,26 +148,23 @@ class TestDumpConfig:
         cfg.browser.headless = False
         cfg.security.content_scan = True
         result = dump_config(cfg, paths)
-        assert result["daemon_port"]["value"] == 12345
-        assert result["headless"]["value"] is False
-        assert result["content_scan"]["value"] is True
+        assert result["daemon.port"]["value"] == 12345
+        assert result["browser.headless"]["value"] is False
+        assert result["security.content_scan"]["value"] is True
 
     def test_source_marked_default_when_no_toml(self, tmp_path: Path) -> None:
         paths = Paths(root=tmp_path)
         result = dump_config(AgentcloakConfig(), paths)
-        assert result["daemon_port"]["source"] == "default"
+        assert result["daemon.port"]["source"] == "default"
 
     def test_source_marked_config_toml_when_present(self, tmp_path: Path) -> None:
         paths = Paths(root=tmp_path)
         paths.ensure_dirs()
         paths.config_file.write_text("[daemon]\nport = 9001\n")
-        # Note: dump_config doesn't reload — it expects the cfg already reflects
-        # the toml. Build the cfg from load_config so source detection sees the
-        # raw TOML keys.
         _, cfg = load_config(root=tmp_path)
         result = dump_config(cfg, paths)
-        assert result["daemon_port"]["source"] == "config.toml"
-        assert result["daemon_port"]["value"] == 9001
+        assert result["daemon.port"]["source"] == "config.toml"
+        assert result["daemon.port"]["value"] == 9001
 
     def test_env_source_takes_precedence(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -181,5 +175,5 @@ class TestDumpConfig:
         monkeypatch.setenv("AGENTCLOAK_PORT", "7777")
         _, cfg = load_config(root=tmp_path)
         result = dump_config(cfg, paths)
-        assert result["daemon_port"]["source"] == "env:AGENTCLOAK_PORT"
-        assert result["daemon_port"]["value"] == 7777
+        assert result["daemon.port"]["source"] == "env:AGENTCLOAK_PORT"
+        assert result["daemon.port"]["value"] == 7777

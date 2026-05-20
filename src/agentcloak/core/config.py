@@ -582,9 +582,8 @@ def dump_config(
 
     result: dict[str, dict[str, object]] = {}
 
-    # Walk every legacy flat name so the public output schema (one row per
-    # pre-v0.3.x field) keeps round-tripping. The sub-config attribute
-    # access does the section traversal for us.
+    # Use dotted key names (``section.field``) so the output is directly
+    # copy-pasteable into ``cloak config get/set`` commands.
     for flat_name, section_attr, target in _FLAT_FIELD_MAP:
         sub_cfg = getattr(cfg, section_attr)
         value = getattr(sub_cfg, target)
@@ -596,7 +595,8 @@ def dump_config(
                 break
         if source == "default" and flat_name in toml_flat:
             source = "config.toml"
-        result[flat_name] = {"value": value, "source": source}
+        dotted_key = f"{section_attr}.{target}"
+        result[dotted_key] = {"value": value, "source": source}
 
     return result
 

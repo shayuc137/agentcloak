@@ -309,9 +309,9 @@ class TestConfigList:
         assert result.exit_code == 0, result.stdout
         # Header is the config file path (rendered as ``# /path``).
         assert f"# {paths.config_file}" in result.stdout
-        # At minimum we expect daemon_host / daemon_port to be listed.
-        assert "daemon_host" in result.stdout
-        assert "daemon_port" in result.stdout
+        # Dotted key names so users can copy-paste into config get/set.
+        assert "daemon.host" in result.stdout
+        assert "daemon.port" in result.stdout
         # Sources go in trailing brackets.
         assert "[default]" in result.stdout
 
@@ -329,6 +329,6 @@ class TestConfigList:
         data = json.loads(result.stdout)
         assert data["ok"] is True
         fields = data["data"]["fields"]
-        assert "daemon_host" in fields
+        assert "daemon.host" in fields
         # Each field is ``{"value": ..., "source": ...}``.
-        assert fields["daemon_host"]["value"] == "127.0.0.1"
+        assert fields["daemon.host"]["value"] == "127.0.0.1"

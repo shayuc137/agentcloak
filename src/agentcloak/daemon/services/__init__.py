@@ -13,6 +13,7 @@ from agentcloak.daemon.services.capture_service import CaptureService
 from agentcloak.daemon.services.diagnostic_service import DiagnosticService
 from agentcloak.daemon.services.file_server import FileServer
 from agentcloak.daemon.services.profile_service import ProfileService
+from agentcloak.daemon.services.profiler_service import ProfilerService
 from agentcloak.daemon.services.snapshot_service import SnapshotService
 
 __all__ = [
@@ -23,5 +24,6 @@ __all__ = [
     "DiagnosticService",
     "FileServer",
     "ProfileService",
+    "ProfilerService",
     "SnapshotService",
 ]

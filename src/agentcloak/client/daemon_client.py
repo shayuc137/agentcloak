@@ -1535,6 +1535,39 @@ class DaemonClient:
             json_body={"script_id": script_id, "source_path": source_path},
         )
 
+    # --- Profiler: coverage / CPU / heap (async, 7f) ---
+
+    async def profiler_coverage_start(self) -> dict[str, Any]:
+        return await self._send_async("POST", "/profiler/coverage/start")
+
+    async def profiler_coverage_stop(self) -> dict[str, Any]:
+        return await self._send_async("POST", "/profiler/coverage/stop")
+
+    async def profiler_coverage_get(self, *, script_id: str = "") -> dict[str, Any]:
+        params: dict[str, str] = {}
+        if script_id:
+            params["script_id"] = script_id
+        return await self._send_async("GET", "/profiler/coverage/get", params=params)
+
+    async def profiler_cpu_start(self) -> dict[str, Any]:
+        return await self._send_async("POST", "/profiler/cpu/start")
+
+    async def profiler_cpu_stop(self, *, output_path: str = "") -> dict[str, Any]:
+        body: dict[str, Any] = {}
+        if output_path:
+            body["output_path"] = output_path
+        return await self._send_async("POST", "/profiler/cpu/stop", json_body=body)
+
+    async def profiler_heap_snapshot(self, *, output_path: str) -> dict[str, Any]:
+        return await self._send_async(
+            "POST", "/profiler/heap/snapshot", json_body={"output_path": output_path}
+        )
+
+    # --- Performance metrics (async, 7f) ---
+
+    async def performance_metrics(self) -> dict[str, Any]:
+        return await self._send_async("GET", "/performance/metrics")
+
 
 # ----------------------------------------------------------------------
 # Body / param builders — defined once, used by both sync and async API.

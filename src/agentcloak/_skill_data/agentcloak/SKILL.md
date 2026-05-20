@@ -143,6 +143,10 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak sourcemap lookup SCRIPT_ID --line N --column N` | Reverse lookup: compiled line:col → original source file + line:col |
 | `cloak sourcemap sources SCRIPT_ID` | List original source files in the map |
 | `cloak sourcemap source-content SCRIPT_ID SOURCE_PATH` | Read the original source text for a file in the map |
+| `cloak profiler coverage-start` / `coverage-stop` / `coverage-get` | JS code coverage: start recording, stop, get per-script function coverage (find which code ran during an operation) |
+| `cloak profiler cpu-start` / `cpu-stop` | CPU profiling: record JS execution time distribution, find hot functions (encryption/signing) |
+| `cloak profiler heap-snapshot --output PATH` | Heap memory snapshot: find keys, tokens, decrypted data in memory |
+| `cloak performance metrics` | Page performance metrics: DOM nodes, JS heap size, layout count, etc. |
 
 ### Management
 

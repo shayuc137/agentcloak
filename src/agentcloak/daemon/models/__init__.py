@@ -135,6 +135,20 @@ from agentcloak.daemon.models.lifecycle import (
     ShutdownResponse,
 )
 from agentcloak.daemon.models.pdf import PdfRequest, PdfResponse
+from agentcloak.daemon.models.performance import (
+    PerformanceMetricModel,
+    PerformanceMetricsResponse,
+)
+from agentcloak.daemon.models.profiler import (
+    CoverageFunctionModel,
+    CoverageGetResponse,
+    CoverageScriptModel,
+    CpuProfileResponse,
+    CpuStopRequest,
+    HeapSnapshotRequest,
+    HeapSnapshotResponse,
+    ProfilerOpResponse,
+)
 from agentcloak.daemon.models.route import (
     RouteAddRequest,
     RouteListResponse,
@@ -235,6 +249,11 @@ __all__ = [
     "CookiesExportResponse",
     "CookiesImportRequest",
     "CookiesImportResponse",
+    "CoverageFunctionModel",
+    "CoverageGetResponse",
+    "CoverageScriptModel",
+    "CpuProfileResponse",
+    "CpuStopRequest",
     "DebuggerEvaluateRequest",
     "DebuggerEvaluateResponse",
     "DebuggerOpResponse",
@@ -261,6 +280,8 @@ __all__ = [
     "HeadersRequest",
     "HeadersResponse",
     "HealthResponse",
+    "HeapSnapshotRequest",
+    "HeapSnapshotResponse",
     "LaunchRequest",
     "LaunchResponse",
     "NavigateRequest",
@@ -270,12 +291,15 @@ __all__ = [
     "PausedInfoResponse",
     "PdfRequest",
     "PdfResponse",
+    "PerformanceMetricModel",
+    "PerformanceMetricsResponse",
     "ProfileCreateFromCurrentRequest",
     "ProfileCreateFromCurrentResponse",
     "ProfileCreateRequest",
     "ProfileCreateResponse",
     "ProfileDeleteRequest",
     "ProfileListResponse",
+    "ProfilerOpResponse",
     "ResumeResponse",
     "RouteAddRequest",
     "RouteListResponse",

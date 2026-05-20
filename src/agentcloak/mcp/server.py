@@ -83,6 +83,8 @@ def create_server() -> object:
         navigation,
         network,
         pdf,
+        performance,
+        profiler,
         route,
         script,
         serve,
@@ -139,6 +141,9 @@ def create_server() -> object:
     streaming.register(mcp, client)
     debugger.register(mcp, client)
     sourcemap.register(mcp, client)
+    # 7f profiling / reverse-engineering aids.
+    profiler.register(mcp, client)
+    performance.register(mcp, client)
 
     return mcp
 

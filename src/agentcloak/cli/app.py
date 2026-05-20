@@ -35,7 +35,8 @@ _GROUPS = (
     "browser, do, js, tab, profile, spell, capture, frame, daemon, doctor, "
     "launch, network, fetch, bridge, cookies, skill, cdp, dialog, wait, "
     "upload, config, console, download, storage, clipboard, pdf, serve, "
-    "script, route, emulation, graphql, debugger, ws, sse"
+    "script, route, emulation, graphql, debugger, ws, sse, sourcemap, "
+    "profiler, performance"
 )
 _EPILOG = (
     f"Shortcuts (top-level, also documented under their groups):\n  {_SHORTCUTS}\n"
@@ -207,7 +208,9 @@ def _register_commands() -> None:
         launch,
         network,
         pdf_cmd,
+        performance,
         profile,
+        profiler,
         route,
         script,
         serve_cmd,
@@ -378,6 +381,16 @@ def _register_commands() -> None:
         sourcemap.app,
         name="sourcemap",
         help="Source maps: discover, parse, reverse-map compiled positions.",
+    )
+    app.add_typer(
+        profiler.app,
+        name="profiler",
+        help="Profiler: JS coverage, CPU profiling, heap snapshot.",
+    )
+    app.add_typer(
+        performance.app,
+        name="performance",
+        help="Performance: runtime metrics (DOM nodes, JS heap, layouts).",
     )
 
 

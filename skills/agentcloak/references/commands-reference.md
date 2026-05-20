@@ -640,6 +640,49 @@ Read this file when you need full parameter detail. For the common path, the qui
   - `script_id` (string, default: *required*) — Script id from '/sourcemap/list'.
   - `source_path` (string, default: *required*) — One of the paths from '/sourcemap/sources'.
 
+## Profiling
+
+### `POST /profiler/coverage/start`
+
+- CLI: `cloak profiler coverage-start`
+- MCP: `agentcloak_profiler (action=coverage_start)`
+
+### `POST /profiler/coverage/stop`
+
+- CLI: `cloak profiler coverage-stop`
+- MCP: `agentcloak_profiler (action=coverage_stop)`
+
+### `GET /profiler/coverage/get`
+
+- CLI: `cloak profiler coverage-get`
+- MCP: `agentcloak_profiler (action=coverage_get)`
+- Query:
+  - `script_id` (string, default: "") — Filter to one script id (includes per-function detail).
+
+### `POST /profiler/cpu/start`
+
+- CLI: `cloak profiler cpu-start`
+- MCP: `agentcloak_profiler (action=cpu_start)`
+
+### `POST /profiler/cpu/stop`
+
+- CLI: `cloak profiler cpu-stop`
+- MCP: `agentcloak_profiler (action=cpu_stop)`
+- Body:
+  - `output_path` (string, default: "") — Write the raw .cpuprofile JSON here. Empty = return inline.
+
+### `POST /profiler/heap/snapshot`
+
+- CLI: `cloak profiler heap-snapshot --output PATH`
+- MCP: `agentcloak_profiler (action=heap_snapshot)`
+- Body:
+  - `output_path` (string, default: *required*) — Destination file for the .heapsnapshot JSON (required).
+
+### `GET /performance/metrics`
+
+- CLI: `cloak performance metrics`
+- MCP: `agentcloak_performance`
+
 ## Profiles
 
 ### `GET /profile/list`

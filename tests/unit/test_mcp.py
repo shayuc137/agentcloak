@@ -66,8 +66,8 @@ class TestMCPServerCreation:
             # storage, clipboard, pdf, serve) + 4 from the 7b T1 batch
             # (script, route, headers, graphql) + 1 from 7b T2 (streaming)
             # + 1 from 7b T3 (debugger) + 1 from 7b T4 (sourcemap).
-            assert len(tools) == 36, (
-                f"Expected 36 tools, got {len(tools)}: {sorted(tools.keys())}"
+            assert len(tools) == 38, (
+                f"Expected 38 tools, got {len(tools)}: {sorted(tools.keys())}"
             )
         except ImportError:
             pytest.skip("mcp package not installed")
@@ -128,6 +128,8 @@ class TestMCPServerCreation:
                 "agentcloak_streaming",
                 "agentcloak_debugger",
                 "agentcloak_sourcemap",
+                "agentcloak_profiler",
+                "agentcloak_performance",
             }
             assert set(tools.keys()) == expected
         except ImportError:

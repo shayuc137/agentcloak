@@ -66,6 +66,8 @@ __all__ = [
     "render_cookies_clear_text",
     "render_cookies_export_text",
     "render_cookies_import_text",
+    "render_coverage_get_text",
+    "render_cpu_profile_text",
     "render_debugger_evaluate_text",
     "render_debugger_op_text",
     "render_debugger_search_text",
@@ -83,15 +85,18 @@ __all__ = [
     "render_graphql_text",
     "render_headers_text",
     "render_health_text",
+    "render_heap_snapshot_text",
     "render_launch_text",
     "render_navigate_text",
     "render_network_text",
     "render_paused_info_text",
     "render_pdf_text",
+    "render_performance_metrics_text",
     "render_profile_create_from_current_text",
     "render_profile_create_text",
     "render_profile_delete_text",
     "render_profile_list_text",
+    "render_profiler_op_text",
     "render_resume_text",
     "render_route_list_text",
     "render_route_op_text",
@@ -1629,3 +1634,106 @@ def render_sourcemap_source_content_text(data: dict[str, Any]) -> str:
     if not data.get("available"):
         return "no embedded source content"
     return str(data.get("content", "") or "")
+
+
+# ---------------------------------------------------------------------------
+# Profiler: coverage / CPU / heap (7f)
+# ---------------------------------------------------------------------------
+
+
+def render_profiler_op_text(data: dict[str, Any]) -> str:
+    """Render a profiler lifecycle op (coverage/cpu start/stop) acknowledgement."""
+    if data.get("started"):
+        return "profiler started"
+    if data.get("stopped"):
+        return "profiler stopped"
+    return "ok"
+
+
+def render_coverage_get_text(data: dict[str, Any]) -> str:
+    """Render a precise-coverage summary, most-covered script first.
+
+    Header counts the totals; each line is ``<url>: <covered>/<total> functions
+    covered (<pct>%)``. The fully-covered scripts at the top are the code paths
+    the triggered action actually exercised — usually where the crypto lives.
+    """
+    scripts: list[Any] = list(data.get("scripts") or [])
+    script_count = int(data.get("script_count", 0) or 0)
+    funcs_total = int(data.get("functions_total", 0) or 0)
+    if not scripts:
+        return "no coverage data (start coverage, trigger an action, then get)"
+
+    header = (
+        f"Coverage: {script_count} script{'s' if script_count != 1 else ''}, "
+        f"{funcs_total} function{'s' if funcs_total != 1 else ''}"
+    )
+    lines: list[str] = [header]
+    for raw in scripts:
+        if not isinstance(raw, dict):
+            continue
+        s = _as_dict(raw)
+        url = str(s.get("url", "") or "") or f"<script {s.get('script_id', '')}>"
+        covered = int(s.get("functions_covered", 0) or 0)
+        total = int(s.get("functions_total", 0) or 0)
+        pct = float(s.get("coverage_pct", 0.0) or 0.0)
+        lines.append(f"  {url}: {covered}/{total} functions covered ({pct}%)")
+    return "\n".join(lines)
+
+
+def render_cpu_profile_text(data: dict[str, Any]) -> str:
+    """Render a CPU-profile summary — the hottest functions by self time.
+
+    ``<hits> <name> (<url>:<line>)`` per line, most CPU-hungry first. A high
+    sampler hit-count concentrated in one function is the classic signature of
+    crypto/signing work. The header notes the sample count and duration; the
+    saved file path (if any) closes the listing.
+    """
+    top: list[Any] = list(data.get("top_functions") or [])
+    samples = int(data.get("sample_count", 0) or 0)
+    duration_us = int(data.get("duration_us", 0) or 0)
+    path = str(data.get("path", "") or "")
+
+    header = f"CPU profile: {samples} samples over {duration_us / 1000:.0f}ms"
+    if not top:
+        tail = f"\nsaved to {path}" if path else ""
+        return f"{header} (no function samples){tail}"
+
+    lines: list[str] = [header]
+    for raw in top:
+        if not isinstance(raw, dict):
+            continue
+        fn = _as_dict(raw)
+        name = str(fn.get("name", "") or "(anonymous)")
+        url = str(fn.get("url", "") or "")
+        line = int(fn.get("line", 0) or 0)
+        hits = int(fn.get("hits", 0) or 0)
+        loc = f" ({url}:{line})" if url else ""
+        lines.append(f"  {hits} {name}{loc}")
+    if path:
+        lines.append(f"saved to {path}")
+    return "\n".join(lines)
+
+
+def render_heap_snapshot_text(data: dict[str, Any]) -> str:
+    """Render ``/profiler/heap/snapshot`` — the saved file path (pipe-friendly)."""
+    path = str(data.get("path", "") or "")
+    size = int(data.get("size", 0) or 0)
+    if not path:
+        return "heap snapshot failed (no data)"
+    return f"{path} ({size} bytes)"
+
+
+def render_performance_metrics_text(data: dict[str, Any]) -> str:
+    """Render ``/performance/metrics`` — one ``<name> = <value>`` per line."""
+    metrics: list[Any] = list(data.get("metrics") or [])
+    if not metrics:
+        return "no metrics"
+    lines: list[str] = []
+    for raw in metrics:
+        if not isinstance(raw, dict):
+            continue
+        m = _as_dict(raw)
+        name = str(m.get("name", "") or "")
+        value = m.get("value", 0)
+        lines.append(f"{name} = {value}")
+    return "\n".join(lines)

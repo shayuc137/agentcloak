@@ -54,7 +54,7 @@ For MCP, point your client config at `uvx`:
 
 ### System Dependencies (headless Linux only)
 
-CloakBrowser runs in headless mode by default in v0.2.0 — no system dependencies needed. If you switch to headed mode on a server without a display (`headless=false`), Xvfb is auto-started. The doctor prints the right install command per distro:
+CloakBrowser runs in headless mode by default — no system dependencies needed. If you switch to headed mode on a server without a display (`headless=false`), Xvfb is auto-started. The doctor prints the right install command per distro:
 
 | Distro | Install |
 |--------|---------|
@@ -74,6 +74,28 @@ cloak doctor --fix --sudo  # diagnose + auto-fix + execute system command
 ```
 
 Checks: Python version, PATH, required packages, CloakBrowser binary, Playwright system libs (Linux), Xvfb (when relevant), data directory, daemon connectivity.
+
+## Install the Skill to Your Agent Platform
+
+Installing the CLI doesn't make agents read this skill — the `SKILL.md` + `references/` bundle has to live in the agent platform's skills directory. `cloak skill install` handles that:
+
+```bash
+cloak skill install                      # interactive — lists detected platforms, pick one or all
+cloak skill install --platform claude    # Claude Code (~/.claude/skills/agentcloak/)
+cloak skill install --platform all       # every detected platform
+cloak skill install --path ./my/skills/agentcloak  # custom location (forks, network shares)
+```
+
+Platform aliases: `claude`, `codex` (global `~/.codex`), `codex-project` (`./.codex`), `cursor` (`./.cursor`), `opencode` (`./.opencode`), `all`.
+
+**How it works:** the bundle is copied once to a canonical path (`~/.agentcloak/skills/agentcloak/`), and each platform directory is **symlinked** at it. Upgrading the CLI then only needs:
+
+```bash
+cloak skill update      # refresh the canonical copy; symlinks pick it up for free
+cloak skill uninstall   # remove links from every known platform (--remove-canonical also deletes the source)
+```
+
+**Windows fallback:** when symlinks aren't permitted (Developer Mode off), the install falls back to a full copy and prints `(copy)` — re-run `cloak skill install` after each upgrade since copies don't auto-update.
 
 ## How It Works
 
@@ -114,7 +136,7 @@ humanize = true            # CloakBrowser humanize layer — adds Bezier mouse c
                            # Disable globally with AGENTCLOAK_HUMANIZE=false or
                            # ``cloak daemon start --no-humanize`` when bulk form
                            # fill speed matters more than typing cadence.
-headless = true            # headless mode (v0.2.0 default); set false for max stealth
+headless = true            # headless mode (default); set false for max stealth
 idle_timeout_min = 0       # auto-shutdown after idle (0 = disabled)
 stop_on_exit = false       # stop daemon when CLI exits
 log_level = "warning"      # debug | info | warning | error
@@ -237,12 +259,4 @@ agentcloak doctor --fix
 
 The doctor knows about per-distro Xvfb packages, Playwright system libs, the CloakBrowser binary, PATH issues, and the daemon's liveness. It works in-process so it doesn't need the daemon to be running.
 
-Common error → action map:
-
-| Error from a tool/CLI | First step |
-|----------------------|-----------|
-| `daemon_unreachable` | `agentcloak doctor --fix` to find out why the daemon won't come up |
-| `daemon_auto_start_failed` | Same — doctor in-process diagnosis tells you what's missing |
-| `stealth_not_installed` | The cloakbrowser pip dep didn't install correctly — `pip install agentcloak --upgrade` |
-| `xvfb_not_found` | Either install Xvfb (doctor prints the per-distro command) or set `headless = true` |
-| `daemon_timeout` | The daemon is up but slow — increase `AGENTCLOAK_HTTP_CLIENT_TIMEOUT` |
+For the full error-code → recovery table (`daemon_unreachable`, `stealth_not_installed`, `xvfb_not_found`, `daemon_timeout`, and the rest), see `references/troubleshooting.md`.

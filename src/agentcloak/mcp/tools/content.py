@@ -35,7 +35,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         """Execute JavaScript in the browser page context. Can modify page state.
 
         By default runs in the page's main world, so page globals (jQuery, Vue,
-        React, etc.) are accessible. Use world='utility' for an isolated context.
+        React, etc.) are accessible. Use world='isolated' for an isolated context.
 
         Note: if evaluate triggers async requests (AJAX/fetch), those requests
         are captured asynchronously. Use agentcloak_network or capture tools
@@ -45,7 +45,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         Args:
             js: JavaScript code to evaluate (runs in page context with full DOM access)
             world: Execution context — 'main' (page globals visible)
-                or 'utility' (isolated)
+                or 'isolated' (isolated)
             max_return_size: Max bytes of serialized result to return
                 (default from config.browser.max_return_size). Large objects are
                 truncated with a [truncated] marker.

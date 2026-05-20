@@ -29,6 +29,25 @@ cloak daemon start -b   # daemon on port 18765
 cloak bridge start -b   # bridge process relays between extension and daemon
 ```
 
+### Token Authentication
+
+Localhost connections are trusted automatically. For **remote** (non-localhost) connections the extension must present a bearer token:
+
+```bash
+cloak bridge token            # print the persistent token (stored in ~/.agentcloak/config.toml [bridge] token)
+cloak bridge token --reset    # rotate it — already-paired extensions must be re-configured
+```
+
+Paste the token into the Chrome Extension's Options page to authorise its WebSocket connection. `--reset` severs any currently-connected extension on its next reconnect.
+
+### Diagnose Connection Problems
+
+```bash
+cloak bridge doctor   # checks bridge config, extension files, and the WS toolchain (starlette/websockets/uvicorn)
+```
+
+Run this first when the extension can't connect — it reports the bridge port, candidate daemon list, whether the extension files are present, and whether the Python WS dependencies are installed.
+
 ## Usage
 
 Once connected, all regular commands work on the real browser:
@@ -94,7 +113,8 @@ Export cookies from the real browser for use in scripts:
 ```bash
 cloak cookies export                    # export all cookies as JSON
 cloak cookies export --url "github.com" # export for specific domain
+cloak cookies export --output cookies.json  # write to file instead of stdout
 
-# Import currently has no CLI wrapper — use the MCP tool agentcloak_cookies
-# with action=import, or POST to daemon /cookies/import directly.
+# Import back into a browser session (preserves httpOnly):
+cloak cookies import -c '[{"name":"token","value":"abc","domain":".example.com","path":"/"}]'
 ```

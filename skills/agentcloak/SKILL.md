@@ -18,11 +18,29 @@ Observe-then-act. Snapshot first because `[N]` refs are only valid for the curre
 1. **Navigate**: `cloak navigate "https://example.com" --snap` -- navigate and get snapshot in one step
 2. **Observe**: `cloak snapshot` -- get a11y tree with `[N]` element refs (or use `--snap` on navigate/action)
 3. **Act**: `cloak click 5` or `cloak fill 3 "query"` (positional `[N]` is shorter than `--index N`)
-4. **Handle feedback**: action stdout shows proactive state (navigation, pending_requests, dialog)
+4. **Handle feedback**: actions print proactive state inline after the confirmation line — `pending_requests`, `dialog`, `navigation`, `download`, `current_value` — whenever relevant. When `Error: blocked by dialog` shows on stderr, run `cloak dialog accept/dismiss` before retrying.
 5. **Re-observe if needed**: when navigation occurred or DOM changed, snapshot again
 6. **Repeat** steps 2-5
 
-Actions emit `pending_requests`, `dialog`, `navigation`, `download`, `current_value` inline after the confirmation line when relevant. When `Error: blocked by dialog` appears on stderr, handle with `cloak dialog accept/dismiss` before retrying.
+**What you'll see** (default text mode — stdout is the data, no JSON parsing):
+
+```text
+$ cloak navigate https://example.com
+https://example.com/ | Example Domain
+
+$ cloak snapshot
+# Example Domain | https://example.com/ | 8 nodes (1 interactive) | seq=2
+  heading "Example Domain" level=1
+  paragraph "This domain is for use in illustrative examples in documents."
+  [1] link "Learn more" href="https://iana.org/domains/example"
+
+$ cloak click 1
+clicked [1]
+  navigation: https://iana.org/...
+
+$ cloak js evaluate "document.title"
+Example Domain
+```
 
 ## Element Addressing
 
@@ -61,7 +79,7 @@ Snapshot modes: `compact` (default, interactive + containers only, capped at 80 
 | `cloak snapshot --offset 50` | Paginate from 50th element |
 | `cloak snapshot --frames` | Include iframe content |
 | `cloak snapshot --diff` | Mark `[+]` added, `[~]` changed vs previous |
-| `cloak screenshot` | Take page screenshot (saves file, stdout = path) |
+| `cloak screenshot [--output FILE]` | Screenshot to file, stdout = path (`--full-page`, `--format jpeg\|png`, `--quality N`; see `recipes.md` for format choice) |
 | `cloak resume` | Session state: URL, tabs, recent actions |
 
 ### Interaction
@@ -70,20 +88,20 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 
 | Command | Purpose |
 |---------|---------|
-| `cloak click N` | Click element |
-| `cloak fill N "value"` | Clear and set input value (fast when `humanize=false`; CloakBrowser intercepts under `humanize=true` and replays as click + select-all + character-by-character typing — multi-second per field) |
-| `cloak type N "value"` | Type character by character (always uses humanize timing when enabled; pick this when you need anti-detection cadence) |
-| `cloak press Enter` | Press key (Enter, Tab, Escape, Backspace, ArrowDown, Space...) |
+| `cloak click N` | Click element (`--x/--y` coordinate fallback when no `[N]` ref; `--button right`; `--click-count 2` for double-click) |
+| `cloak fill N "value"` | Clear and set input value — fast path, but slow under humanize (see Gotchas) |
+| `cloak type N "value"` | Type character by character; pick this when you want the anti-detection typing cadence |
+| `cloak press Enter` | Press key (Enter, Tab, Escape, Backspace, ArrowDown, Space...; `--target N` focuses element [N] first) |
 | `cloak press "Control+a"` | Combo key (Playwright `+` syntax) |
-| `cloak scroll down` | Scroll page |
+| `cloak scroll down` | Scroll page (`--amount N` pixels, default 300; `--index N` scrolls element into view) |
 | `cloak hover N` | Hover over element |
-| `cloak select N --value "opt"` | Select dropdown option |
+| `cloak select N --value "opt"` | Select dropdown option (`--label "text"` to match by visible text) |
 | `cloak keydown/keyup Shift` | Hold/release key |
 | `cloak dialog accept` / `dismiss` | Handle confirm/prompt dialog |
 | `cloak wait --selector ".results"` | Wait for element / URL / JS condition / time |
 | `cloak upload --index N --file path` | Upload file to input element |
 | `cloak frame focus --name "x"` | Switch to iframe (`--main` to return) |
-| Add `--snap` to any action | Get compact snapshot with result (saves a round trip) |
+| `--snap` (flag on any action) | Attach a compact snapshot to the result — see Smart Behaviors |
 
 ### Content & Network
 
@@ -92,7 +110,7 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak js evaluate "expression"` | Execute JS in page |
 | `cloak fetch URL` | HTTP GET with browser cookies |
 | `cloak fetch URL --method POST --body '{...}'` | HTTP POST with cookies |
-| `cloak network --since N` | Recent network requests (filter by seq after `--since N`) |
+| `cloak network --since N` | Recent network requests (filter by seq; `--since last_action` returns only requests after the most recent action) |
 | `cloak capture start` / `stop` / `export` | Record and export network traffic |
 
 ### Management
@@ -100,7 +118,7 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | Command | Purpose |
 |---------|---------|
 | `cloak launch --tier cloak\|playwright\|remote_bridge` | Hot-switch the daemon's browser tier (no restart) |
-| `cloak profile list` / `create` / `launch` / `delete` | Browser profile management |
+| `cloak profile list` / `create` / `launch` / `delete` | Browser profile management (`create --from-current` snapshots the live session's cookies) |
 | `cloak tab list` / `new` / `close` / `switch` | Tab management |
 | `cloak spell list` / `info` / `run NAME` / `scaffold` | Spells (reusable site automation) |
 | `cloak cookies export [--url URL]` / `import -c '[...]'` | Export/import cookies (text output is `domain \| name=value`; pass `--url` to scope to one site — without it every site's cookies are returned, with import preserving httpOnly) |
@@ -113,45 +131,14 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak config unset KEY` | Clear a key so it falls back to its default |
 | `cloak config keys` | List every settable dot-notation key |
 | `cloak version` | Show agentcloak version (same value as `cloak --version`) |
-| `cloak doctor` | Self-check diagnostics |
-| `cloak bridge start` / `claim` / `finalize` | RemoteBridge (real browser) |
+| `cloak doctor` | Self-check diagnostics (`--detail` for one line per probe; default is a 2-line summary + runtime status) |
+| `cloak skill install` / `update` / `uninstall` | Install this skill bundle into an agent platform (`--platform claude\|codex\|cursor\|opencode\|all`, `--path DIR`; see `getting-started.md`) |
+| `cloak bridge start` / `claim` / `finalize` / `doctor` | RemoteBridge (real browser); `bridge doctor` checks the extension + WS toolchain |
 | `cloak bridge token` / `--reset` | Show or rotate the persistent bridge auth token |
 
 ## Response Convention
 
-CLI is **text-first**. stdout is the answer; no JSON parsing required.
-
-| What you see | Where |
-|--------------|-------|
-| The useful data (URL, snapshot tree, JS result, ...) | stdout |
-| Hints, warnings, errors | stderr |
-| Exit code 0 = success, 1 = failure, 2 = bad usage | shell `$?` |
-
-**Examples (default text mode):**
-
-```text
-$ cloak navigate https://example.com
-https://example.com/ | Example Domain
-
-$ cloak snapshot
-# Example Domain | https://example.com/ | 8 nodes (1 interactive) | seq=2
-  heading "Example Domain" level=1
-  paragraph "This domain is for use in illustrative examples in documents."
-  [1] link "Learn more" href="https://iana.org/domains/example"
-
-$ cloak click 1
-clicked [1]
-  navigation: https://iana.org/...
-
-$ cloak js evaluate "document.title"
-Example Domain
-
-$ cloak doctor
-all 17 checks passed | agentcloak 0.2.3
-CloakBrowser 0.3.27 | headless | humanize | no proxy | no profile (ephemeral)
-```
-
-**Errors go to stderr** with a recovery hint:
+CLI is **text-first**: stdout is the answer (no JSON parsing required), hints/warnings/errors go to stderr, and `$?` is `0` success / `1` failure / `2` bad usage. Errors carry a recovery hint:
 
 ```text
 $ cloak click 99
@@ -159,55 +146,62 @@ Error: Element [99] not in selector_map (4 entries)
   -> run 'snapshot' to refresh the selector_map, or re-snapshot if the page changed
 ```
 
-**`--json` flag** restores the full envelope for scripting / backwards compatibility:
-
-```bash
-cloak --json snapshot | jq '.data.tree_text'
-# Or via env var (handy for CI / wrappers)
-AGENTCLOAK_OUTPUT=json cloak snapshot | jq -r '.data.tree_text'
-```
-
-JSON envelope shape (only when `--json` is active):
-
-```json
-{"ok": true, "seq": 3, "data": {...}}
-{"ok": false, "error": "element_not_found", "hint": "...", "action": "..."}
-```
-
-**MCP tools** return the same human/agent-readable text the CLI prints (rendered locally via `core/text_renderers`). `screenshot` returns an `ImageContent` so multimodal LLMs read pixels directly; errors stay as the three-field JSON envelope so failure handling matches the CLI `--json` contract.
+For `jq` scripting, `--json` (or `AGENTCLOAK_OUTPUT=json`) restores the legacy envelope — shape and MCP rendering notes in `references/troubleshooting.md`.
 
 ## Smart Behaviors
 
 These work automatically:
 - **Stale ref auto-retry**: `element_not_found` triggers one automatic re-snapshot + retry
-- **`--snap`**: add to any action to get a compact snapshot back, saving a round trip. Output starts with `# Title | url | N nodes`
-- **`--snap` on navigate**: `cloak navigate URL --snap` returns page + a11y tree in one call
+- **`--snap`**: add to `navigate` or any action to get a compact snapshot back in the same call (output starts with `# Title | url | N nodes`), saving a round trip
 - **`$N.path` batch refs**: in `--calls-file` batch mode, reference prior results (e.g. `"$0.url"`)
 - **Tab group**: RemoteBridge auto-groups agent tabs under blue "agentcloak" Chrome tab group
 
+## Common Patterns
+
+**Wait before screenshot** (fonts, SPA data, dynamic content settle before the capture):
+
+```bash
+cloak wait --load networkidle
+cloak wait --js "document.fonts.ready.then(() => true)"
+cloak screenshot --format png
+```
+
+**Screenshot format**: `jpeg` (default, ~4-10x smaller — observe-act loops, layout checks) vs `png` (lossless — UI design, OCR, vision models). MCP defaults to quality 50.
+
+**Wait variants**: `--selector ".el"` | `--url "**/path"` | `--load networkidle` | `--js "expr"` | `--ms N` | add `--state hidden` to wait for disappearance. `--js` must return a truthy value — wrap Promises: `.then(() => true)`.
+
+**Coordinate fallback**: when an element has no `[N]` ref, click by position — `cloak click --x 150 --y 300`.
+
+More multi-step recipes in `references/recipes.md`.
+
+## Gotchas
+
+Counter-intuitive behaviors worth knowing before you hit them:
+
+- **`fill` is slow under humanize**: humanize is on by default, so CloakBrowser intercepts `fill` and replays it as click + select-all + character-by-character typing (~3s for a 30-char field). For bulk speed disable humanize globally (`AGENTCLOAK_HUMANIZE=false` or `cloak daemon start --no-humanize`); there's no per-action flag — switching needs a daemon restart.
+- **`[N]` refs expire**: they're only valid for the current page state and change on navigation/DOM update — re-snapshot for fresh refs.
+- **Truncated refs still work**: compact mode caps printed output at 80 nodes, but you can still `cloak click N` on a ref that was truncated from the tree — the daemon keeps the full mapping.
+- **`--js` needs truthy**: a `wait --js` expression that returns `undefined`/`false` never satisfies. Wrap Promises with `.then(() => true)`.
+- **`networkidle` can hang**: on long-polling / streaming pages `cloak wait --load networkidle` may never settle — prefer `--selector` or `--js` there.
+
 ## Key Principles
 
-- **Snapshot before acting**: `[N]` refs are only valid for current page state
-- **Read stderr / inline feedback**: `pending_requests`, `dialog`, `navigation` lines follow the action confirmation
-- **Handle dialogs immediately**: they block everything until dismissed
-- **Follow error hints**: stderr `Error: ... -> action` tells you what to do next
-- **Compact is the default**: `cloak snapshot` already runs in compact mode (interactive + named containers), capped at 80 nodes — pass `--limit 0` to disable the cap or `--limit 50` for a tighter budget
-- **Large pages**: 100+ elements blow up token budgets. Default compact + `--limit 80` (~1.8K tokens), then `--focus N` or `--offset N` to explore specific areas. Action targets work even if truncated from the tree output
-- **Timeouts**: navigation defaults to 30s, actions to 30s. For slow pages or large uploads, pass `--timeout 60` on `navigate` or `wait`. If `navigation_timeout` errors persist, set `AGENTCLOAK_NAVIGATION_TIMEOUT=60` globally
+- **Timeouts**: navigation and actions both default to 30s. For slow pages or large uploads, pass `--timeout 60` on `navigate` or `wait`. If `navigation_timeout` errors persist, set `AGENTCLOAK_NAVIGATION_TIMEOUT=60` globally
 - **Headless by default**: the browser runs headless. For stronger anti-detection, start headed without changing config: `cloak daemon stop && cloak daemon start --headed -b`. Or set `headless = false` in `~/.agentcloak/config.toml` (or `AGENTCLOAK_HEADLESS=false`). Xvfb auto-starts on headless Linux servers
 - **Daemon lifecycle**: auto-starts on first command, stays running. `cloak launch --tier X` hot-switches browser tier without restart. Changing headless/profile requires `cloak daemon stop` + `cloak daemon start`. `cloak daemon status` shows current state
-- **`fill` vs `type` under humanize**: humanize is on by default (CloakBrowser preset `"default"`, ~70ms/char typing delay). `fill` reaches for raw `page.fill()` when humanize is off (sub-50ms write) but CloakBrowser intercepts it under humanize and replays as `click → Ctrl+A → Backspace → typed character-by-character` — a 30-char field crosses ~3 seconds. Pick `fill` for speed and disable humanize globally (`AGENTCLOAK_HUMANIZE=false` or `cloak daemon start --no-humanize`); pick `type` when the slow cadence is the point (anti-detection forms, careful preset). There's no per-action humanize flag today — switching requires a daemon restart
-- **Scripting / piping**: add `--json` for the legacy envelope shape when piping to jq, or set `AGENTCLOAK_OUTPUT=json` for the same effect
+
+For token-saving command choices and error-recovery sequences, read `references/optimization.md`.
 
 ## References
 
 Read these when you need deeper guidance:
 
-| Reference | When to read |
-|-----------|-------------|
-| `references/getting-started.md` | First-time setup, installation, configuration |
-| `references/recipes.md` | Usage examples: search, login, dialog, upload, iframe, large pages |
-| `references/data-and-spells.md` | Capture traffic, run spells, batch operations, fetch with cookies |
-| `references/remote-bridge.md` | Operate user's real Chrome browser via extension |
-| `references/troubleshooting.md` | Error recovery, dialog handling, daemon issues |
-| `references/commands-reference.md` | Full daemon route catalog with parameters, CLI / MCP bindings (auto-generated from OpenAPI spec) |
+| Reference | Trigger signal — read it when… |
+|-----------|-------------------------------|
+| `references/getting-started.md` | first run, install, `cloak skill install`, config keys/env vars |
+| `references/recipes.md` | you need a multi-step sequence (search, login+save, dialog, upload, iframe, large-page exploration, wait-then-screenshot) |
+| `references/optimization.md` | you want the cheapest command for a goal, or an error keeps recurring and you need a recovery sequence |
+| `references/data-and-spells.md` | capturing traffic, running/writing spells, batch `--calls-file`, fetch with custom headers |
+| `references/remote-bridge.md` | operating the user's real Chrome via the extension (token auth, claim, finalize, `bridge doctor`) |
+| `references/troubleshooting.md` | you see a `Error:` on stderr and the inline hint isn't enough, or the daemon won't start; also the `--json` envelope shape |
+| `references/commands-reference.md` | you need an exact daemon parameter / type — full route catalog with CLI / MCP bindings (auto-generated from the OpenAPI spec) |

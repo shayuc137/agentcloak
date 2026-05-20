@@ -8,7 +8,7 @@ cloak js evaluate "document.querySelectorAll('a').length"
 cloak js evaluate "JSON.stringify(window.__NEXT_DATA__)" # extract Next.js data
 ```
 
-Use `--world utility` for isolated context (no page globals pollution).
+Use `--world isolated` for an isolated context (no page globals pollution). Only `main` (default) and `isolated` are valid.
 
 ## HTTP Fetch with Browser Cookies
 
@@ -17,9 +17,11 @@ Fetch URLs using the browser's authenticated session:
 ```bash
 cloak fetch "https://api.example.com/data"
 cloak fetch "https://api.example.com/submit" --method POST --body '{"key": "value"}'
+cloak fetch "https://api.example.com/data" -H "Authorization: Bearer xyz" -H "X-Api-Key: k"
+cloak fetch "https://api.example.com/report.csv" --output report.csv
 ```
 
-Cookies and headers are synced from the browser session automatically.
+Cookies and the browser user agent are synced from the session automatically. Add custom headers with `--header/-H "Key: Value"` (repeatable — they layer on top of the synced ones). The response body prints to stdout; `--output/-o path` writes it to a file instead (status line still goes to stderr).
 
 ## Network Capture
 
@@ -30,13 +32,13 @@ cloak capture start
 cloak navigate "https://api-heavy-site.com"
 # interact with the site...
 cloak capture stop
-cloak capture export --format har -o traffic.har
-cloak capture analyze    # pattern detection: endpoint clustering, auth detection
-cloak capture replay "https://api.example.com/data"  # replay a captured request (URL is positional, --method GET default)
+cloak capture export --format har -o traffic.har   # --format har|json, --output/-o writes to file (HAR can be large)
+cloak capture analyze --domain api.example.com  # pattern detection; --domain scopes to one host (omit for all)
+cloak capture replay "https://api.example.com/data" --method POST  # replay a captured request (URL positional, --method/-m default GET)
 cloak capture clear      # clear recorded data
 ```
 
-The analyzer detects: path parameters, endpoint clusters, authentication methods, and request schemas.
+The analyzer detects: path parameters, endpoint clusters, authentication methods, and request schemas. `analyze --domain` narrows the report to a single host when capture spans several. `export` without `--output` streams to stdout; with `-o` it writes the raw HAR/JSON to disk.
 
 ## Spells (Reusable Site Automation)
 
@@ -44,11 +46,13 @@ Spells are pre-built commands for specific websites. Think of them as "refined r
 
 ```bash
 cloak spell list                        # see available spells
-cloak spell info httpbin/headers        # show spell details
+cloak spell info httpbin/headers        # show spell details (lists any args)
 cloak spell run httpbin/headers         # execute a spell
-cloak spell run github/repos --arg owner=torvalds  # with arguments
+cloak spell run mysite/search query=shoes page=2  # args are positional key=value (no --arg flag)
 cloak spell scaffold mysite             # generate template for a new spell
 ```
+
+Built-in spells are minimal — only `httpbin/headers` and `example/title` ship by default. `cloak spell info <site/name>` shows whether a spell takes arguments; pass them as positional `key=value` pairs (`cloak spell run` has no `--arg` flag).
 
 ### Creating Spells
 
@@ -90,7 +94,7 @@ Execute multiple actions in one call with `--calls-file`:
 echo '[
   {"action": "fill", "target": "3", "text": "hello"},
   {"action": "click", "target": "5"},
-  {"action": "wait", "selector": ".result"}
+  {"action": "wait", "condition": "selector", "value": ".result"}
 ]' > batch.json
 cloak do batch --calls-file batch.json
 ```

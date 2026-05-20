@@ -21,6 +21,10 @@ Error: Element [99] not in selector_map (4 entries)
 | `wait_timeout` | Wait condition not met in time | Increase `--timeout`, or verify selector/condition |
 | `frame_not_found` | Frame name/URL doesn't match | `cloak frame list` to see available frames |
 | `daemon_not_running` / `daemon_unreachable` | Daemon crashed or wasn't started | Should auto-start; if not, run `cloak daemon start -b` (or `cloak doctor --fix`) |
+| `daemon_auto_start_failed` | Daemon couldn't come up on first command | `cloak doctor --fix` — its in-process diagnosis reports what's missing |
+| `daemon_timeout` | Daemon is up but slow to respond | Increase `AGENTCLOAK_HTTP_CLIENT_TIMEOUT` |
+| `stealth_not_installed` | The cloakbrowser pip dep didn't install correctly | `pip install agentcloak --upgrade` (or `cloak doctor --fix`) |
+| `xvfb_not_found` | Headed mode on a headless Linux box without Xvfb | Install Xvfb (doctor prints the per-distro command) or set `headless = true` |
 | `spell_no_browser` | Spell needs browser but none launched | Navigate to a page first, then run the spell |
 | `spell_no_handler` | Spell definition is broken | Check the spell code |
 

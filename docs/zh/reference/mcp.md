@@ -273,6 +273,74 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 36 个工具。已包含在�
 | `url_pattern` | `str` | `""` | URL 子串匹配（仅 claim） |
 | `mode` | `str` | `close` | finalize 模式：`close`、`handoff` 或 `deliverable` |
 
+## 控制台、下载与存储
+
+### agentcloak_console
+
+读取浏览器控制台输出或清空缓冲区（console.log/warn/error 及未捕获异常）。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `action` | `str` | `show` | `show` 读取消息，`clear` 清空缓冲区 |
+| `since` | `int` | `0` | 只返回 seq > since 的条目（分页） |
+| `limit` | `int` | `0` | 最多返回条数（0 = 全部） |
+| `level` | `str` | `""` | 按级别过滤：`log`、`warn`、`error`、`info`、`debug` |
+
+### agentcloak_download
+
+下载文件——直接获取 URL 或捕获点击触发的下载。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `action` | `str` | `url` | `url`（直接下载）、`wait`（等点击触发下载）、`list`（列出已下载） |
+| `url` | `str` | `""` | 目标 URL（仅 action=url，受 SSRF 检查） |
+| `output_dir` | `str` | `""` | 保存目录（daemon 主机路径） |
+| `timeout` | `float` | `0.0` | 等待点击触发下载的最大秒数 |
+
+### agentcloak_storage
+
+读写页面的 localStorage / sessionStorage。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `action` | `str` | `get` | `get`、`set`、`delete` 或 `clear` |
+| `type` | `str` | `local` | `local`（localStorage）或 `session`（sessionStorage） |
+| `key` | `str` | `""` | 要读写/删除的键（省略则 get 全部或 clear） |
+| `value` | `str` | `""` | 要写入的值（仅 action=set） |
+
+### agentcloak_clipboard
+
+读写系统剪贴板。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `action` | `str` | `read` | `read` 或 `write` |
+| `text` | `str` | `""` | 要写入的文本（仅 action=write） |
+
+注意：clipboard-read 需要 headed 浏览器或 RemoteBridge（Chromium headless 模式下阻止读取）。
+
+### agentcloak_pdf
+
+将当前页面导出为 PDF 文件（仅 headless Chromium 支持）。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `output_path` | `str` | 必填 | daemon 主机上的保存路径 |
+| `format` | `str` | `A4` | 纸张格式（A4、Letter、Legal 等） |
+| `landscape` | `bool` | `false` | 横向排版 |
+| `scale` | `float` | `0.0` | 缩放比例（0 = 浏览器默认） |
+| `page_ranges` | `str` | `""` | 如 `"1-3, 5"` |
+
+### agentcloak_serve
+
+将本地目录通过 HTTP 提供访问，让你能导航到本地文件（`file://` 被安全层拦截）。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `action` | `str` | `status` | `start`、`stop` 或 `status` |
+| `directory` | `str` | `""` | 要服务的目录（仅 action=start） |
+| `port` | `int` | `0` | 端口号（0 = 自动分配） |
+
 ## 网页逆向
 
 基于 CDP 的工具，用于检视和操纵页面内部。每个 manager 在首次使用时才惰性 enable 对应的 CDP 域——从不做逆向的会话零开销——且三种后端（CloakBrowser、Playwright、RemoteBridge）全部通用。

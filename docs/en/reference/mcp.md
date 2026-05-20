@@ -274,6 +274,74 @@ Manage remote browser tabs via Chrome Extension bridge.
 | `url_pattern` | `str` | `""` | URL substring match (claim only) |
 | `mode` | `str` | `close` | Finalize mode: `close`, `handoff`, or `deliverable` |
 
+## Console, downloads & storage
+
+### agentcloak_console
+
+Read captured browser console output or clear the buffer (console.log/warn/error and uncaught exceptions).
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `action` | `str` | `show` | `show` to read messages, `clear` to empty the buffer |
+| `since` | `int` | `0` | Only return entries with seq > since (pagination) |
+| `limit` | `int` | `0` | Max entries to return (0 = all available) |
+| `level` | `str` | `""` | Filter by level: `log`, `warn`, `error`, `info`, `debug` |
+
+### agentcloak_download
+
+Download files — fetch a URL directly or capture a click-triggered download.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `action` | `str` | `url` | `url` (direct fetch), `wait` (click-triggered), or `list` |
+| `url` | `str` | `""` | Target URL (action=url only, SSRF-checked) |
+| `output_dir` | `str` | `""` | Directory to save into (daemon host) |
+| `timeout` | `float` | `0.0` | Max wait seconds for click-triggered download |
+
+### agentcloak_storage
+
+Read or write the page's localStorage / sessionStorage.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `action` | `str` | `get` | `get`, `set`, `delete`, or `clear` |
+| `type` | `str` | `local` | `local` (localStorage) or `session` (sessionStorage) |
+| `key` | `str` | `""` | Key to read/write/delete (omit for get-all or clear) |
+| `value` | `str` | `""` | Value to write (action=set only) |
+
+### agentcloak_clipboard
+
+Read or write the system clipboard.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `action` | `str` | `read` | `read` or `write` |
+| `text` | `str` | `""` | Text to write (action=write only) |
+
+Note: clipboard-read requires a headed browser or RemoteBridge (Chromium blocks it in headless).
+
+### agentcloak_pdf
+
+Export the current page to a PDF file (headless Chromium only).
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `output_path` | `str` | required | File path on daemon host |
+| `format` | `str` | `A4` | Paper format (A4, Letter, Legal, etc.) |
+| `landscape` | `bool` | `false` | Landscape orientation |
+| `scale` | `float` | `0.0` | Scale factor (0 = browser default) |
+| `page_ranges` | `str` | `""` | e.g. `"1-3, 5"` |
+
+### agentcloak_serve
+
+Serve a local directory over HTTP so you can navigate to local files (`file://` is blocked by security).
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `action` | `str` | `status` | `start`, `stop`, or `status` |
+| `directory` | `str` | `""` | Directory to serve (action=start only) |
+| `port` | `int` | `0` | Port (0 = auto-assign) |
+
 ## Reverse engineering
 
 CDP-backed tools for inspecting and manipulating page internals. Each manager

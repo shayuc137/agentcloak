@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -19,7 +20,11 @@ __all__ = ["discover_spells"]
 
 log = structlog.get_logger()
 
-_USER_SPELL_DIR = Path.home() / ".config" / "agentcloak" / "spells"
+_USER_SPELL_DIR = (
+    Path(os.environ["APPDATA"]) / "agentcloak" / "spells"
+    if sys.platform == "win32" and "APPDATA" in os.environ
+    else Path.home() / ".config" / "agentcloak" / "spells"
+)
 
 
 def _import_module_from_path(name: str, path: Path) -> ModuleType | None:

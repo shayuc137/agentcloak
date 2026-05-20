@@ -118,7 +118,8 @@ def _write_session(
     }
     paths.ensure_dirs()
     paths.active_session_file.write_bytes(orjson.dumps(data))
-    os.chmod(str(paths.active_session_file), 0o600)
+    with contextlib.suppress(OSError):
+        os.chmod(str(paths.active_session_file), 0o600)
 
 
 def _clear_session(paths: Paths) -> None:
@@ -337,7 +338,12 @@ async def start(
     proxy_url: str | None = None
 
     if tier == StealthTier.CLOAK and not skip_local_launch:
-        if not actual_headless and not os.environ.get("DISPLAY"):
+        needs_xvfb = (
+            not actual_headless
+            and sys.platform != "win32"
+            and not os.environ.get("DISPLAY")
+        )
+        if needs_xvfb:
             xvfb_mgr = XvfbManager(
                 width=cfg.browser.viewport_width, height=cfg.browser.viewport_height
             )

@@ -224,9 +224,14 @@ class ScriptSourceResponse(BaseModel):
 
 
 class SearchRequest(BaseModel):
-    """Search within a script's content."""
+    """Search within a script's content by script_id or URL pattern."""
 
-    script_id: str = Field(description="The script id to search in.")
+    script_id: str | None = Field(
+        None, description="The script id to search in (mutually exclusive with url)."
+    )
+    url: str | None = Field(
+        None, description="URL substring to match scripts (alt to script_id)."
+    )
     query: str = Field(description="Substring (or regex) to match.")
     is_regex: bool = Field(False, description="Treat 'query' as a regex.")
     case_sensitive: bool = Field(False, description="Case-sensitive match.")

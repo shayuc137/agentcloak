@@ -98,7 +98,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
           evaluate                — call_frame_id + expression
           scripts                 — list parsed scripts (id, url, source-map)
           script_source           — script_id → full source
-          search                  — script_id + query [+ is_regex, case_sensitive]
+          search                  — script_id or url + query [+ is_regex]
           skip_pauses             — skip: ignore all breakpoints (anti-anti-debug)
 
         Returns: action-specific text. paused_info/step list the call stack with
@@ -168,7 +168,8 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         if action == "search":
             return await format_call(
                 client.debugger_search(
-                    script_id=script_id,
+                    script_id=script_id or None,
+                    url=url or None,
                     query=query,
                     is_regex=is_regex,
                     case_sensitive=case_sensitive,

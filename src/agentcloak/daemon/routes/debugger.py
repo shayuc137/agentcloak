@@ -289,6 +289,7 @@ async def handle_debugger_search(
     matches = await ctx.debugger.search_in_content(
         body.script_id,
         body.query,
+        url=body.url,
         is_regex=body.is_regex,
         case_sensitive=body.case_sensitive,
     )

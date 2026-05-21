@@ -685,6 +685,7 @@ class PlaywrightContext(BrowserContextBase):
         y: float | None,
         button: str,
         click_count: int,
+        force: bool = False,
     ) -> dict[str, Any]:
         if x is not None and y is not None:
             await self._page.mouse.click(
@@ -704,7 +705,21 @@ class PlaywrightContext(BrowserContextBase):
 
         index = int(target)
         element = await self._resolve_element(index)
-        await element.click(button=button, click_count=int(click_count))
+        try:
+            await element.click(
+                button=button, click_count=int(click_count), force=force
+            )
+        except Exception as exc:
+            msg = str(exc).lower()
+            if not force and (
+                "intercepts pointer events" in msg or "element is covered" in msg
+            ):
+                raise ElementNotFoundError(
+                    error="element_covered",
+                    hint=str(exc),
+                    action="use --force to skip pointer check, or evaluate JS directly",
+                ) from exc
+            raise
         ref = self._get_ref(index)
         return {"clicked": True, "index": index, "element": ref}
 

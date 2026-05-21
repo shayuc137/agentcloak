@@ -17,6 +17,8 @@ script.
 
 from __future__ import annotations
 
+from typing import Any
+
 import typer
 
 from agentcloak.cli._dispatch import dispatch_text_or_json
@@ -224,24 +226,38 @@ def debugger_script_source(
 
 @app.command("search")
 def debugger_search(
-    script_id: str = typer.Argument(..., help="Script id to search in."),
+    script_id: str | None = typer.Argument(
+        None, help="Script id (omit if using --url)."
+    ),
     query: str = typer.Argument(..., help="Substring or regex to match."),
+    url: str | None = typer.Option(
+        None, "--url", help="URL substring to match scripts (alternative to script_id)."
+    ),
     is_regex: bool = typer.Option(False, "--regex", help="Treat query as a regex."),
     case_sensitive: bool = typer.Option(
         False, "--case-sensitive", help="Case-sensitive match."
     ),
 ) -> None:
-    """Search a script's content; prints matching lines."""
+    """Search script content by id or URL pattern; prints matching lines."""
+    if not script_id and not url:
+        from agentcloak.cli.output import error
+
+        error("provide script_id argument or --url pattern")
+        raise typer.Exit(1)
+    body: dict[str, Any] = {
+        "query": query,
+        "is_regex": is_regex,
+        "case_sensitive": case_sensitive,
+    }
+    if script_id:
+        body["script_id"] = script_id
+    if url:
+        body["url"] = url
     dispatch_text_or_json(
         DaemonClient(),
         "POST",
         "/debugger/search",
-        json_body={
-            "script_id": script_id,
-            "query": query,
-            "is_regex": is_regex,
-            "case_sensitive": case_sensitive,
-        },
+        json_body=body,
         renderer=render_debugger_search_text,
     )
 

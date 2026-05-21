@@ -326,6 +326,16 @@ class SourceMapManager:
             parsed = parse_source_map(json.loads(raw_json))
         except AgentBrowserError:
             raise
+        except json.JSONDecodeError as exc:
+            raise AgentBrowserError(
+                error="sourcemap_parse_failed",
+                hint=(
+                    f"Source map for {script_id!r} is not valid JSON"
+                    f" (likely an HTML error page): {exc}"
+                ),
+                action="check the .map URL in a browser; it may return"
+                " an HTML 404 page instead of JSON",
+            ) from exc
         except Exception as exc:
             raise AgentBrowserError(
                 error="sourcemap_parse_failed",
@@ -341,6 +351,13 @@ class SourceMapManager:
             return _decode_data_uri(source_map_url)
         map_url = _resolve_url(script_url, source_map_url)
         result = await self._ctx.fetch(map_url)
+        status = int(result.get("status", 0) or 0)
+        if status >= 400:
+            raise AgentBrowserError(
+                error="sourcemap_fetch_failed",
+                hint=f"Fetched {map_url} but got HTTP {status}",
+                action="the .map URL may be wrong, deleted, or require auth",
+            )
         body = str(result.get("body", "") or "")
         if not body:
             raise AgentBrowserError(

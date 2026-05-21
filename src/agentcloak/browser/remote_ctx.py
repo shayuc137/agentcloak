@@ -525,6 +525,7 @@ class RemoteBridgeContext(BrowserContextBase):
         y: float | None,
         button: str,
         click_count: int,
+        force: bool = False,
     ) -> dict[str, Any]:
         if x is not None and y is not None:
             cx, cy = float(x), float(y)

@@ -134,6 +134,7 @@ class BrowserConfig:
     # messages are dropped past this cap so a chatty page can't grow daemon
     # memory unbounded. Matches the action ring buffer's default size.
     console_buffer_size: int = 1000
+    auto_stream_monitor: bool = True
 
 
 @dataclass
@@ -338,6 +339,13 @@ def load_config(*, root: Path | None = None) -> tuple[Paths, AgentcloakConfig]:
         ]
     else:
         cfg.browser.extra_args = browser_tbl.get("extra_args", cfg.browser.extra_args)
+    asm_env = _env("AUTO_STREAM_MONITOR")
+    if asm_env is not None:
+        cfg.browser.auto_stream_monitor = asm_env.lower() in ("true", "1", "yes")
+    else:
+        cfg.browser.auto_stream_monitor = bool(
+            browser_tbl.get("auto_stream_monitor", cfg.browser.auto_stream_monitor)
+        )
 
     # ---------- [security] ----------
     whitelist_env = _env("DOMAIN_WHITELIST")

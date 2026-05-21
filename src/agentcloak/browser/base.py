@@ -406,6 +406,7 @@ class BrowserContextBase(ABC):
         y: float | None,
         button: str,
         click_count: int,
+        force: bool = False,
     ) -> dict[str, Any]: ...
 
     @abstractmethod
@@ -853,6 +854,8 @@ class BrowserContextBase(ABC):
         logger.info("audit_action", action="navigate", seq=new_seq, url=url)
         result.setdefault("seq", new_seq)
         await self._ensure_console_cdp()
+        if self._browser_config.auto_stream_monitor:
+            await self.streaming_monitor.ensure_listening()
         return result
 
     # ------------------------------------------------------------------
@@ -1775,6 +1778,7 @@ class BrowserContextBase(ABC):
                 y=kw.get("y"),
                 button=kw.get("button", "left"),
                 click_count=int(kw.get("click_count", 1)),
+                force=bool(kw.get("force", False)),
             )
         if kind == "fill":
             return await self._fill_impl(target=target, text=str(kw.get("text", "")))

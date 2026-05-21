@@ -46,6 +46,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 import structlog
 
+from agentcloak.core.errors import AgentBrowserError
+
 if TYPE_CHECKING:
     from agentcloak.browser.base import BrowserContextBase
 
@@ -423,18 +425,28 @@ class DebuggerManager:
 
     async def search_in_content(
         self,
-        script_id: str,
+        script_id: str | None,
         query: str,
         *,
+        url: str | None = None,
         is_regex: bool = False,
         case_sensitive: bool = False,
     ) -> list[dict[str, Any]]:
-        """Search a script's content (``Debugger.searchInContent``).
+        """Search script content by script_id or URL pattern.
 
-        Returns the CDP match list: each entry has ``lineNumber`` + ``lineContent``
-        so an agent can locate a token (an obfuscated symbol, an endpoint string)
-        without pulling the whole source.
+        When ``url`` is given, matches scripts whose URL contains the substring,
+        searches each, and returns combined results grouped by script URL.
         """
+        if url:
+            return await self._search_by_url(
+                url, query, is_regex=is_regex, case_sensitive=case_sensitive
+            )
+        if not script_id:
+            raise AgentBrowserError(
+                error="debugger_search_missing_target",
+                hint="either script_id or url is required",
+                action="pass script_id from 'debugger scripts' or --url pattern",
+            )
         result = await self._ctx._cdp_send(
             "Debugger.searchInContent",
             {
@@ -445,6 +457,48 @@ class DebuggerManager:
             },
         )
         return list(result.get("result", []) or [])
+
+    async def _search_by_url(
+        self,
+        url_pattern: str,
+        query: str,
+        *,
+        is_regex: bool = False,
+        case_sensitive: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Search across all scripts matching a URL substring."""
+        matched = [
+            (sid, info)
+            for sid, info in self._scripts.items()
+            if url_pattern in (info.url or "")
+        ]
+        if not matched:
+            raise AgentBrowserError(
+                error="debugger_no_matching_scripts",
+                hint=f"no scripts match URL pattern {url_pattern!r}",
+                action="run 'debugger scripts' to see available script URLs",
+            )
+        all_results: list[dict[str, Any]] = []
+        for sid, info in matched:
+            result = await self._ctx._cdp_send(
+                "Debugger.searchInContent",
+                {
+                    "scriptId": sid,
+                    "query": query,
+                    "caseSensitive": case_sensitive,
+                    "isRegex": is_regex,
+                },
+            )
+            hits = list(result.get("result", []) or [])
+            if hits:
+                all_results.append(
+                    {
+                        "script_id": sid,
+                        "url": info.url,
+                        "matches": hits,
+                    }
+                )
+        return all_results
 
     # ------------------------------------------------------------------
     # Anti-debug (basic)

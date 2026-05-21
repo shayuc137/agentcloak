@@ -1490,21 +1490,22 @@ class DaemonClient:
     async def debugger_search(
         self,
         *,
-        script_id: str,
-        query: str,
+        script_id: str | None = None,
+        url: str | None = None,
+        query: str = "",
         is_regex: bool = False,
         case_sensitive: bool = False,
     ) -> dict[str, Any]:
-        return await self._send_async(
-            "POST",
-            "/debugger/search",
-            json_body={
-                "script_id": script_id,
-                "query": query,
-                "is_regex": is_regex,
-                "case_sensitive": case_sensitive,
-            },
-        )
+        body: dict[str, Any] = {
+            "query": query,
+            "is_regex": is_regex,
+            "case_sensitive": case_sensitive,
+        }
+        if script_id:
+            body["script_id"] = script_id
+        if url:
+            body["url"] = url
+        return await self._send_async("POST", "/debugger/search", json_body=body)
 
     async def debugger_skip_pauses(self, *, skip: bool) -> dict[str, Any]:
         return await self._send_async(

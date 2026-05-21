@@ -93,6 +93,9 @@ def do_click(
     y: float | None = typer.Option(None, "--y", help="Y coordinate (fallback)."),
     button: str = typer.Option("left", "--button", help="Mouse button."),
     click_count: int = typer.Option(1, "--click-count", help="Number of clicks."),
+    force: bool = typer.Option(
+        False, "--force", help="Skip pointer-events check (bypass overlays)."
+    ),
     snap: bool = typer.Option(
         False,
         "--snap",
@@ -108,6 +111,7 @@ def do_click(
         snap=snap,
         button=button,
         click_count=click_count,
+        force=force,
         x=x,
         y=y,
     )

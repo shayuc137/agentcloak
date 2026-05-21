@@ -569,7 +569,8 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak debugger search SCRIPT_ID QUERY`
 - MCP: `agentcloak_debugger (action=search)`
 - Body:
-  - `script_id` (string, default: *required*) — The script id to search in.
+  - `script_id` (string | null, default: —) — The script id to search in (mutually exclusive with url).
+  - `url` (string | null, default: —) — URL substring to match scripts (alt to script_id).
   - `query` (string, default: *required*) — Substring (or regex) to match.
   - `is_regex` (boolean, default: false) — Treat 'query' as a regex.
   - `case_sensitive` (boolean, default: false) — Case-sensitive match.

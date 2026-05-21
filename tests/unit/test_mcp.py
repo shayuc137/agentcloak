@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import orjson
 import pytest
 
@@ -151,3 +153,108 @@ class TestResolveTier:
         from agentcloak.core.config import resolve_tier
 
         assert resolve_tier("auto") == "cloak"
+
+
+class TestMCPSessionIsolation:
+    """The MCP server uses its own per-process session, not the ambient one."""
+
+    def test_session_id_is_pid_tagged(self) -> None:
+        import os
+
+        from agentcloak.mcp.server import _mcp_session_id
+
+        assert _mcp_session_id() == f"mcp-{os.getpid()}"
+
+    def test_session_id_overrides_claude_env(self, monkeypatch: Any) -> None:
+        # Even inside a Claude Code session the MCP server must NOT inherit the
+        # agent's session id — it gets its own browser.
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "agent-uuid-123")
+        from agentcloak.mcp.server import _mcp_session_id
+
+        assert _mcp_session_id() != "agent-uuid-123"
+        assert _mcp_session_id().startswith("mcp-")
+
+    def test_client_carries_mcp_session(self, monkeypatch: Any) -> None:
+        try:
+            from agentcloak.mcp.server import _mcp_session_id, create_server
+        except ImportError:
+            pytest.skip("mcp package not installed")
+        from agentcloak.core.config import AgentcloakConfig
+
+        captured: dict[str, str] = {}
+
+        class _StubClient:
+            def __init__(self, *, session_id: str | None = None, **_kw: Any) -> None:
+                captured["session_id"] = session_id or ""
+
+            @property
+            def config(self) -> AgentcloakConfig:
+                # Tool registration reads defaults off the client's config.
+                return AgentcloakConfig()
+
+        monkeypatch.setattr("agentcloak.client.DaemonClient", _StubClient)
+        create_server()
+        assert captured["session_id"] == _mcp_session_id()
+
+
+class TestMCPExitHook:
+    """On exit the server closes its own session; daemon shutdown is opt-in."""
+
+    @staticmethod
+    def _patch_config(monkeypatch: Any, *, stop_on_exit: bool) -> None:
+        # ``_register_exit_hook`` does ``from agentcloak.core.config import
+        # load_config`` at call time, so patching the function on the config
+        # module is what the hook actually sees.
+        from agentcloak.core import config as cfg_mod
+
+        paths, cfg = cfg_mod.load_config()
+        cfg.browser.stop_on_exit = stop_on_exit
+        monkeypatch.setattr(cfg_mod, "load_config", lambda *_a, **_k: (paths, cfg))
+
+    def test_exit_hook_closes_session_not_daemon_by_default(
+        self, monkeypatch: Any
+    ) -> None:
+        import httpx
+
+        from agentcloak.mcp import server as mcp_server
+
+        self._patch_config(monkeypatch, stop_on_exit=False)
+        calls: list[tuple[str, dict[str, Any]]] = []
+        monkeypatch.setattr(
+            httpx, "post", lambda url, **kw: calls.append((url, kw)) or None
+        )
+        registered: list[Any] = []
+        monkeypatch.setattr(
+            mcp_server.atexit, "register", lambda fn: registered.append(fn)
+        )
+        mcp_server._register_exit_hook("mcp-test")
+        assert len(registered) == 1
+        registered[0]()  # run the hook
+
+        paths = [c[0] for c in calls]
+        assert any(p.endswith("/session/close") for p in paths)
+        assert not any(p.endswith("/shutdown") for p in paths)
+        # The close call targets the right session.
+        close_call = next(c for c in calls if c[0].endswith("/session/close"))
+        assert close_call[1]["json"]["session_id"] == "mcp-test"
+        assert close_call[1]["headers"]["X-Agentcloak-Session"] == "mcp-test"
+
+    def test_exit_hook_also_stops_daemon_when_configured(
+        self, monkeypatch: Any
+    ) -> None:
+        import httpx
+
+        from agentcloak.mcp import server as mcp_server
+
+        self._patch_config(monkeypatch, stop_on_exit=True)
+        calls: list[str] = []
+        monkeypatch.setattr(httpx, "post", lambda url, **_kw: calls.append(url) or None)
+        registered: list[Any] = []
+        monkeypatch.setattr(
+            mcp_server.atexit, "register", lambda fn: registered.append(fn)
+        )
+        mcp_server._register_exit_hook("mcp-test")
+        registered[0]()
+
+        assert any(p.endswith("/session/close") for p in calls)
+        assert any(p.endswith("/shutdown") for p in calls)

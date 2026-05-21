@@ -136,7 +136,10 @@ cloak resume
 cloak click N [--snap]
 cloak click --index N [--snap]
 cloak click --x X --y Y           # 坐标 fallback
+cloak click N --force             # 跳过 pointer 遮挡检查（被 overlay 盖住时）
 ```
+
+元素被 overlay 遮挡时点击会失败并返回 `element_covered`；加 `--force` 跳过 Playwright 的可操作性检查，或退回用 `js evaluate`。
 
 ### fill
 
@@ -372,8 +375,11 @@ cloak debugger evaluate CALL_FRAME_ID "expr"
 cloak debugger scripts                 # 已解析脚本（id、URL、source-map 标记）
 cloak debugger script-source SCRIPT_ID
 cloak debugger search SCRIPT_ID "query" --regex --case-sensitive
+cloak debugger search --url "main.js" "query"   # 按 URL 子串匹配脚本（无需 id；导航后仍有效）
 cloak debugger skip-pauses true        # 忽略所有断点 / debugger;（反反调试）
 ```
+
+传 `SCRIPT_ID`（来自 `debugger scripts`）或 `--url`（URL 子串）二选一。脚本 id 会在导航后失效，因此 `--url` 是按文件名搜索 bundle 的稳定方式——它会搜索所有匹配的脚本并按 URL 分组返回命中。
 
 ### Source map
 
@@ -474,6 +480,17 @@ cloak daemon start [--host HOST] [--port PORT] [--headed] [--profile NAME]
 cloak daemon stop
 cloak daemon status                # tier | browser status | seq
 ```
+
+## Session 管理
+
+单个 daemon 可同时服务多个调用方（两个 Claude Code 会话、一个 MCP client、普通 CLI）。每个调用方通过 `X-Agentcloak-Session` header 路由到各自独立的浏览器。session id 自动检测——`AGENTCLOAK_SESSION` > `CLAUDE_CODE_SESSION_ID` > `default`——因此并发的 agent 无需任何配置就能拿到各自独立的浏览器。命名 session 的浏览器在闲置 `daemon.session_idle_timeout` 秒（默认 300s）后挂起，下次请求时透明重建。
+
+```bash
+cloak session list                 # 命名 session：id | 状态（active/suspended）| tier | 闲置秒数
+cloak session close SESSION_ID     # 关闭某个 session 并立即释放其浏览器
+```
+
+无 header 的调用（所有普通 CLI 调用）使用 `default` session（由 daemon 主浏览器支撑），它不在此列表中——其状态通过 `cloak status` / `/health` 查看。
 
 ## 配置
 

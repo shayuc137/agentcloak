@@ -138,7 +138,10 @@ Click an element by `[N]` reference.
 cloak click N [--snap]
 cloak click --index N [--snap]
 cloak click --x X --y Y           # coordinate fallback
+cloak click N --force             # skip the pointer-intercept check (covering overlay)
 ```
+
+When an element is hidden behind an overlay the click fails with `element_covered`; retry with `--force` to bypass Playwright's actionability check, or fall back to `js evaluate`.
 
 ### fill
 
@@ -374,8 +377,11 @@ cloak debugger evaluate CALL_FRAME_ID "expr"
 cloak debugger scripts                 # parsed scripts (id, URL, source-map marker)
 cloak debugger script-source SCRIPT_ID
 cloak debugger search SCRIPT_ID "query" --regex --case-sensitive
+cloak debugger search --url "main.js" "query"   # match scripts by URL substring (id-free; survives navigation)
 cloak debugger skip-pauses true        # ignore all breakpoints / debugger; (anti-anti-debug)
 ```
+
+Pass either a `SCRIPT_ID` (from `debugger scripts`) or `--url` (a URL substring). Script ids are invalidated by navigation, so `--url` is the durable way to search a bundle by filename — it searches every matching script and groups the hits by URL.
 
 ### Source maps
 
@@ -478,6 +484,17 @@ cloak daemon start [--host HOST] [--port PORT] [--headed] [--profile NAME]
 cloak daemon stop
 cloak daemon status                # tier | browser status | seq
 ```
+
+## Session management
+
+A single daemon serves several callers concurrently (two Claude Code sessions, an MCP client, plain CLI runs). Each caller is routed to its own isolated browser by the `X-Agentcloak-Session` header. The session id is auto-detected — `AGENTCLOAK_SESSION` > `CLAUDE_CODE_SESSION_ID` > `default` — so concurrent agents get separate browsers with zero configuration. A named session's browser is suspended after `daemon.session_idle_timeout` seconds of inactivity (default 300s) and transparently rebuilt on the next request.
+
+```bash
+cloak session list                 # named sessions: id | state (active/suspended) | tier | idle
+cloak session close SESSION_ID     # close a session and free its browser now
+```
+
+Header-less calls (every plain CLI invocation) use the `default` session backed by the daemon's primary browser, which is not listed here — its state shows up in `cloak status` / `/health`.
 
 ## Configuration
 

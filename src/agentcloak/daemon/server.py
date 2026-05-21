@@ -614,9 +614,21 @@ async def start(
         asyncio.ensure_future(_watch_shutdown_event())
     ]
 
-    if idle_timeout > 0:
+    # The watchdog drives two independent timers (global daemon shutdown +
+    # per-session browser reclamation). Start it if *either* is enabled — a
+    # user who disables global idle (idle_timeout_min=0) to keep the daemon
+    # resident still wants idle named-session browsers reclaimed.
+    session_idle_timeout = cfg.daemon.session_idle_timeout
+    if idle_timeout > 0 or session_idle_timeout > 0:
         background_tasks.append(
-            asyncio.ensure_future(_idle_watchdog(app, idle_timeout, server))
+            asyncio.ensure_future(
+                _idle_watchdog(
+                    app,
+                    idle_timeout,
+                    server,
+                    session_idle_timeout=session_idle_timeout,
+                )
+            )
         )
 
     try:
@@ -628,6 +640,11 @@ async def start(
         unregister_daemon()
         with contextlib.suppress(Exception):
             await context_manager.shutdown()
+        # Close every named session's browser too — ContextManager only owns
+        # the default session, so without this each per-session Chromium would
+        # outlive the daemon as an orphan process.
+        with contextlib.suppress(Exception):
+            await session_manager.close_all()
         # Stop the embedded ``cloak serve`` file server (7a R7) so its
         # listener never outlives the daemon.
         file_server = getattr(app.state, "file_server", None)
@@ -644,10 +661,43 @@ async def start(
         _clear_session(paths)
 
 
-async def _idle_watchdog(app: Any, timeout: float, server: uvicorn.Server) -> None:
-    """Shut down daemon after idle_timeout seconds of inactivity."""
+async def _idle_watchdog(
+    app: Any,
+    timeout: float,
+    server: uvicorn.Server,
+    *,
+    session_idle_timeout: float = 0.0,
+) -> None:
+    """Reclaim idle session browsers, then shut the daemon down when fully idle.
+
+    Two timers run off the same 30s tick:
+
+    * **per-session** — every named (non-default) session whose browser has
+      sat unused for ``session_idle_timeout`` seconds is suspended via
+      :meth:`SessionManager.cleanup_idle`. The Chromium process is closed to
+      free RAM while the session metadata survives, so the next request
+      transparently rebuilds it. ``0`` disables this (the field default is
+      300s). The default session is unaffected — it follows the global timer
+      below, matching ``browser.idle_timeout_min``.
+    * **global** — once *no* request (to any session) has arrived for
+      ``timeout`` seconds the whole daemon shuts down. ``last_request_time`` is
+      bumped by the HTTP middleware on every request regardless of session, so
+      a busy named session keeps the daemon alive even while the default
+      session is idle.
+    """
+    session_mgr = getattr(app.state, "session_manager", None)
     while not server.should_exit:
         await asyncio.sleep(30)
+        if session_mgr is not None and session_idle_timeout > 0:
+            # Best-effort: a wedged browser must never crash the watchdog and
+            # leave the daemon unable to shut itself down.
+            with contextlib.suppress(Exception):
+                await session_mgr.cleanup_idle(session_idle_timeout)
+        # Global shutdown is opt-out: ``timeout <= 0`` means the user wants a
+        # resident daemon, so we only run per-session reclamation above and
+        # never trip the shutdown event here.
+        if timeout <= 0:
+            continue
         elapsed = time.monotonic() - app.state.last_request_time
         if elapsed >= timeout:
             logger.info("idle_timeout_reached", seconds=int(elapsed))

@@ -188,12 +188,14 @@ class SessionManager:
     # ------------------------------------------------------------------
 
     def list_sessions(self) -> list[dict[str, Any]]:
-        """Return a serialisable summary of every managed session.
+        """Return a serialisable summary of every *named* managed session.
 
         The default session is intentionally *not* included — it lives on
-        ``app.state.browser_ctx`` under :class:`ContextManager`, and the
-        ``/session/list`` route layers it in so callers see one combined
-        view without this manager reaching across the abstraction boundary.
+        ``app.state.browser_ctx`` under :class:`ContextManager`, outside this
+        manager's bookkeeping. ``cloak session list`` therefore shows only the
+        named (``X-Agentcloak-Session``) sessions; the default browser's state
+        is surfaced through ``/health`` instead. Keeping the boundary here means
+        the manager never has to reach across into ContextManager-owned state.
         """
         now = time.monotonic()
         out: list[dict[str, Any]] = []

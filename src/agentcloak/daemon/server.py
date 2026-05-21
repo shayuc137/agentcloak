@@ -1,11 +1,13 @@
-"""Daemon lifecycle — start, stop, health check.
+"""Daemon lifecycle — start the in-process HTTP server.
 
-Responsibilities are split between three entry points:
+Responsibilities are split between two entry points:
 
 - ``create_app()`` (in ``app.py``) builds the FastAPI app.
 - ``start()`` launches the browser, wires ``app.state``, then drives uvicorn.
-- ``stop()`` / ``health()`` use synchronous httpx calls for cross-process
-  control.
+
+Cross-process control (stop / health from a separate CLI or MCP process)
+lives in :class:`agentcloak.client.DaemonClient`, which owns the single
+httpx-based client surface — this module no longer duplicates it.
 
 uvicorn runs in-process: we instantiate a ``Server`` and drive its
 lifecycle from coroutines so we can interleave the browser shutdown
@@ -23,7 +25,6 @@ import sys
 import time
 from typing import TYPE_CHECKING, Any
 
-import httpx
 import orjson
 import structlog
 import uvicorn
@@ -44,7 +45,7 @@ from agentcloak.daemon.context_manager import ContextManager
 if TYPE_CHECKING:
     from pathlib import Path
 
-__all__ = ["health", "start", "stop"]
+__all__ = ["start"]
 
 logger = structlog.get_logger()
 
@@ -501,6 +502,17 @@ async def start(
 
     resume_writer = ResumeWriter(paths)
 
+    # SessionManager multiplexes *named* sessions (X-Agentcloak-Session
+    # header) — each gets an isolated browser created on first request. The
+    # startup browser above remains the "default" session under
+    # ContextManager, so legacy header-less callers (every plain CLI run)
+    # keep the existing tier-switch / remote-bridge / proxy behaviour
+    # untouched. We do not pre-create any named session here; they spin up
+    # lazily on demand.
+    from agentcloak.daemon.services import SessionManager
+
+    session_manager = SessionManager(cfg)
+
     # Build FastAPI app and wire runtime state.
     app = create_app()
     configure_app_state(
@@ -510,6 +522,7 @@ async def start(
         resume_writer=resume_writer,
         bridge_token=bridge_token,
         config=cfg,
+        session_manager=session_manager,
     )
     # Seed ContextManager with whatever the startup tier created so
     # hot-switches see the live state. For remote_bridge startup the
@@ -645,34 +658,3 @@ async def _idle_watchdog(app: Any, timeout: float, server: uvicorn.Server) -> No
 async def _signal_shutdown(server: uvicorn.Server, app: Any) -> None:
     app.state.shutdown_event.set()
     server.should_exit = True
-
-
-async def stop(*, host: str | None = None, port: int | None = None) -> bool:
-    """Send shutdown request to the daemon."""
-    _, cfg = load_config()
-    actual_host = host or cfg.daemon.host
-    actual_port = port or cfg.daemon.port
-    url = f"http://{actual_host}:{actual_port}/shutdown"
-
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            await client.post(url)
-    except Exception:
-        pass
-    return True
-
-
-async def health(*, host: str | None = None, port: int | None = None) -> bool:
-    """Check if daemon is reachable."""
-    _, cfg = load_config()
-    actual_host = host or cfg.daemon.host
-    actual_port = port or cfg.daemon.port
-    url = f"http://{actual_host}:{actual_port}/health"
-
-    try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            resp = await client.get(url)
-            data = resp.json()
-            return bool(data.get("ok"))
-    except Exception:
-        return False

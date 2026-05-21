@@ -57,6 +57,11 @@ def create_app() -> FastAPI:
     app.state.local_tier = None
     app.state.local_profile = None
     app.state.active_tier = None
+    # SessionManager owns every *named* session (X-Agentcloak-Session header);
+    # the default session stays on ``browser_ctx`` above. ``None`` here means
+    # "single-session mode" — the provider falls back to ``browser_ctx`` so
+    # tests that never call ``configure_app_state`` keep working unchanged.
+    app.state.session_manager = None
     # Embedded static file server for ``cloak serve`` (7a R7). Lazily created
     # on first ``/serve/start`` and torn down by the daemon shutdown path.
     app.state.file_server = None
@@ -81,6 +86,7 @@ def configure_app_state(
     resume_writer: Any = None,
     bridge_token: str | None = None,
     config: Any = None,
+    session_manager: Any = None,
 ) -> None:
     """Attach runtime resources to an existing app.
 
@@ -91,9 +97,14 @@ def configure_app_state(
     :func:`agentcloak.daemon.server.start` — there's no
     ``app.state.idle_timeout`` slot because nothing reads it after this
     function returns.
+
+    ``session_manager`` is the :class:`SessionManager` that multiplexes
+    named (non-default) sessions. ``None`` keeps the daemon in
+    single-session mode where every request resolves to ``browser_ctx``.
     """
     app.state.browser_ctx = browser_ctx
     app.state.local_proxy = local_proxy
     app.state.resume_writer = resume_writer
     app.state.bridge_token = bridge_token
     app.state.config = config
+    app.state.session_manager = session_manager

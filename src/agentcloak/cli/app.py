@@ -36,7 +36,7 @@ _GROUPS = (
     "launch, network, fetch, bridge, cookies, skill, cdp, dialog, wait, "
     "upload, config, console, download, storage, clipboard, pdf, serve, "
     "script, route, emulation, graphql, debugger, ws, sse, sourcemap, "
-    "profiler, performance"
+    "profiler, performance, session"
 )
 _EPILOG = (
     f"Shortcuts (top-level, also documented under their groups):\n  {_SHORTCUTS}\n"
@@ -391,6 +391,13 @@ def _register_commands() -> None:
         performance.app,
         name="performance",
         help="Performance: runtime metrics (DOM nodes, JS heap, layouts).",
+    )
+    from agentcloak.cli.commands import session_cmd
+
+    app.add_typer(
+        session_cmd.app,
+        name="session",
+        help="Session management: list and close named browser sessions.",
     )
 
 

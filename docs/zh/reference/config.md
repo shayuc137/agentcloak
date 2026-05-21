@@ -21,6 +21,7 @@ agentcloak 开箱即用，无需任何配置。所有设置都有合理的默认
 host = "127.0.0.1"
 port = 18765
 http_client_timeout = 90
+http_connect_timeout = 5.0
 auto_start_timeout = 15.0
 auto_start_poll_interval = 0.5
 log_level = "warning"
@@ -72,7 +73,8 @@ local_idle_timeout = 1800
 |------|-------|-------|------|
 | `AGENTCLOAK_HOST` | `daemon.host` | `127.0.0.1` | Daemon 监听地址 |
 | `AGENTCLOAK_PORT` | `daemon.port` | `18765` | Daemon 监听端口 |
-| `AGENTCLOAK_HTTP_CLIENT_TIMEOUT` | `daemon.http_client_timeout` | `90` | CLI / MCP 调用 daemon 的 HTTP 请求超时（秒） |
+| `AGENTCLOAK_HTTP_CLIENT_TIMEOUT` | `daemon.http_client_timeout` | `90` | CLI / MCP 调用 daemon 的 HTTP 读取超时（秒） |
+| `AGENTCLOAK_HTTP_CONNECT_TIMEOUT` | `daemon.http_connect_timeout` | `5.0` | CLI / MCP 连接 daemon 的 TCP 握手超时（秒），保持短以便死掉或远程的 daemon 快速失败 |
 | `AGENTCLOAK_AUTO_START_TIMEOUT` | `daemon.auto_start_timeout` | `15.0` | 自动拉起 daemon 后等待 `/health` 的总时长（秒） |
 | `AGENTCLOAK_AUTO_START_POLL_INTERVAL` | `daemon.auto_start_poll_interval` | `0.5` | 自动启动期间健康检查轮询间隔（秒） |
 | `AGENTCLOAK_LOG_LEVEL` | `daemon.log_level` | `warning` | Daemon 日志级别（debug/info/warning/error） |

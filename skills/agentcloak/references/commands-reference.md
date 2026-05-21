@@ -759,5 +759,17 @@ Read this file when you need full parameter detail. For the common path, the qui
   - `tier` (enum("auto" | "cloak" | "playwright" | "remote_bridge"), default: "auto") — Backend: cloak (stealth), playwright, remote_bridge, or auto.
   - `profile` (string | null, default: —) — Profile to load; local tiers only, ignored for remote_bridge.
 
+### `GET /session/list`
+
+- CLI: `cloak session list`
+- MCP: `(session management — CLI only)`
+
+### `POST /session/close`
+
+- CLI: `cloak session close SESSION_ID`
+- MCP: `(session management — CLI only)`
+- Body:
+  - `session_id` (string, default: *required*) — Session to close.
+
 
 _End of generated content. Updates flow from `daemon/models/` + `daemon/routes/`; run `python scripts/generate_skill.py --write` after changing routes._

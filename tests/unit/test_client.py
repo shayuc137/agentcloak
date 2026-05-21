@@ -191,32 +191,43 @@ class TestDaemonClientAsync:
 
 
 class TestAutoStartGuards:
-    """Auto-start should not loop and should be opt-out via auto_start=False."""
+    """Auto-start reconnect: when _auto_started=True and daemon is gone,
+    the client probes health, resets _auto_started, and attempts re-spawn."""
 
-    def test_auto_started_flag_prevents_loop_sync(self) -> None:
+    def test_reconnect_on_daemon_gone_sync(self) -> None:
         client = DaemonClient(host="127.0.0.1", port=19998, auto_start=True)
-        # Pretend we already spawned a daemon in this process.
         client._auto_started = True
-        with patch("httpx.Client") as mock_cls:
+        with (
+            patch("httpx.Client") as mock_cls,
+            patch.object(client, "_probe_health_sync", return_value=False),
+            patch.object(client, "_ensure_daemon_sync", return_value=False),
+        ):
             ctx = MagicMock()
             ctx.__enter__ = MagicMock(return_value=ctx)
             ctx.__exit__ = MagicMock(return_value=False)
-            ctx.request = MagicMock(side_effect=httpx.ConnectError("still gone"))
+            ctx.request = MagicMock(side_effect=httpx.ConnectError("gone"))
             mock_cls.return_value = ctx
 
             with pytest.raises(DaemonConnectionError):
                 client.health_sync()
+            # _auto_started was reset so re-spawn was attempted
+            assert not client._auto_started
 
     @pytest.mark.asyncio
-    async def test_auto_started_flag_prevents_loop_async(self) -> None:
+    async def test_reconnect_on_daemon_gone_async(self) -> None:
         client = DaemonClient(host="127.0.0.1", port=19998, auto_start=True)
         client._auto_started = True
-        with patch("httpx.AsyncClient") as mock_cls:
+        with (
+            patch("httpx.AsyncClient") as mock_cls,
+            patch.object(client, "_probe_health_async", return_value=False),
+            patch.object(client, "_ensure_daemon_async", return_value=False),
+        ):
             ctx = MagicMock()
             ctx.__aenter__ = AsyncMock(return_value=ctx)
             ctx.__aexit__ = AsyncMock(return_value=False)
-            ctx.request = AsyncMock(side_effect=httpx.ConnectError("still gone"))
+            ctx.request = AsyncMock(side_effect=httpx.ConnectError("gone"))
             mock_cls.return_value = ctx
 
             with pytest.raises(DaemonConnectionError):
                 await client.health()
+            assert not client._auto_started

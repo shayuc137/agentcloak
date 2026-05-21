@@ -109,6 +109,7 @@ __all__ = [
     "render_scripts_list_text",
     "render_serve_status_text",
     "render_serve_stop_text",
+    "render_session_list_text",
     "render_shutdown_text",
     "render_snapshot_text",
     "render_sourcemap_get_text",
@@ -552,6 +553,32 @@ def render_launch_text(data: dict[str, Any]) -> str:
     if profile:
         base = f"{base} | profile: {profile}"
     return base
+
+
+# ---------------------------------------------------------------------------
+# Session
+# ---------------------------------------------------------------------------
+
+
+def render_session_list_text(data: dict[str, Any]) -> str:
+    """Render ``/session/list`` or ``/session/close``."""
+    if "closed" in data:
+        sid = str(data.get("session_id", ""))
+        return f"closed: {data['closed']} | session: {sid}"
+    sessions: list[Any] = list(data.get("sessions") or [])
+    if not sessions:
+        return "no named sessions"
+    lines: list[str] = []
+    for raw in sessions:
+        if not isinstance(raw, dict):
+            continue
+        s = _as_dict(raw)
+        sid = str(s.get("session_id", ""))
+        state = str(s.get("state", ""))
+        tier = str(s.get("tier", ""))
+        idle = s.get("idle_seconds", 0)
+        lines.append(f"{sid} | {state} | {tier} | idle {idle}s")
+    return "\n".join(lines) if lines else "no named sessions"
 
 
 # ---------------------------------------------------------------------------

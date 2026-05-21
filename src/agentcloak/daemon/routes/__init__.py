@@ -41,6 +41,7 @@ from agentcloak.daemon.routes import (
     profiler,
     script,
     serve,
+    session,
     sourcemap,
     spells,
     storage,
@@ -88,6 +89,8 @@ def _build_router() -> APIRouter:
         # 7f profiling / reverse-engineering aids.
         profiler,
         performance,
+        # multi-session management
+        session,
     ):
         merged.include_router(module.router)
     return merged

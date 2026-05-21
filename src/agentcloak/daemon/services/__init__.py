@@ -14,6 +14,7 @@ from agentcloak.daemon.services.diagnostic_service import DiagnosticService
 from agentcloak.daemon.services.file_server import FileServer
 from agentcloak.daemon.services.profile_service import ProfileService
 from agentcloak.daemon.services.profiler_service import ProfilerService
+from agentcloak.daemon.services.session_manager import SessionManager, SessionSlot
 from agentcloak.daemon.services.snapshot_service import SnapshotService
 
 __all__ = [
@@ -25,5 +26,7 @@ __all__ = [
     "FileServer",
     "ProfileService",
     "ProfilerService",
+    "SessionManager",
+    "SessionSlot",
     "SnapshotService",
 ]

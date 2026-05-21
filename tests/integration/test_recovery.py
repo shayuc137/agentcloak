@@ -32,12 +32,17 @@ async def test_client_auto_start_flag() -> None:
     assert exc_info.value.error == "daemon_unreachable"
 
 
-async def test_client_auto_started_flag_prevents_loop() -> None:
-    """After one auto-start attempt, should not retry indefinitely."""
+async def test_client_reconnect_on_daemon_gone() -> None:
+    """After auto-start, if daemon disappears, client resets and re-tries."""
+    from unittest.mock import patch
+
     from agentcloak.client import DaemonClient
 
     client = DaemonClient(port=19998, auto_start=True)
-    # Simulate that auto-start already happened
     client._auto_started = True
-    with pytest.raises(DaemonConnectionError):
-        await client.health()
+    # Mock _ensure_daemon_async so it doesn't actually spawn a process
+    with patch.object(client, "_ensure_daemon_async", return_value=False):
+        with pytest.raises(DaemonConnectionError):
+            await client.health()
+    # _auto_started was reset (reconnect logic triggered)
+    assert not client._auto_started

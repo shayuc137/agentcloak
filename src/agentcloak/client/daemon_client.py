@@ -86,6 +86,7 @@ from agentcloak.core.errors import (
     BrowserTimeoutError,
     DaemonConnectionError,
 )
+from agentcloak.core.session import auto_detect_session_id
 
 __all__ = ["DaemonClient"]
 
@@ -95,6 +96,13 @@ logger = structlog.get_logger()
 # while polling a starting daemon. The other budgets (request timeout, startup
 # budget, poll interval) live on AgentcloakConfig so users can tune them.
 _HEALTH_PROBE_TIMEOUT_S = 2.0
+
+# Reconnect-recovery probe: when a client that already auto-started a daemon
+# hits a ConnectError, we do one quick /health check to tell "daemon is gone"
+# (re-spawn) from "daemon is up but this request failed for another reason"
+# (surface the error). Kept tighter than the startup probe so recovery stays
+# snappy.
+_RECONNECT_PROBE_TIMEOUT_S = 1.0
 
 
 class DaemonClient:
@@ -129,6 +137,13 @@ class DaemonClient:
         ``daemon_unreachable`` error spawns the daemon as a background
         subprocess and retries once. Pass ``False`` from commands that
         explicitly want to probe (``doctor``, ``daemon status``, etc.).
+    session_id:
+        Multi-session identity sent as the ``X-Agentcloak-Session`` header
+        so the daemon hands this client an isolated browser. ``None``
+        (default) auto-detects via :func:`auto_detect_session_id`
+        (``AGENTCLOAK_SESSION`` > ``CLAUDE_CODE_SESSION_ID`` > ``"default"``),
+        so two concurrent Claude Code sessions get separate browsers with no
+        configuration. The MCP server passes an explicit per-process id.
     """
 
     def __init__(
@@ -137,6 +152,7 @@ class DaemonClient:
         host: str | None = None,
         port: int | None = None,
         auto_start: bool = True,
+        session_id: str | None = None,
     ) -> None:
         _, cfg = load_config()
         self._cfg: AgentcloakConfig = cfg
@@ -144,6 +160,7 @@ class DaemonClient:
         self._port = port or cfg.daemon.port
         self._base = f"http://{self._host}:{self._port}"
         self._auto_start = auto_start
+        self._session_id = session_id or auto_detect_session_id()
         # Once we have spawned the daemon (or detected one was reachable), we
         # don't repeatedly retry the spawn within a single client lifetime —
         # otherwise a tight loop of failing requests would fork many daemons.
@@ -151,6 +168,10 @@ class DaemonClient:
         # Per-instance copies so users can tweak them on the fly (or via env)
         # without restarting the process.
         self._request_timeout_s = float(cfg.daemon.http_client_timeout)
+        # Connect timeout is split from the read timeout (``_request_timeout_s``)
+        # so an unreachable/remote daemon fails fast on the TCP handshake while
+        # a genuinely slow browser action still gets the full read budget.
+        self._connect_timeout_s = float(cfg.daemon.http_connect_timeout)
         self._startup_budget_s = float(cfg.daemon.auto_start_timeout)
         self._poll_interval_s = float(cfg.daemon.auto_start_poll_interval)
 
@@ -263,6 +284,22 @@ class DaemonClient:
                 action="check daemon status with 'agentcloak daemon status'",
             ) from exc
 
+    def _request_timeout(self) -> httpx.Timeout:
+        """Phase-split timeout shared by the sync + async request paths.
+
+        ``connect`` is short (``http_connect_timeout``) so a dead/remote daemon
+        fails fast on the handshake; ``read`` carries the generous
+        ``http_client_timeout`` for slow browser work. ``write``/``pool`` are
+        small fixed budgets — we never upload large bodies and the per-request
+        client never queues on a shared pool.
+        """
+        return httpx.Timeout(
+            connect=self._connect_timeout_s,
+            read=self._request_timeout_s,
+            write=10.0,
+            pool=5.0,
+        )
+
     def _do_request_sync(
         self,
         method: str,
@@ -271,8 +308,15 @@ class DaemonClient:
         json_body: dict[str, Any] | None = None,
         params: dict[str, str] | None = None,
     ) -> dict[str, Any]:
+        # ``retries`` only re-attempts connection failures (ConnectError /
+        # ConnectTimeout before any bytes are sent), so it smooths over
+        # localhost handshake jitter without ever re-running a non-idempotent
+        # request that the daemon already started processing.
+        transport = httpx.HTTPTransport(retries=2)
         with httpx.Client(
-            base_url=self._base, timeout=self._request_timeout_s
+            base_url=self._base,
+            timeout=self._request_timeout(),
+            transport=transport,
         ) as client:
             kwargs: dict[str, Any] = {}
             headers: dict[str, str] = {}
@@ -287,6 +331,10 @@ class DaemonClient:
             # explicit so a curl-style client doesn't accidentally negotiate
             # something unexpected if we ever add new media types.
             headers["Accept"] = "application/json"
+            # Multi-session routing: the daemon's provider reads this to pick
+            # an isolated browser. ``"default"`` is harmless on a daemon that
+            # predates multi-session — it falls back to the single ctx.
+            headers["X-Agentcloak-Session"] = self._session_id
             kwargs["headers"] = headers
             if params:
                 kwargs["params"] = params
@@ -301,8 +349,11 @@ class DaemonClient:
         json_body: dict[str, Any] | None = None,
         params: dict[str, str] | None = None,
     ) -> dict[str, Any]:
+        transport = httpx.AsyncHTTPTransport(retries=2)
         async with httpx.AsyncClient(
-            base_url=self._base, timeout=self._request_timeout_s
+            base_url=self._base,
+            timeout=self._request_timeout(),
+            transport=transport,
         ) as client:
             kwargs: dict[str, Any] = {}
             headers: dict[str, str] = {}
@@ -310,6 +361,7 @@ class DaemonClient:
                 kwargs["content"] = orjson.dumps(json_body)
                 headers["Content-Type"] = "application/json"
             headers["Accept"] = "application/json"
+            headers["X-Agentcloak-Session"] = self._session_id
             kwargs["headers"] = headers
             if params:
                 kwargs["params"] = params
@@ -368,18 +420,33 @@ class DaemonClient:
                 ),
             ) from exc
         if self._auto_started:
-            # We've already spawned a daemon in this client's lifetime — a
-            # second failure is a hard failure, not a retry trigger.
-            raise DaemonConnectionError(
-                error="daemon_unreachable",
-                hint=(
-                    f"Daemon started but still unreachable at {self._host}:{self._port}"
-                ),
-                action=(
-                    "check daemon logs (~/.agentcloak/logs/daemon.log) and "
-                    "run 'agentcloak doctor --fix' to diagnose"
-                ),
-            ) from exc
+            # We already spawned (or reached) a daemon in this client's
+            # lifetime. A ConnectError now means one of two things, and we
+            # probe /health once to tell them apart:
+            #   * daemon still answers  → the request failed for some other
+            #     reason; surface the error (don't fork another daemon).
+            #   * daemon is gone        → it died/was restarted between
+            #     requests (idle close, manual stop, upgrade). Reset the
+            #     auto-start latch and fall through to re-spawn + retry.
+            if self._probe_health_sync():
+                raise DaemonConnectionError(
+                    error="daemon_unreachable",
+                    hint=(
+                        f"Daemon at {self._host}:{self._port} answered /health "
+                        "but the request connection failed"
+                    ),
+                    action=(
+                        "retry; if it persists check daemon logs "
+                        "(~/.agentcloak/logs/daemon.log)"
+                    ),
+                ) from exc
+            logger.info(
+                "daemon_gone_restarting",
+                host=self._host,
+                port=self._port,
+                hint="previously started daemon is no longer reachable",
+            )
+            self._auto_started = False
 
         started = self._ensure_daemon_sync()
         if not started:
@@ -430,16 +497,26 @@ class DaemonClient:
                 ),
             ) from exc
         if self._auto_started:
-            raise DaemonConnectionError(
-                error="daemon_unreachable",
-                hint=(
-                    f"Daemon started but still unreachable at {self._host}:{self._port}"
-                ),
-                action=(
-                    "check daemon logs (~/.agentcloak/logs/daemon.log) and "
-                    "run 'agentcloak doctor --fix' to diagnose"
-                ),
-            ) from exc
+            # See the sync variant for the probe→re-spawn rationale.
+            if await self._probe_health_async():
+                raise DaemonConnectionError(
+                    error="daemon_unreachable",
+                    hint=(
+                        f"Daemon at {self._host}:{self._port} answered /health "
+                        "but the request connection failed"
+                    ),
+                    action=(
+                        "retry; if it persists check daemon logs "
+                        "(~/.agentcloak/logs/daemon.log)"
+                    ),
+                ) from exc
+            logger.info(
+                "daemon_gone_restarting",
+                host=self._host,
+                port=self._port,
+                hint="previously started daemon is no longer reachable",
+            )
+            self._auto_started = False
 
         started = await self._ensure_daemon_async()
         if not started:
@@ -470,6 +547,29 @@ class DaemonClient:
                     "run 'agentcloak doctor --fix' to diagnose"
                 ),
             ) from retry_exc
+
+    def _probe_health_sync(self) -> bool:
+        """Quick liveness check: does the daemon answer /health right now?
+
+        Returns ``True`` only on a clean ``200``. Any transport error or
+        non-200 counts as "not alive" so the caller treats it as a dead daemon
+        and re-spawns. Used by reconnect recovery, never raises.
+        """
+        try:
+            with httpx.Client(timeout=_RECONNECT_PROBE_TIMEOUT_S) as client:
+                resp = client.get(f"{self._base}/health")
+                return resp.status_code == 200
+        except Exception:
+            return False
+
+    async def _probe_health_async(self) -> bool:
+        """Async variant of :meth:`_probe_health_sync`."""
+        try:
+            async with httpx.AsyncClient(timeout=_RECONNECT_PROBE_TIMEOUT_S) as client:
+                resp = await client.get(f"{self._base}/health")
+                return resp.status_code == 200
+        except Exception:
+            return False
 
     def _build_daemon_argv(
         self,
@@ -1577,6 +1677,16 @@ class DaemonClient:
 
     async def performance_metrics(self) -> dict[str, Any]:
         return await self._send_async("GET", "/performance/metrics")
+
+    # --- Session management (async) ---
+
+    async def session_list(self) -> dict[str, Any]:
+        return await self._send_async("GET", "/session/list")
+
+    async def session_close(self, *, session_id: str) -> dict[str, Any]:
+        return await self._send_async(
+            "POST", "/session/close", json_body={"session_id": session_id}
+        )
 
 
 # ----------------------------------------------------------------------

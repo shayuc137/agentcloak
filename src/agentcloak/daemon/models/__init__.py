@@ -167,6 +167,11 @@ from agentcloak.daemon.models.serve import (
     ServeStatusResponse,
     ServeStopResponse,
 )
+from agentcloak.daemon.models.session import (
+    SessionCloseRequest,
+    SessionCloseResponse,
+    SessionListResponse,
+)
 from agentcloak.daemon.models.sourcemap import (
     SourceMapEntryModel,
     SourceMapGetRequest,
@@ -322,6 +327,9 @@ __all__ = [
     "ServeStartRequest",
     "ServeStatusResponse",
     "ServeStopResponse",
+    "SessionCloseRequest",
+    "SessionCloseResponse",
+    "SessionListResponse",
     "ShutdownResponse",
     "SkipPausesRequest",
     "SnapshotResponse",

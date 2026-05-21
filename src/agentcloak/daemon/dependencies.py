@@ -76,49 +76,95 @@ class SnapshotCache:
         self._state.prev_snapshot_lines = value
 
 
-def get_browser_ctx(request: Request) -> Any:
-    """Get the live SecureBrowserContext (wraps the active backend)."""
-    ctx = request.app.state.browser_ctx
-    if ctx is None:
-        # Tailor the hint based on whether the daemon is in
-        # remote_bridge mode (extension not paired) or just hasn't
-        # finished startup yet. The hint tells the agent which knob to
-        # turn — paying the cost of one ``getattr`` keeps the error
-        # actionable instead of "wait and retry".
-        active_tier = getattr(request.app.state, "active_tier", None)
-        tier_value = getattr(active_tier, "value", active_tier)
-        if tier_value == "remote_bridge":
-            raise HTTPException(
-                status_code=503,
-                detail={
-                    "ok": False,
-                    "error": "browser_not_ready",
-                    "hint": "remote_bridge tier active but no extension connected",
-                    "action": (
-                        "install and connect the agentcloak Chrome extension, "
-                        "or call /launch with tier=cloak to use a local browser"
-                    ),
-                },
-            )
-        raise HTTPException(
+# Header carrying the caller's session identity. Absent header (every
+# legacy CLI invocation, curl, etc.) maps to the default session so the
+# multi-session change is fully backward compatible.
+_SESSION_HEADER = "x-agentcloak-session"
+_DEFAULT_SESSION_ID = "default"
+
+
+def _session_id_of(request: Request) -> str:
+    """Return the requested session id, defaulting to ``"default"``.
+
+    Header names are case-insensitive in Starlette; we read the lower-cased
+    form for clarity.
+    """
+    return request.headers.get(_SESSION_HEADER, _DEFAULT_SESSION_ID)
+
+
+def _browser_not_ready(request: Request) -> HTTPException:
+    """Build the standard ``browser_not_ready`` 503 for the default session."""
+    # Tailor the hint based on whether the daemon is in remote_bridge mode
+    # (extension not paired) or just hasn't finished startup yet. The hint
+    # tells the agent which knob to turn — paying the cost of one ``getattr``
+    # keeps the error actionable instead of "wait and retry".
+    active_tier = getattr(request.app.state, "active_tier", None)
+    tier_value = getattr(active_tier, "value", active_tier)
+    if tier_value == "remote_bridge":
+        return HTTPException(
             status_code=503,
             detail={
                 "ok": False,
                 "error": "browser_not_ready",
-                "hint": "Browser context is not initialized",
-                "action": "wait a moment for daemon startup, then retry",
+                "hint": "remote_bridge tier active but no extension connected",
+                "action": (
+                    "install and connect the agentcloak Chrome extension, "
+                    "or call /launch with tier=cloak to use a local browser"
+                ),
             },
         )
+    return HTTPException(
+        status_code=503,
+        detail={
+            "ok": False,
+            "error": "browser_not_ready",
+            "hint": "Browser context is not initialized",
+            "action": "wait a moment for daemon startup, then retry",
+        },
+    )
+
+
+async def get_browser_ctx(request: Request) -> Any:
+    """Get the live SecureBrowserContext for the caller's session.
+
+    Multi-session routing (Child A): a named ``X-Agentcloak-Session`` header
+    is multiplexed through :class:`SessionManager`, which lazily launches an
+    isolated browser per session. The ``"default"`` session (and any request
+    that arrives with no header) keeps using ``app.state.browser_ctx`` so the
+    mature :class:`ContextManager` tier-switch / remote-bridge / proxy
+    machinery is reused verbatim — that path is provably unchanged.
+
+    The provider is ``async`` because launching a session browser awaits;
+    FastAPI supports async dependency providers natively.
+    """
+    session_mgr = getattr(request.app.state, "session_manager", None)
+    session_id = _session_id_of(request)
+    if session_mgr is not None and session_id != _DEFAULT_SESSION_ID:
+        return await session_mgr.get_or_create(session_id)
+
+    # Default session, or a daemon/test app with no SessionManager wired —
+    # both resolve to the single ContextManager-owned slot.
+    ctx = request.app.state.browser_ctx
+    if ctx is None:
+        raise _browser_not_ready(request)
     return ctx
 
 
-def get_optional_browser_ctx(request: Request) -> Any:
+async def get_optional_browser_ctx(request: Request) -> Any:
     """Get the active context if one exists, else ``None``.
 
     Used by routes that should answer even when no browser is up — most
     notably ``/health`` so an agent can introspect the daemon's tier
     while waiting for the extension to connect.
+
+    For a named session this lazily launches the browser (same as
+    :func:`get_browser_ctx`); for the default session it returns whatever is
+    on ``app.state.browser_ctx`` without raising.
     """
+    session_mgr = getattr(request.app.state, "session_manager", None)
+    session_id = _session_id_of(request)
+    if session_mgr is not None and session_id != _DEFAULT_SESSION_ID:
+        return await session_mgr.get_or_create(session_id)
     return getattr(request.app.state, "browser_ctx", None)
 
 
@@ -277,6 +323,12 @@ def get_bridge_service(request: Request) -> BridgeService:
     return svc
 
 
+def get_session_manager(request: Request) -> Any:
+    """Return the :class:`SessionManager` or ``None`` in single-session mode."""
+    return getattr(request.app.state, "session_manager", None)
+
+
+SessionManagerDep = Annotated[Any, Depends(get_session_manager)]
 BrowserCtxDep = Annotated[Any, Depends(get_browser_ctx)]
 OptionalBrowserCtxDep = Annotated[Any, Depends(get_optional_browser_ctx)]
 RemoteCtxDep = Annotated[Any, Depends(get_remote_ctx)]

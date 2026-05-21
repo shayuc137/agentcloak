@@ -77,12 +77,24 @@ class DaemonConfig:
     log_max_bytes: int = 10_000_000  # 10 MB
     log_backup_count: int = 3
     # HTTP client (CLI/MCP ↔ daemon) request timeout. Browser work can be slow
-    # (page load, full-page screenshot) so we lean generous here.
+    # (page load, full-page screenshot) so we lean generous here. This maps to
+    # the httpx ``read`` timeout — the long phase.
     http_client_timeout: int = 90
+    # Connection (TCP handshake) timeout, split out from the read timeout so a
+    # dead/unreachable daemon fails fast (≈5s) while a slow browser action
+    # still gets the full ``http_client_timeout`` read budget. Matters most for
+    # remote daemons where the connect phase can stall.
+    http_connect_timeout: float = 5.0
     # Auto-start: total budget for waiting on /health after spawning daemon,
     # and the poll interval between health probes.
     auto_start_timeout: float = 15.0
     auto_start_poll_interval: float = 0.5
+    # Per-session idle reclamation (multi-session): a named (non-default)
+    # session whose browser sits unused this many seconds is suspended — its
+    # Chromium is closed to free RAM while the session metadata survives so the
+    # next request transparently rebuilds it. 0 disables per-session
+    # reclamation. The default session uses ``browser.idle_timeout_min``.
+    session_idle_timeout: float = 300.0
 
 
 @dataclass
@@ -240,6 +252,10 @@ def load_config(*, root: Path | None = None) -> tuple[Paths, AgentcloakConfig]:
         _env("HTTP_CLIENT_TIMEOUT")
         or daemon_tbl.get("http_client_timeout", cfg.daemon.http_client_timeout)
     )
+    cfg.daemon.http_connect_timeout = float(
+        _env("HTTP_CONNECT_TIMEOUT")
+        or daemon_tbl.get("http_connect_timeout", cfg.daemon.http_connect_timeout)
+    )
     cfg.daemon.auto_start_timeout = float(
         _env("AUTO_START_TIMEOUT")
         or daemon_tbl.get("auto_start_timeout", cfg.daemon.auto_start_timeout)
@@ -249,6 +265,10 @@ def load_config(*, root: Path | None = None) -> tuple[Paths, AgentcloakConfig]:
         or daemon_tbl.get(
             "auto_start_poll_interval", cfg.daemon.auto_start_poll_interval
         )
+    )
+    cfg.daemon.session_idle_timeout = float(
+        _env("SESSION_IDLE_TIMEOUT")
+        or daemon_tbl.get("session_idle_timeout", cfg.daemon.session_idle_timeout)
     )
 
     # ---------- [browser] ----------
@@ -463,6 +483,8 @@ _ENV_KEYS: dict[str, list[str]] = {
     "action_timeout": ["ACTION_TIMEOUT"],
     "batch_settle_timeout": ["BATCH_SETTLE_TIMEOUT"],
     "http_client_timeout": ["HTTP_CLIENT_TIMEOUT"],
+    "http_connect_timeout": ["HTTP_CONNECT_TIMEOUT"],
+    "session_idle_timeout": ["SESSION_IDLE_TIMEOUT"],
     "max_return_size": ["MAX_RETURN_SIZE"],
     "screenshot_quality": ["SCREENSHOT_QUALITY"],
     "mcp_screenshot_quality": ["MCP_SCREENSHOT_QUALITY"],
@@ -495,8 +517,10 @@ _FIELD_SCHEMA: dict[str, tuple[str, str, type]] = {
     "daemon.log_max_bytes": ("daemon", "log_max_bytes", int),
     "daemon.log_backup_count": ("daemon", "log_backup_count", int),
     "daemon.http_client_timeout": ("daemon", "http_client_timeout", int),
+    "daemon.http_connect_timeout": ("daemon", "http_connect_timeout", float),
     "daemon.auto_start_timeout": ("daemon", "auto_start_timeout", float),
     "daemon.auto_start_poll_interval": ("daemon", "auto_start_poll_interval", float),
+    "daemon.session_idle_timeout": ("daemon", "session_idle_timeout", float),
     # [browser]
     "browser.default_tier": ("browser", "default_tier", str),
     "browser.default_profile": ("browser", "default_profile", str),
@@ -542,8 +566,10 @@ _FLAT_FIELD_MAP: list[tuple[str, str, str]] = [
     ("log_max_bytes", "daemon", "log_max_bytes"),
     ("log_backup_count", "daemon", "log_backup_count"),
     ("http_client_timeout", "daemon", "http_client_timeout"),
+    ("http_connect_timeout", "daemon", "http_connect_timeout"),
     ("auto_start_timeout", "daemon", "auto_start_timeout"),
     ("auto_start_poll_interval", "daemon", "auto_start_poll_interval"),
+    ("session_idle_timeout", "daemon", "session_idle_timeout"),
     # [browser]
     ("default_tier", "browser", "default_tier"),
     ("default_profile", "browser", "default_profile"),
@@ -827,7 +853,13 @@ def write_example_config(paths: Paths) -> Path:
             (
                 "http_client_timeout",
                 defaults.daemon.http_client_timeout,
-                "Seconds CLI/MCP will wait for a daemon HTTP reply.",
+                "Seconds CLI/MCP will wait for a daemon HTTP reply (read phase).",
+            ),
+            (
+                "http_connect_timeout",
+                defaults.daemon.http_connect_timeout,
+                "Seconds CLI/MCP will wait for the TCP connect to a daemon.\n"
+                "Kept short so a dead/remote daemon fails fast.",
             ),
             (
                 "auto_start_timeout",
@@ -839,6 +871,14 @@ def write_example_config(paths: Paths) -> Path:
                 "auto_start_poll_interval",
                 defaults.daemon.auto_start_poll_interval,
                 "Poll interval (s) between /health checks during\nauto-start.",
+            ),
+            (
+                "session_idle_timeout",
+                defaults.daemon.session_idle_timeout,
+                "Seconds a named (multi-session) browser may sit idle before\n"
+                "it is suspended to free RAM (metadata is kept and the next\n"
+                "request rebuilds it). 0 disables. The default session uses\n"
+                "browser.idle_timeout_min instead.",
             ),
         ],
     )

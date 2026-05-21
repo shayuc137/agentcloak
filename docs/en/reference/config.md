@@ -21,6 +21,7 @@ The file uses four sections: `[daemon]`, `[browser]`, `[security]`, and `[bridge
 host = "127.0.0.1"
 port = 18765
 http_client_timeout = 90
+http_connect_timeout = 5.0
 auto_start_timeout = 15.0
 auto_start_poll_interval = 0.5
 log_level = "warning"
@@ -72,7 +73,8 @@ All environment variables use the `AGENTCLOAK_` prefix.
 |----------|-----------|---------|-------------|
 | `AGENTCLOAK_HOST` | `daemon.host` | `127.0.0.1` | Daemon listen address |
 | `AGENTCLOAK_PORT` | `daemon.port` | `18765` | Daemon listen port |
-| `AGENTCLOAK_HTTP_CLIENT_TIMEOUT` | `daemon.http_client_timeout` | `90` | HTTP request timeout from CLI / MCP to daemon (seconds) |
+| `AGENTCLOAK_HTTP_CLIENT_TIMEOUT` | `daemon.http_client_timeout` | `90` | HTTP read timeout from CLI / MCP to daemon (seconds) |
+| `AGENTCLOAK_HTTP_CONNECT_TIMEOUT` | `daemon.http_connect_timeout` | `5.0` | TCP connect timeout from CLI / MCP to daemon (seconds); kept short so a dead / remote daemon fails fast |
 | `AGENTCLOAK_AUTO_START_TIMEOUT` | `daemon.auto_start_timeout` | `15.0` | Seconds to wait for `/health` after auto-spawning the daemon |
 | `AGENTCLOAK_AUTO_START_POLL_INTERVAL` | `daemon.auto_start_poll_interval` | `0.5` | Health-probe interval during daemon auto-start (seconds) |
 | `AGENTCLOAK_LOG_LEVEL` | `daemon.log_level` | `warning` | Daemon log level (debug/info/warning/error) |

@@ -251,6 +251,8 @@ ROUTE_TO_CLI: dict[str, str] = {
     "/bridge/claim": "cloak bridge claim",
     "/bridge/finalize": "cloak bridge finalize",
     "/bridge/token/reset": "cloak bridge token --reset",
+    "/session/list": "cloak session list",
+    "/session/close": "cloak session close SESSION_ID",
 }
 
 # Route → MCP tool. Several routes share a single tool that branches on an
@@ -361,6 +363,8 @@ ROUTE_TO_MCP: dict[str, str] = {
     "/resume": "agentcloak_resume",
     "/shutdown": "(daemon lifecycle — not exposed)",
     "/launch": "agentcloak_launch",
+    "/session/list": "(session management — CLI only)",
+    "/session/close": "(session management — CLI only)",
 }
 
 

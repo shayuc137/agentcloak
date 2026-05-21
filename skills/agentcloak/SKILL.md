@@ -160,6 +160,7 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak cookies set NAME VAL [--domain D]` / `set --curl '<copy-as-curl>'` / `clear` / `delete NAME` | Cookie CRUD; `--curl` seeds cookies from a DevTools Copy-as-cURL string |
 | `cloak pdf [-o file] [--format A4] [--landscape]` | Export the current page to PDF (headless only) |
 | `cloak serve start DIR [--port P]` / `stop` / `status` | Local http server for previewing local files (`file://` is blocked); navigate to the printed URL |
+| `cloak session list` / `close SESSION_ID` | Multi-session management: list named sessions, close a specific session to free its browser |
 | `cloak cdp endpoint` | Get CDP WebSocket URL (for jshookmcp) |
 | `cloak config` | Show merged config with value sources (default/env/toml) |
 | `cloak config get KEY` | Print one value (e.g. `cloak config get browser.proxy`) |

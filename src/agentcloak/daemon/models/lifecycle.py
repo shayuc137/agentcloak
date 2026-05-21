@@ -31,6 +31,8 @@ class HealthResponse(BaseModel):
 
     ok: Literal[True] = True
     service: str = "agentcloak-daemon"
+    version: str = ""
+    route_count: int = 0
     # ``stealth_tier`` is the tier of the *currently active* backend; for a
     # remote_bridge session awaiting the extension this is ``remote_bridge``
     # even though no browser exists yet.

@@ -47,7 +47,18 @@ def _probe_daemon_runtime(
                 "humanize": result.get("humanize"),
                 "proxy": result.get("proxy"),
                 "active_profile": result.get("active_profile"),
+                "daemon_version": result.get("version", ""),
+                "route_count": result.get("route_count", 0),
             }
+            # Version mismatch detection
+            import agentcloak
+
+            daemon_ver = result.get("version", "")
+            local_ver = agentcloak.__version__
+            if daemon_ver and daemon_ver != local_ver:
+                runtime["version_mismatch"] = True
+                runtime["local_version"] = local_ver
+
             check = {
                 "name": "daemon",
                 "ok": True,

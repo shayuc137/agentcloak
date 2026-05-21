@@ -56,6 +56,7 @@ async def handle_health(
     # local backend is activated with a profile name. Ephemeral sessions leave
     # it as None — doctor renders that as ``no profile (ephemeral)``.
     active_profile = getattr(request.app.state, "local_profile", None)
+    route_count = len(request.app.routes)
     diagnostic = DiagnosticService()
     data = await diagnostic.health(
         ctx,
@@ -64,6 +65,7 @@ async def handle_health(
         remote_connected=remote_ctx is not None,
         config=config,
         active_profile=active_profile,
+        route_count=route_count,
     )
     return data
 

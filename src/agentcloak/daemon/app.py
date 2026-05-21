@@ -15,6 +15,7 @@ from typing import Any
 
 from fastapi import FastAPI
 
+import agentcloak
 from agentcloak.daemon.exception_handlers import register_exception_handlers
 from agentcloak.daemon.middleware import install_middlewares
 from agentcloak.daemon.routes import register_routers
@@ -30,7 +31,7 @@ def create_app() -> FastAPI:
             "Browser automation HTTP API. Routes are designed for AI agents "
             "and consumed by the agentcloak CLI and MCP server."
         ),
-        version="0.2.0",
+        version=agentcloak.__version__,
     )
 
     # app.state default slots — dependency providers expect these to exist.

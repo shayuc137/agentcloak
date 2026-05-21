@@ -572,7 +572,13 @@ async def start(
         bridge_token=bridge_token,
     )
 
-    logger.info("daemon_ready", host=actual_host, port=actual_port, tier=tier.value)
+    logger.info(
+        "daemon_ready",
+        host=actual_host,
+        port=actual_port,
+        tier=tier.value,
+        route_count=len(app.routes),
+    )
 
     resume_writer.start_background()
 

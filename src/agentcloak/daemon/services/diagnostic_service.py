@@ -576,6 +576,7 @@ class DiagnosticService:
         remote_connected: bool = False,
         config: Any = None,
         active_profile: str | None = None,
+        route_count: int = 0,
     ) -> dict[str, Any]:
         """Build a health payload — supports the "no browser yet" state.
 
@@ -588,9 +589,13 @@ class DiagnosticService:
         environment (which browser, headless or not, proxy, profile) rather
         than just daemon liveness.
         """
+        import agentcloak
+
         data: dict[str, Any] = {
             "ok": True,
             "service": "agentcloak-daemon",
+            "version": agentcloak.__version__,
+            "route_count": route_count,
             "browser_ready": ctx is not None,
             "remote_connected": remote_connected,
         }

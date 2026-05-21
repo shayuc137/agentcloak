@@ -318,6 +318,15 @@ class DaemonClient:
 
     def _parse_response(self, resp: httpx.Response) -> dict[str, Any]:
         """Decode a daemon response and raise on error envelope."""
+        if resp.status_code == 404:
+            req = resp.request
+            raise AgentBrowserError(
+                error="route_not_found",
+                hint=f"Daemon returned 404 for {req.method} {req.url.path}",
+                action="daemon may be outdated — try: "
+                "cloak daemon stop && cloak daemon start -b",
+            )
+
         raw = resp.content
         try:
             data: dict[str, Any] = orjson.loads(raw) if raw else {}

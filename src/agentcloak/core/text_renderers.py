@@ -517,11 +517,18 @@ def render_tab_op_text(verb: str, data: dict[str, Any]) -> str:
 
 def render_health_text(data: dict[str, Any]) -> str:
     """Render ``/health`` as a one-liner with optional URL/capture suffix."""
+    version = str(data.get("version", "") or "")
     tier = str(data.get("stealth_tier", data.get("active_tier", "?")) or "?")
     browser_ready = data.get("browser_ready")
     seq = int(data.get("seq", 0) or 0)
+    route_count = int(data.get("route_count", 0) or 0)
     status = "ready" if browser_ready else "not-ready"
-    parts = [f"tier: {tier}", f"browser: {status}", f"seq: {seq}"]
+    parts: list[str] = []
+    if version:
+        parts.append(f"v{version}")
+    parts.extend([f"tier: {tier}", f"browser: {status}", f"seq: {seq}"])
+    if route_count:
+        parts.append(f"routes: {route_count}")
     current_url = data.get("current_url")
     if current_url:
         parts.append(f"url: {current_url}")
@@ -979,9 +986,20 @@ def render_doctor_text(data: dict[str, Any]) -> str:
     runtime = _as_dict(raw_runtime) if isinstance(raw_runtime, dict) else {}
     status_line = _format_doctor_status_line(runtime)
 
+    version_warn = ""
+    if runtime.get("version_mismatch"):
+        daemon_ver = str(runtime.get("daemon_version", "?"))
+        local_ver = str(runtime.get("local_version", ac_version))
+        version_warn = (
+            f"[warn] daemon version {daemon_ver} != local {local_ver}"
+            " — restart: cloak daemon stop && cloak daemon start -b"
+        )
+
     lines: list[str] = []
     if not failed:
         lines.append(f"all {total} checks passed | agentcloak {ac_version}")
+        if version_warn:
+            lines.append(version_warn)
         lines.append(status_line)
         return "\n".join(lines)
 
@@ -990,12 +1008,12 @@ def render_doctor_text(data: dict[str, Any]) -> str:
         name = str(check.get("name", "") or "")
         detail = str(check.get("detail", "") or "")
         hint = str(check.get("hint", "") or "")
-        # Layout matches the PRD example: ``[fail] name | detail | hint``.
-        # An empty hint collapses cleanly — better than printing ``| ``.
         line = f"[fail] {name} | {detail}"
         if hint:
             line += f" | {hint}"
         lines.append(line)
+    if version_warn:
+        lines.append(version_warn)
     lines.append(status_line)
     return "\n".join(lines)
 

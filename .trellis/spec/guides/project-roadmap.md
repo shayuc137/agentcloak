@@ -360,8 +360,8 @@ spec 更新：`browser/browser-backend-contract.md`（Protocol → ABC）、`dep
 
 - [ ] Windows / macOS 平台支持矩阵文档（哪些功能可用、哪些需降级、已知限制）
 - [ ] 平台相关 CI 测试（GitHub Actions matrix 增加 windows-latest / macos-latest smoke test）
-- [ ] daemon 崩溃恢复：CLI/MCP 检测到 daemon 挂了自动重启（当前只有首次 auto-start，没有 re-start）
-- [ ] httpx 连接断线重试：CLI → daemon 的请求增加可配置的 retry（网络抖动、daemon 重启间隙）
+- [x] daemon 崩溃恢复：`_auto_started` 可重置 + health probe 确认 → 自动 re-spawn（v0.3 task `05-21-daemon-reliability`）
+- [x] httpx 连接断线重试：`HTTPTransport(retries=2)` + 超时拆分 `connect=5s / read=90s`（v0.3）
 - [ ] daemon 健康 metrics 增强：uptime、请求计数、当前连接数、浏览器内存用量
 - [x] ~~`screenshot --output <path>` 指定保存路径~~ ← 已在 Phase 7a 完成
 - [x] 错误处理全量审计：全部 99 route + 5 个 browser manager + 3 个 backend 确认完毕——无静默失败、三字段 envelope 完备（27:27 完美 1:1）、`_cdp_send_impl` 缺失包装已修复（commit `6d6f2b8`）
@@ -374,14 +374,14 @@ spec 更新：`browser/browser-backend-contract.md`（Protocol → ABC）、`dep
 
 **Dogfood 遗留（CLI 全量测试）**：
 - [ ] **upload 自动查找隐藏 file input** — `upload -f photo.jpg` 不指定 `--index` 时自动 `querySelectorAll('input[type=file]')` 查找（含 `display:none`），支持 `--nth N` 选择第 N 个。解决现代站 drag-drop 上传无可见 file input 的问题
-- [ ] **navigate 后自动 WS/SSE 监听** — 和 console CDP 同模式，navigate 尾部调 `streaming_monitor.ensure_listening()` 避免早期 WS 连接丢失
+- [x] **navigate 后自动 WS/SSE 监听** — `auto_stream_monitor=true`（默认），navigate 尾部调 `streaming_monitor.ensure_listening()`（v0.3 task `05-21-dx-quickfixes`）
 - [ ] **download wait --click N** — arm waiter → click [N] → await download，一条命令完成点击触发下载。解决 agent 单线程无法并发 wait + click 的问题
-- [ ] **sourcemap 404 错误信息优化** — fetch 返回非 JSON（HTML 404）时报 "sourcemap fetch returned non-JSON (status 404)" 而非 "parse failed"
+- [x] **sourcemap 404 错误信息优化** — `_load_raw` 检查 HTTP status，非 2xx 报 "HTTP {status}"；JSON parse 区分 non-JSON vs malformed（v0.3）
 
 **逆向实战发现**：
-- [ ] **daemon 版本一致性检查** — daemon start 时输出 route 数量，doctor 检查 daemon 版本和本地 package 是否一致。CLI 收到 404 时提示"route 不存在，尝试重启 daemon"。来源：逆向过程中 daemon 跑旧版本（41 routes vs 99），`script add` 返回 404 花了几分钟才定位
-- [ ] **click --force 跳过 pointer check** — 被 CSS overlay 遮挡的元素无法点击，当前只能 `evaluate` 绕过。加 `--force` flag 跳过 Playwright 的 pointer_events 检查。错误信息提示 "element is covered; use --force or evaluate"。来源：B2 主题 not-allow-down overlay 遮挡下载按钮
-- [ ] **debugger search 支持 URL 模式** — 当前只能按 script ID 搜索，navigate 后 ID 作废。支持 `--url "main.js"` 按文件名匹配后搜索。来源：帖子页找到 main.js(id=34)，navigate 到下载页后 search 报错 "No script for id: 34"
+- [x] **daemon 版本一致性检查** — `/health` 返回 version + route_count，doctor 版本比对 + `[warn]`，CLI 404 提示 "route not found, restart daemon"（v0.3 task `05-21-version-check`）
+- [x] **click --force 跳过 pointer check** — `_click_impl` ABC 加 `force` 参数，Playwright `element.click(force=True)`，被遮挡时 hint "use --force or evaluate"（v0.3）
+- [x] **debugger search 支持 URL 模式** — `SearchRequest` 加 `url` 字段，manager 按 URL substring match 多 script 搜索合并（v0.3）
 - [ ] **逆向 evaluate presets** — Vue/React 组件内省（`--preset vue-inspect` 自动枚举 `__vue__.$data/methods`）、JWT 解码等常见逆向操作快捷方式
 - Deliverable: **CLI 交互摩擦点 + 逆向工作流 DX 优化**
 
@@ -471,9 +471,13 @@ T4: SourceMap（依赖 T3）
 #### 7d: 进阶交互 + 设备模拟
 
 - [ ] drag & drop（扩展现有 `/action` 的 kind: `"drag"`）
-- [ ] multi-session（同时管理多个站点的独立 context，支持多浏览器同时运行 + 切换）
-  - route: `/session/create`, `/session/list`, `/session/switch`, `/session/close`
-  - 7b manager 架构已为此预留：每个 ctx 各自持有 manager 实例，切换零额外适配
+- [x] multi-session（提前到 v0.3 完成，task `05-21-daemon-reliability`）
+  - SessionManager 多路复用 named session，每 session 独立 browser（选项 A）
+  - `X-Agentcloak-Session` header 路由，`CLAUDE_CODE_SESSION_ID` 零配置自动检测
+  - per-session idle timeout（5min 默认）+ 三态生命周期（registered/active/suspended）
+  - MCP 自动 `mcp-{pid}` session_id + atexit close
+  - route: `/session/list`, `/session/close`（create 由 provider 按需自动完成）
+  - 后续优化：选项 B（单 browser 多 context，减少内存），接口已预留无痛切换
 - [ ] viewport / device emulation — CDP `Emulation.setDeviceMetricsOverride` + 预设设备 profile（iPhone/iPad/Android）
   - route: `/emulation/viewport`, `/emulation/device`
   - 参考 jshookmcp `page_set_viewport` / `page_emulate_device`
@@ -634,6 +638,19 @@ agentcloak 内建（CDP 原生可达）：debugger（断点/调用栈/scope）�
 
 决策依据：jshookmcp 409 tools（35 域）配合使用体验差（双 MCP context 开销、功能重叠、协调成本高）。agentcloak Skill+CLI 模式 ~300 tokens，加逆向能力不显著增加开销。CDP 原生能力不需要额外依赖，保持纯 Python 架构。
 调研记录：`.trellis/tasks/05-20-05-20-core-capabilities/research/core-capabilities-survey.md`
+
+---
+
+### Multi-Session Architecture (D24, v0.3)
+
+**单 daemon 多 session，浏览器按需创建 + idle 回收，`CLAUDE_CODE_SESSION_ID` 零配置隔离。**
+
+选项 A（每 session 独立 browser）先行，SessionManager 接口不暴露实现细节，后续可无痛切选项 B（单 browser 多 context）。session 三态：registered → active → suspended。per-session idle timeout 关浏览器释放内存，全局 idle 关 daemon。
+
+竞品调研（agent-browser/browser-use/chrome-devtools-mcp/pinchtab）均使用显式 session name 环境变量，agentcloak 独创 AI 工具 session ID 自动检测（`CLAUDE_CODE_SESSION_ID`），零配置实现隔离。
+
+决策记录：`.trellis/tasks/05-21-05-21-v03-reliability-dx/design.md`
+竞品调研：`.trellis/tasks/05-21-05-21-v03-reliability-dx/research/browser-ctx-injection-pattern.md`
 
 ---
 

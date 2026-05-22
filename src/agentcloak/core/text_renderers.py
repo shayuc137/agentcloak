@@ -516,8 +516,34 @@ def render_tab_op_text(verb: str, data: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _format_uptime(seconds: float) -> str:
+    """Render an uptime duration compactly (``2h34m`` / ``5m`` / ``12s``).
+
+    Keeps the two largest non-zero units so the status line stays narrow:
+    days+hours, hours+minutes, minutes+seconds, or bare seconds under a
+    minute. Mirrors the human-readable style of ``uptime(1)`` without dragging
+    in a dependency.
+    """
+    total = int(max(0.0, seconds))
+    days, rem = divmod(total, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, secs = divmod(rem, 60)
+    if days:
+        return f"{days}d{hours}h"
+    if hours:
+        return f"{hours}h{minutes}m"
+    if minutes:
+        return f"{minutes}m{secs}s"
+    return f"{secs}s"
+
+
 def render_health_text(data: dict[str, Any]) -> str:
-    """Render ``/health`` as a one-liner with optional URL/capture suffix."""
+    """Render ``/health`` as a one-liner with optional URL/capture suffix.
+
+    When the daemon reports liveness metrics (uptime / request count / active
+    connections), a second line summarises them so ``cloak status`` doubles as
+    a lightweight monitoring readout.
+    """
     version = str(data.get("version", "") or "")
     tier = str(data.get("stealth_tier", data.get("active_tier", "?")) or "?")
     browser_ready = data.get("browser_ready")
@@ -540,7 +566,23 @@ def render_health_text(data: dict[str, Any]) -> str:
         parts.append("page: invalid")
     if data.get("capture_recording"):
         parts.append(f"capture: recording ({int(data.get('capture_entries', 0) or 0)})")
-    return " | ".join(parts)
+    line = " | ".join(parts)
+
+    # Metrics line — only when the daemon supplied them (older daemons / some
+    # test apps omit the fields, in which case we keep the single-line output).
+    metrics_parts: list[str] = []
+    uptime = data.get("uptime_seconds")
+    if uptime is not None:
+        metrics_parts.append(f"uptime {_format_uptime(float(uptime))}")
+    request_count = data.get("request_count")
+    if request_count is not None:
+        metrics_parts.append(f"{int(request_count):,} requests")
+    active = data.get("active_connections")
+    if active is not None:
+        metrics_parts.append(f"{int(active)} active")
+    if metrics_parts:
+        return f"{line}\n{' | '.join(metrics_parts)}"
+    return line
 
 
 def render_launch_text(data: dict[str, Any]) -> str:
@@ -945,6 +987,37 @@ def render_token_text(data: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _format_stale_chromium_hint(data: dict[str, Any]) -> str:
+    """Build the ``[hint]`` line for leftover CloakBrowser Chromium builds.
+
+    Reads the ``stale_chromium`` entry the DiagnosticService puts in
+    ``extras.checks`` (informational, never blocking). Returns an empty string
+    when CloakBrowser is clean or the check is absent, so the caller can append
+    unconditionally. The hint includes a copy-pasteable ``rm -rf`` for the
+    oldest leftover so the user can reclaim the ~700MB without hunting paths.
+    """
+    raw_extras = data.get("extras")
+    extras = _as_dict(raw_extras) if isinstance(raw_extras, dict) else {}
+    extra_checks: list[Any] = list(extras.get("checks") or [])
+    # Normalise to typed dicts first so ``.get`` stays type-checked (the raw
+    # list elements are ``Any``, which would make ``c.get`` partially unknown).
+    normalised = [_as_dict(c) for c in extra_checks if isinstance(c, dict)]
+    stale = next(
+        (c for c in normalised if c.get("name") == "stale_chromium"),
+        None,
+    )
+    if stale is None or stale.get("ok"):
+        return ""
+    dirs_raw: list[Any] = list(stale.get("stale_dirs") or [])
+    dirs = [str(d) for d in dirs_raw if d]
+    if not dirs:
+        return ""
+    count = len(dirs)
+    mb = int(stale.get("reclaimable_mb", 0) or 0)
+    noun = "version" if count == 1 else "versions"
+    return f"[hint] {count} old chromium {noun} (~{mb} MB) — run: rm -rf {dirs[0]}"
+
+
 def _format_doctor_status_line(runtime: dict[str, Any]) -> str:
     """Build the doctor runtime status line.
 
@@ -1022,11 +1095,15 @@ def render_doctor_text(data: dict[str, Any]) -> str:
             " — restart: cloak daemon stop && cloak daemon start -b"
         )
 
+    stale_hint = _format_stale_chromium_hint(data)
+
     lines: list[str] = []
     if not failed:
         lines.append(f"all {total} checks passed | agentcloak {ac_version}")
         if version_warn:
             lines.append(version_warn)
+        if stale_hint:
+            lines.append(stale_hint)
         lines.append(status_line)
         return "\n".join(lines)
 
@@ -1041,6 +1118,8 @@ def render_doctor_text(data: dict[str, Any]) -> str:
         lines.append(line)
     if version_warn:
         lines.append(version_warn)
+    if stale_hint:
+        lines.append(stale_hint)
     lines.append(status_line)
     return "\n".join(lines)
 

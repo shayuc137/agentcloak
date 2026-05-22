@@ -57,6 +57,8 @@ async def handle_health(
     # it as None — doctor renders that as ``no profile (ephemeral)``.
     active_profile = getattr(request.app.state, "local_profile", None)
     route_count = len(request.app.routes)
+    started_at = getattr(request.app.state, "started_at", None)
+    metrics = getattr(request.app.state, "metrics", None)
     diagnostic = DiagnosticService()
     data = await diagnostic.health(
         ctx,
@@ -66,6 +68,8 @@ async def handle_health(
         config=config,
         active_profile=active_profile,
         route_count=route_count,
+        started_at=started_at,
+        metrics=metrics,
     )
     return data
 

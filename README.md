@@ -275,6 +275,7 @@ See the [architecture docs](docs/en/explanation/architecture.md) for a deeper wa
 | CLI reference | [docs/en/reference/cli.md](docs/en/reference/cli.md) |
 | MCP tools reference | [docs/en/reference/mcp.md](docs/en/reference/mcp.md) |
 | Configuration | [docs/en/reference/config.md](docs/en/reference/config.md) |
+| Platform support | [docs/en/reference/platform-support.md](docs/en/reference/platform-support.md) |
 | Browser backends | [docs/en/guides/backends.md](docs/en/guides/backends.md) |
 | MCP setup | [docs/en/guides/mcp-setup.md](docs/en/guides/mcp-setup.md) |
 | Architecture | [docs/en/explanation/architecture.md](docs/en/explanation/architecture.md) |

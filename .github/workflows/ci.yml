@@ -33,11 +33,20 @@ jobs:
         run: uv run python scripts/preflight.py --skip tests
 
   unit-tests:
-    name: Unit Tests / Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+    name: Unit Tests / ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
     strategy:
+      # Don't cancel the whole matrix when one OS/Python combo fails — we want
+      # to see which platform broke, not just the first failure.
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.12", "3.13", "3.14"]
+        exclude:
+          # macOS runners are the slowest/most expensive; 3.14 there is
+          # redundant once Linux + Windows already cover the newest Python.
+          - os: macos-latest
+            python-version: "3.14"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6

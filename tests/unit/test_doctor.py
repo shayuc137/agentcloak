@@ -4,6 +4,7 @@ import json
 import tempfile
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from typer.testing import CliRunner
@@ -317,3 +318,145 @@ class TestDiagnosticServiceDirect:
         assert isinstance(name, str) and name
         assert isinstance(mgr_argv, list) and mgr_argv
         assert isinstance(pkg, str) and pkg
+
+
+class TestStaleChromiumCheck:
+    """``_check_stale_chromium`` — disk-hygiene detection for old binaries.
+
+    CloakBrowser's ``get_cache_dir`` / ``get_effective_version`` are patched so
+    the test owns a fake cache layout; the check itself is pure ``Path`` work.
+    """
+
+    @staticmethod
+    def _make_version_dir(root: Path, version: str, *, size_bytes: int) -> Path:
+        d = root / f"chromium-{version}"
+        d.mkdir()
+        (d / "chrome").write_bytes(b"\x00" * size_bytes)
+        return d
+
+    def test_only_current_version_is_clean(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            cache = Path(td)
+            self._make_version_dir(cache, "146.0.1", size_bytes=100)
+            with (
+                patch("cloakbrowser.config.get_cache_dir", return_value=cache),
+                patch(
+                    "cloakbrowser.config.get_effective_version",
+                    return_value="146.0.1",
+                ),
+            ):
+                result = DiagnosticService._check_stale_chromium()
+        assert result["ok"] is True
+        assert result["stale_dirs"] == []
+        assert result["reclaimable_mb"] == 0
+
+    def test_old_version_flagged_as_stale(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            cache = Path(td)
+            self._make_version_dir(cache, "146.0.2", size_bytes=10)  # current
+            # 2 MiB of "old" binary to reclaim.
+            old = self._make_version_dir(cache, "146.0.1", size_bytes=2 * 1024 * 1024)
+            with (
+                patch("cloakbrowser.config.get_cache_dir", return_value=cache),
+                patch(
+                    "cloakbrowser.config.get_effective_version",
+                    return_value="146.0.2",
+                ),
+            ):
+                result = DiagnosticService._check_stale_chromium()
+        assert result["ok"] is False
+        assert result["stale_dirs"] == [str(old)]
+        # ~2 MiB rounded.
+        assert result["reclaimable_mb"] == 2
+        assert "1 old chromium version" in result["detail"]
+
+    def test_multiple_stale_versions_summed(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            cache = Path(td)
+            self._make_version_dir(cache, "146.0.3", size_bytes=10)  # current
+            self._make_version_dir(cache, "146.0.1", size_bytes=1024 * 1024)
+            self._make_version_dir(cache, "146.0.2", size_bytes=1024 * 1024)
+            with (
+                patch("cloakbrowser.config.get_cache_dir", return_value=cache),
+                patch(
+                    "cloakbrowser.config.get_effective_version",
+                    return_value="146.0.3",
+                ),
+            ):
+                result = DiagnosticService._check_stale_chromium()
+        assert result["ok"] is False
+        assert len(result["stale_dirs"]) == 2
+        assert result["reclaimable_mb"] == 2
+        assert "2 old chromium versions" in result["detail"]
+
+    def test_missing_cache_dir_is_clean(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            cache = Path(td) / "does-not-exist"
+            with (
+                patch("cloakbrowser.config.get_cache_dir", return_value=cache),
+                patch(
+                    "cloakbrowser.config.get_effective_version",
+                    return_value="146.0.1",
+                ),
+            ):
+                result = DiagnosticService._check_stale_chromium()
+        assert result["ok"] is True
+        assert result["reclaimable_mb"] == 0
+
+    def test_appears_in_doctor_extras(self) -> None:
+        # The doctor() report must surface the stale check in extras (it is
+        # informational, so it lives there, not in the blocking ``checks``).
+        ds = DiagnosticService()
+        with tempfile.TemporaryDirectory() as td:
+            report = ds.doctor(data_dir=Path(td))
+        extra_names = {c["name"] for c in report["extras"]["checks"]}
+        assert "stale_chromium" in extra_names
+
+
+class TestStaleChromiumHint:
+    """``render_doctor_text`` surfaces a ``[hint]`` line for stale binaries."""
+
+    def _report(self, *, stale: bool) -> dict[str, Any]:
+        stale_check: dict[str, Any] = (
+            {
+                "name": "stale_chromium",
+                "ok": False,
+                "detail": "1 old chromium version (~697 MB reclaimable)",
+                "stale_dirs": ["/home/u/.cloakbrowser/chromium-146.0.7680.177.3"],
+                "reclaimable_mb": 697,
+            }
+            if stale
+            else {
+                "name": "stale_chromium",
+                "ok": True,
+                "detail": "only current version",
+                "stale_dirs": [],
+                "reclaimable_mb": 0,
+            }
+        )
+        return {
+            "healthy": True,
+            "checks": [{"name": "python_version", "ok": True, "detail": "3.12"}],
+            "extras": {"available": not stale, "checks": [stale_check]},
+        }
+
+    def test_hint_present_when_stale(self) -> None:
+        rendered = render_doctor_text(self._report(stale=True))
+        assert "[hint]" in rendered
+        assert "1 old chromium version" in rendered
+        assert "697 MB" in rendered
+        assert "rm -rf /home/u/.cloakbrowser/chromium-146.0.7680.177.3" in rendered
+
+    def test_no_hint_when_clean(self) -> None:
+        rendered = render_doctor_text(self._report(stale=False))
+        assert "[hint]" not in rendered
+        assert "chromium" not in rendered.lower()
+
+    def test_no_hint_when_extras_absent(self) -> None:
+        # Older reports without an extras block must not crash the renderer.
+        report = {
+            "healthy": True,
+            "checks": [{"name": "python_version", "ok": True, "detail": "3.12"}],
+        }
+        rendered = render_doctor_text(report)
+        assert "[hint]" not in rendered

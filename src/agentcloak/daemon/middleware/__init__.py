@@ -1,8 +1,14 @@
-"""HTTP middleware — localhost gating and request-time tracking.
+"""HTTP middleware — localhost gating, request-time tracking, request metrics.
 
-Responsibilities are split: error envelopes live in ``exception_handlers.py``
-and this file only enforces localhost-only access plus records
-``last_request_time`` for the idle watchdog.
+Error envelopes live in ``exception_handlers.py``; this package handles the
+cross-cutting request concerns:
+
+* localhost-only access enforcement (the daemon is unauthenticated),
+* recording ``last_request_time`` for the idle watchdog,
+* request counters for ``/health`` (see :mod:`.metrics`).
+
+:func:`install_middlewares` wires them in the right order — metrics last so it
+sits at the outermost layer and counts every request that reaches the daemon.
 """
 
 from __future__ import annotations
@@ -12,13 +18,18 @@ from typing import TYPE_CHECKING
 
 from fastapi.responses import JSONResponse
 
+from agentcloak.daemon.middleware.metrics import (
+    MetricsState,
+    install_metrics_middleware,
+)
+
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from fastapi import FastAPI, Request
     from starlette.responses import Response
 
-__all__ = ["install_middlewares"]
+__all__ = ["MetricsState", "install_middlewares"]
 
 
 # WebSocket endpoints handle their own localhost gating via the bridge token.
@@ -40,7 +51,12 @@ def _is_localhost(request: Request) -> bool:
 
 
 def install_middlewares(app: FastAPI) -> None:
-    """Attach the localhost gate + request-time recorder."""
+    """Attach the localhost gate + request-time recorder + metrics counter.
+
+    Order matters: ``@app.middleware`` is LIFO (last registered runs
+    outermost), so the metrics middleware is installed *after* the localhost
+    gate to make ``request_count`` include requests the gate rejects.
+    """
 
     @app.middleware("http")
     async def _localhost_and_activity(  # type: ignore[reportUnusedFunction]
@@ -62,3 +78,5 @@ def install_middlewares(app: FastAPI) -> None:
 
         app.state.last_request_time = time.monotonic()
         return await call_next(request)
+
+    install_metrics_middleware(app)

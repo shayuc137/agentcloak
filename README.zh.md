@@ -271,6 +271,7 @@ graph TD
 | CLI 参考 | [docs/zh/reference/cli.md](docs/zh/reference/cli.md) |
 | MCP 工具参考 | [docs/zh/reference/mcp.md](docs/zh/reference/mcp.md) |
 | 配置参考 | [docs/zh/reference/config.md](docs/zh/reference/config.md) |
+| 平台支持 | [docs/zh/reference/platform-support.md](docs/zh/reference/platform-support.md) |
 | 浏览器后端 | [docs/zh/guides/backends.md](docs/zh/guides/backends.md) |
 | MCP 配置 | [docs/zh/guides/mcp-setup.md](docs/zh/guides/mcp-setup.md) |
 | 架构 | [docs/zh/explanation/architecture.md](docs/zh/explanation/architecture.md) |

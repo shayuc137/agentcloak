@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from agentcloak.core.text_renderers import (
     _format_tok_estimate,  # pyright: ignore[reportPrivateUsage]
+    _format_uptime,  # pyright: ignore[reportPrivateUsage]
     _render_snapshot_header,  # pyright: ignore[reportPrivateUsage]
     render_health_text,
     render_resume_text,
@@ -180,3 +181,76 @@ class TestRenderResumeTextPageValid:
         data = {"url": "https://example.com", "stealth_tier": "cloak"}
         rendered = render_resume_text(data)
         assert "INVALID" not in rendered
+
+
+class TestFormatUptime:
+    """``_format_uptime`` keeps the two largest non-zero units, compactly."""
+
+    def test_sub_minute_is_bare_seconds(self) -> None:
+        assert _format_uptime(12) == "12s"
+        assert _format_uptime(0) == "0s"
+
+    def test_minutes_and_seconds(self) -> None:
+        assert _format_uptime(90) == "1m30s"
+        assert _format_uptime(5 * 60) == "5m0s"
+
+    def test_hours_and_minutes_drops_seconds(self) -> None:
+        # 2h34m12s collapses to the two largest units.
+        assert _format_uptime(2 * 3600 + 34 * 60 + 12) == "2h34m"
+
+    def test_days_and_hours(self) -> None:
+        assert _format_uptime(3 * 86400 + 5 * 3600 + 10 * 60) == "3d5h"
+
+    def test_negative_clamped_to_zero(self) -> None:
+        # A monotonic-clock quirk should never produce a negative duration.
+        assert _format_uptime(-5) == "0s"
+
+
+class TestRenderHealthTextMetrics:
+    """``render_health_text`` appends a metrics line when the daemon supplies it."""
+
+    def test_metrics_line_present_when_fields_supplied(self) -> None:
+        data = {
+            "version": "0.3.0",
+            "stealth_tier": "cloak",
+            "browser_ready": True,
+            "seq": 3,
+            "uptime_seconds": 2 * 3600 + 34 * 60,
+            "request_count": 1247,
+            "active_connections": 1,
+        }
+        rendered = render_health_text(data)
+        lines = rendered.splitlines()
+        # First line keeps the existing one-liner; metrics go on line 2.
+        assert len(lines) == 2
+        assert "tier: cloak" in lines[0]
+        assert "uptime 2h34m" in lines[1]
+        # Thousands separator for readability.
+        assert "1,247 requests" in lines[1]
+        assert "1 active" in lines[1]
+
+    def test_no_metrics_line_when_fields_absent(self) -> None:
+        # Older daemons / unit-test apps omit the metrics fields — output stays
+        # a single line so nothing downstream breaks on the newline.
+        data = {
+            "version": "0.3.0",
+            "stealth_tier": "cloak",
+            "browser_ready": True,
+            "seq": 1,
+        }
+        rendered = render_health_text(data)
+        assert "\n" not in rendered
+        assert "uptime" not in rendered
+
+    def test_partial_metrics_render_available_fields(self) -> None:
+        # If only some fields are present we render just those, no KeyError.
+        data = {
+            "stealth_tier": "cloak",
+            "browser_ready": True,
+            "seq": 0,
+            "request_count": 0,
+        }
+        rendered = render_health_text(data)
+        lines = rendered.splitlines()
+        assert len(lines) == 2
+        assert lines[1] == "0 requests"

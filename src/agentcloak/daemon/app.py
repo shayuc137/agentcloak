@@ -11,13 +11,14 @@ construct it cheaply with mocks.
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 
 from fastapi import FastAPI
 
 import agentcloak
 from agentcloak.daemon.exception_handlers import register_exception_handlers
-from agentcloak.daemon.middleware import install_middlewares
+from agentcloak.daemon.middleware import MetricsState, install_middlewares
 from agentcloak.daemon.routes import register_routers
 
 __all__ = ["create_app"]
@@ -48,6 +49,13 @@ def create_app() -> FastAPI:
     app.state.config = None
     app.state.shutdown_event = asyncio.Event()
     app.state.last_request_time = 0.0
+    # Process-start reference for ``/health`` uptime. ``time.monotonic()`` (not
+    # wall clock) so uptime stays correct across NTP steps / suspend.
+    app.state.started_at = time.monotonic()
+    # Request counters bumped by the metrics middleware and read back by
+    # ``DiagnosticService.health``. Set here (not in ``configure_app_state``)
+    # so TestClient-constructed apps get live counters without extra wiring.
+    app.state.metrics = MetricsState()
     app.state.prev_snapshot_lines = None
     # ContextManager-owned slots — populated by ``server.start()`` after
     # the initial browser launch. Routes that only need the active tier

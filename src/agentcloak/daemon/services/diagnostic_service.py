@@ -139,6 +139,10 @@ class DiagnosticService:
         extras: list[dict[str, Any]] = []
         if self._xvfb_relevant():
             extras.append(self._check_xvfb())
+        # Stale Chromium versions are informational (disk hygiene), not a
+        # health failure — CloakBrowser auto-updates leave old ~700MB builds
+        # behind. Lives in ``extras`` so it never flips ``healthy`` to False.
+        extras.append(self._check_stale_chromium())
 
         all_ok = all(c["ok"] for c in checks)
         return {
@@ -563,6 +567,110 @@ class DiagnosticService:
                 "hint": "run 'agentcloak doctor --fix' to download",
             }
 
+    @staticmethod
+    def _dir_size_mb(path: Path) -> float:
+        """Best-effort recursive directory size in MiB.
+
+        Symlinks are not followed and unreadable entries are skipped so a
+        permission hiccup on one file can't blow up the whole doctor run.
+        """
+        total = 0
+        for root, _dirs, files in os.walk(path, followlinks=False):
+            for fname in files:
+                fp = Path(root) / fname
+                try:
+                    total += fp.stat(follow_symlinks=False).st_size
+                except OSError:
+                    continue
+        return total / (1024 * 1024)
+
+    @classmethod
+    def _check_stale_chromium(cls) -> dict[str, Any]:
+        """Detect old CloakBrowser Chromium builds left by auto-update.
+
+        CloakBrowser downloads each Chromium version into
+        ``<cache>/chromium-<version>/`` (~700MB each) and never prunes the
+        previous one. This check finds every ``chromium-*`` dir that isn't the
+        currently-effective version and reports the reclaimable space. It is
+        purely informational — ``doctor`` keeps it out of the blocking
+        ``checks`` list so a healthy install with leftover binaries still
+        reports green.
+
+        The whole thing is ``ok=True`` (nothing to do) when CloakBrowser isn't
+        installed, the cache dir is missing, or only the current version is
+        present. ``get_cache_dir()`` resolves to ``~/.cloakbrowser`` (or the
+        ``CLOAKBROWSER_CACHE_DIR`` override) on every platform — pure ``Path``
+        work, no OS branch.
+        """
+        try:
+            from cloakbrowser.config import (  # pyright: ignore[reportMissingImports,reportMissingTypeStubs,reportUnknownVariableType]
+                get_cache_dir,
+                get_effective_version,
+            )
+        except ImportError:
+            # CloakBrowser not installed → nothing to clean up.
+            return {
+                "name": "stale_chromium",
+                "ok": True,
+                "detail": "cloakbrowser not installed",
+                "hint": "",
+                "stale_dirs": [],
+                "reclaimable_mb": 0,
+            }
+
+        try:
+            cache_dir = Path(get_cache_dir())  # pyright: ignore[reportUnknownArgumentType]
+            current = f"chromium-{get_effective_version()}"  # pyright: ignore[reportUnknownArgumentType]
+            if not cache_dir.is_dir():
+                return {
+                    "name": "stale_chromium",
+                    "ok": True,
+                    "detail": "no chromium cache directory",
+                    "hint": "",
+                    "stale_dirs": [],
+                    "reclaimable_mb": 0,
+                }
+
+            stale_dirs = [
+                d
+                for d in cache_dir.glob("chromium-*")
+                if d.is_dir() and d.name != current
+            ]
+            if not stale_dirs:
+                return {
+                    "name": "stale_chromium",
+                    "ok": True,
+                    "detail": f"only current version ({current})",
+                    "hint": "",
+                    "stale_dirs": [],
+                    "reclaimable_mb": 0,
+                }
+
+            reclaimable = sum(cls._dir_size_mb(d) for d in stale_dirs)
+            paths = [str(d) for d in sorted(stale_dirs)]
+            return {
+                "name": "stale_chromium",
+                "ok": False,
+                "detail": (
+                    f"{len(stale_dirs)} old chromium "
+                    f"version{'s' if len(stale_dirs) != 1 else ''} "
+                    f"(~{reclaimable:.0f} MB reclaimable)"
+                ),
+                "hint": f"reclaim ~{reclaimable:.0f} MB: rm -rf {paths[0]}",
+                "stale_dirs": paths,
+                "reclaimable_mb": round(reclaimable),
+            }
+        except Exception as exc:
+            # Never let disk-hygiene introspection break doctor.
+            return {
+                "name": "stale_chromium",
+                "ok": True,
+                "detail": f"stale check skipped: {exc}",
+                "hint": "",
+                "stale_dirs": [],
+                "reclaimable_mb": 0,
+            }
+
     # ------------------------------------------------------------------
     # Health — runtime liveness with browser introspection
     # ------------------------------------------------------------------
@@ -577,6 +685,8 @@ class DiagnosticService:
         config: Any = None,
         active_profile: str | None = None,
         route_count: int = 0,
+        started_at: float | None = None,
+        metrics: Any = None,
     ) -> dict[str, Any]:
         """Build a health payload — supports the "no browser yet" state.
 
@@ -588,7 +698,15 @@ class DiagnosticService:
         status block consumed by ``cloak doctor`` — they describe the agent's
         environment (which browser, headless or not, proxy, profile) rather
         than just daemon liveness.
+
+        ``started_at`` (a ``time.monotonic()`` reference) and ``metrics`` (a
+        :class:`~agentcloak.daemon.middleware.MetricsState`) feed the daemon
+        liveness metrics — uptime, total request count, in-flight requests.
+        Both are optional so callers that don't track them (or unit-test apps)
+        simply omit those fields from the payload.
         """
+        import time
+
         import agentcloak
 
         data: dict[str, Any] = {
@@ -599,6 +717,15 @@ class DiagnosticService:
             "browser_ready": ctx is not None,
             "remote_connected": remote_connected,
         }
+        if started_at is not None:
+            # Clamp at 0 so a monotonic clock quirk never reports negative
+            # uptime; round to whole seconds — sub-second precision is noise.
+            data["uptime_seconds"] = round(max(0.0, time.monotonic() - started_at), 1)
+        if metrics is not None:
+            data["request_count"] = int(getattr(metrics, "request_count", 0) or 0)
+            data["active_connections"] = int(
+                getattr(metrics, "active_connections", 0) or 0
+            )
         if active_tier is not None:
             tier_value = getattr(active_tier, "value", active_tier)
             data["active_tier"] = str(tier_value)

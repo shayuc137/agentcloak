@@ -358,11 +358,11 @@ spec 更新：`browser/browser-backend-contract.md`（Protocol → ABC）、`dep
 
 **为什么做：** 最近三个 commit 都是 Windows 兼容修复（PID check / detached daemon / geteuid guard），说明跨平台需求真实存在。daemon 长期运行的崩溃恢复也缺失。DOS-web 反馈补充了 agent 脚本友好度问题。
 
-- [ ] Windows / macOS 平台支持矩阵文档（哪些功能可用、哪些需降级、已知限制）
-- [ ] 平台相关 CI 测试（GitHub Actions matrix 增加 windows-latest / macos-latest smoke test）
+- [x] Windows / macOS 平台支持矩阵文档（哪些功能可用、哪些需降级、已知限制）
+- [x] 平台相关 CI 测试（GitHub Actions matrix 增加 windows-latest / macos-latest smoke test）
 - [x] daemon 崩溃恢复：`_auto_started` 可重置 + health probe 确认 → 自动 re-spawn（v0.3 task `05-21-daemon-reliability`）
 - [x] httpx 连接断线重试：`HTTPTransport(retries=2)` + 超时拆分 `connect=5s / read=90s`（v0.3）
-- [ ] daemon 健康 metrics 增强：uptime、请求计数、当前连接数、浏览器内存用量
+- [x] daemon 健康 metrics 增强：uptime、请求计数、当前连接数（browser_memory 砍掉——崩溃有自恢复，监控用 ps）
 - [x] ~~`screenshot --output <path>` 指定保存路径~~ ← 已在 Phase 7a 完成
 - [x] 错误处理全量审计：全部 99 route + 5 个 browser manager + 3 个 backend 确认完毕——无静默失败、三字段 envelope 完备（27:27 完美 1:1）、`_cdp_send_impl` 缺失包装已修复（commit `6d6f2b8`）
 - [x] CLI 全量 dogfood：37 命令组 × 真实站点（github/binance/w3schools/graphql），4 bug + 3 UX 已修，零残留 blocking issue
@@ -373,16 +373,16 @@ spec 更新：`browser/browser-backend-contract.md`（Protocol → ABC）、`dep
 > 来源：CLI dogfood（2026-05-20）+ 逆向实战（Discuz! + B2 WordPress）发现的体验改善项。
 
 **Dogfood 遗留（CLI 全量测试）**：
-- [ ] **upload 自动查找隐藏 file input** — `upload -f photo.jpg` 不指定 `--index` 时自动 `querySelectorAll('input[type=file]')` 查找（含 `display:none`），支持 `--nth N` 选择第 N 个。解决现代站 drag-drop 上传无可见 file input 的问题
+- [x] **upload 自动查找隐藏 file input** — `upload -f photo.jpg` 不指定 `--index` 时自动 `querySelectorAll('input[type=file]')` 查找（含 `display:none`），支持 `--nth N` 选择第 N 个。解决现代站 drag-drop 上传无可见 file input 的问题
 - [x] **navigate 后自动 WS/SSE 监听** — `auto_stream_monitor=true`（默认），navigate 尾部调 `streaming_monitor.ensure_listening()`（v0.3 task `05-21-dx-quickfixes`）
-- [ ] **download wait --click N** — arm waiter → click [N] → await download，一条命令完成点击触发下载。解决 agent 单线程无法并发 wait + click 的问题
+- [x] **download wait-click --index N** — arm waiter → click [N] → await download，一条命令完成点击触发下载。解决 agent 单线程无法并发 wait + click 的问题
 - [x] **sourcemap 404 错误信息优化** — `_load_raw` 检查 HTTP status，非 2xx 报 "HTTP {status}"；JSON parse 区分 non-JSON vs malformed（v0.3）
 
 **逆向实战发现**：
 - [x] **daemon 版本一致性检查** — `/health` 返回 version + route_count，doctor 版本比对 + `[warn]`，CLI 404 提示 "route not found, restart daemon"（v0.3 task `05-21-version-check`）
 - [x] **click --force 跳过 pointer check** — `_click_impl` ABC 加 `force` 参数，Playwright `element.click(force=True)`，被遮挡时 hint "use --force or evaluate"（v0.3）
 - [x] **debugger search 支持 URL 模式** — `SearchRequest` 加 `url` 字段，manager 按 URL substring match 多 script 搜索合并（v0.3）
-- [ ] **逆向 evaluate presets** — Vue/React 组件内省（`--preset vue-inspect` 自动枚举 `__vue__.$data/methods`）、JWT 解码等常见逆向操作快捷方式
+- [x] **逆向 evaluate presets** — `--preset vue_inspect|react_inspect|jwt_decode|cookie_parse|storage_dump`，5 个逆向快捷方式
 - Deliverable: **CLI 交互摩擦点 + 逆向工作流 DX 优化**
 
 ### Phase 7: 浏览器能力补全 + 网页逆向

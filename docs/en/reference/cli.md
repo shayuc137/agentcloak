@@ -206,9 +206,22 @@ Execute JavaScript in the page context.
 
 ```bash
 cloak js evaluate "expression"
+cloak js evaluate --preset vue_inspect    # run a reverse-engineering preset instead of JS
 ```
 
 Scalar results (string/number/boolean) print as raw values. Objects and arrays print as pretty JSON.
+
+`--preset` runs a canned reverse-engineering snippet (forced to the main world, so leave the JS argument empty) and returns parsed JSON:
+
+| Preset | Output |
+|--------|--------|
+| `vue_inspect` | Vue 2/3 components with `$data` / props / method / computed key names |
+| `react_inspect` | React component tree (names + props/state keys, depth-capped) |
+| `jwt_decode` | JWTs found in cookies / localStorage / sessionStorage, decoded header + payload |
+| `cookie_parse` | structured `document.cookie` (name/value) |
+| `storage_dump` | full localStorage + sessionStorage dump |
+
+A mistyped preset returns an `unknown_preset` error listing the valid names.
 
 ### fetch
 
@@ -291,7 +304,22 @@ cloak screenshot --format png --full-page
 
 ```bash
 cloak upload --index N --file /path/to/file [--file /path/to/another]
+cloak upload --file /path/to/file                  # auto-find hidden file inputs
+cloak upload --file /path/to/file --nth 1          # pick the 2nd file input
 ```
+
+With `--index` it targets a specific snapshot `[N]` ref. Omit `--index` and the daemon auto-finds every `input[type=file]` on the page — including the `display:none` inputs drag-drop uploaders (Dropzone, react-dropzone, Ant Upload) hide from the accessibility tree — and attaches to the `--nth` one (0-based, default 0). The response reports `candidates_count` and `used_nth`, so if it picked the wrong input you can re-issue with a different `--nth`. When no file input exists the command returns `no_file_input_found`; an out-of-range `--nth` returns `file_input_index_out_of_range`.
+
+## Downloads
+
+```bash
+cloak download url URL [--output DIR]              # direct fetch with browser cookies (SSRF-checked)
+cloak download wait [--output DIR] [--timeout S]   # block for the next click-triggered download
+cloak download wait-click --index N [--force]      # click [N] and await the download, atomically
+cloak download list                                # downloads saved this session
+```
+
+Files are saved on the daemon host (default: system temp dir). `wait-click` arms the download waiter, clicks `[N]`, and awaits completion in one request — use it when a button or link triggers the download, since a single-threaded agent can't run `download wait` and `click` concurrently. A failing click reports immediately instead of hanging until the download times out; pass `--force` to skip the pointer check on an obscured trigger.
 
 ## Frame management
 
@@ -482,8 +510,13 @@ the structured JSON form so httpOnly cookies survive.
 ```bash
 cloak daemon start [--host HOST] [--port PORT] [--headed] [--profile NAME]
 cloak daemon stop
-cloak daemon status                # tier | browser status | seq
+cloak daemon status                # tier | browser status | seq (+ metrics line)
 ```
+
+`daemon status` (and the MCP `agentcloak_status`) prints a second line with the
+daemon's liveness metrics — `uptime <duration> | <N> requests | <N> active` —
+so it doubles as a lightweight monitoring readout. The line is omitted when the
+daemon predates the metrics fields.
 
 ## Session management
 

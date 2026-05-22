@@ -108,6 +108,7 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | Command | Purpose |
 |---------|---------|
 | `cloak js evaluate "expression"` | Execute JS in page |
+| `cloak js evaluate --preset vue_inspect\|react_inspect\|jwt_decode\|cookie_parse\|storage_dump` | Run a canned reverse-engineering snippet (component data / JWT decode / cookie + storage dump) instead of hand-writing JS |
 | `cloak fetch URL` | HTTP GET with browser cookies |
 | `cloak fetch URL --method POST --body '{...}'` | HTTP POST with cookies |
 | `cloak network --since N` | Recent network requests (filter by seq; `--since last_action` returns only requests after the most recent action) |
@@ -117,6 +118,7 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak clipboard read` / `write TEXT` | Read/write the system clipboard |
 | `cloak download url URL [-o dir]` | Download a URL server-side (with cookies; SSRF-guarded) |
 | `cloak download wait [-o dir]` | Capture the next click-triggered download |
+| `cloak download wait-click --index N [--force]` | Click `[N]` and await its download in one request (single-threaded agents can't run `wait` + `click` separately) |
 | `cloak download list` | List files downloaded this session |
 
 ### Reverse Engineering

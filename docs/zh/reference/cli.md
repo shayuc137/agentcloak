@@ -204,9 +204,22 @@ cloak select N --value "option" [--snap]
 
 ```bash
 cloak js evaluate "expression"
+cloak js evaluate --preset vue_inspect    # 运行逆向 preset 而非自己写 JS
 ```
 
 scalar 结果（string/number/boolean）直接输出裸值。对象和数组打印为 pretty JSON。
+
+`--preset` 运行一段预置的逆向 JS（强制在 main world 执行，所以 JS 参数留空），返回可直接 parse 的 JSON：
+
+| Preset | 输出 |
+|--------|------|
+| `vue_inspect` | Vue 2/3 组件的 `$data` / props / method / computed 键名 |
+| `react_inspect` | React 组件树（名称 + props/state 键名，限制深度） |
+| `jwt_decode` | 扫描 cookies / localStorage / sessionStorage 中的 JWT，解码 header + payload |
+| `cookie_parse` | 结构化的 `document.cookie`（name/value） |
+| `storage_dump` | 完整导出 localStorage + sessionStorage |
+
+拼错 preset 名会返回 `unknown_preset` 错误并列出可用名称。
 
 ### fetch
 
@@ -289,7 +302,22 @@ cloak screenshot --format png --full-page
 
 ```bash
 cloak upload --index N --file /path/to/file [--file /path/to/another]
+cloak upload --file /path/to/file                  # 自动查找隐藏的 file input
+cloak upload --file /path/to/file --nth 1          # 选第 2 个 file input
 ```
+
+带 `--index` 时定位指定的 snapshot `[N]` 引用。省略 `--index`，daemon 会自动查找页面上所有 `input[type=file]`——包括 drag-drop 上传组件（Dropzone、react-dropzone、Ant Upload）藏在 a11y tree 之外的 `display:none` 输入——并附加到 `--nth` 那个（从 0 开始，默认 0）。响应中会报告 `candidates_count` 和 `used_nth`，选错时可以换个 `--nth` 重发。找不到任何 file input 时返回 `no_file_input_found`；`--nth` 超出范围返回 `file_input_index_out_of_range`。
+
+## 下载
+
+```bash
+cloak download url URL [--output DIR]              # 直接下载，带浏览器 cookie（受 SSRF 检查）
+cloak download wait [--output DIR] [--timeout S]   # 阻塞等待下一个点击触发的下载
+cloak download wait-click --index N [--force]      # 点击 [N] 并等待下载，一次完成
+cloak download list                                # 本次会话已保存的下载
+```
+
+文件保存在 daemon 主机上（默认系统临时目录）。`wait-click` 先 arm download waiter，点击 `[N]`，再等待完成，一次请求搞定——按钮或链接触发下载时用它，因为单线程 agent 无法并发跑 `download wait` 和 `click`。点击失败会立即报错，而不是挂起等下载超时；遇到被遮挡的触发元素可加 `--force` 跳过 pointer check。
 
 ## Frame 管理
 
@@ -478,8 +506,10 @@ agent 任务无关的个人账号。`cookies import` 接受结构化 JSON，保�
 ```bash
 cloak daemon start [--host HOST] [--port PORT] [--headed] [--profile NAME]
 cloak daemon stop
-cloak daemon status                # tier | browser status | seq
+cloak daemon status                # tier | browser status | seq（含 metrics 行）
 ```
+
+`daemon status`（以及 MCP `agentcloak_status`）会额外打印一行 daemon 存活指标——`uptime <时长> | <N> requests | <N> active`——可当作轻量监控读数。daemon 版本过旧、不带 metrics 字段时该行省略。
 
 ## Session 管理
 

@@ -8,7 +8,7 @@ CI 在 `ubuntu-latest`、`windows-latest`、`macos-latest`（Python 3.12–3.14�
 
 | 功能 | Linux | macOS | Windows | 备注 |
 |------|-------|-------|---------|------|
-| **CloakBrowser**（默认隐身后端） | 全功能 | 全功能 | 全功能 | binary 按平台自动下载。Linux x86_64/arm64 与 Windows x86_64 是完整的 57 patch 版本（Chromium 146）；macOS arm64/x86_64 是 26 patch 版本（Chromium 145）。macOS 首次启动需经过一次 Gatekeeper 放行（右键 → 打开）。 |
+| **CloakBrowser**（默认隐身后端） | 全功能 | 全功能 | 全功能 | binary 按平台自动下载。Linux x86_64/arm64 与 Windows x86_64 是完整的 57 patch 版本（Chromium 146）；macOS arm64/x86_64 目前落后一个 Chromium 大版本（Chromium 145）。macOS 首次启动需经过一次 Gatekeeper 放行（右键 → 打开）。 |
 | **Playwright**（降级后端） | 全功能 | 全功能 | 全功能 | 标准 Chromium，无隐身。Linux 上需 `playwright install-deps chromium` 安装系统库（`doctor` 会检查）。 |
 | **RemoteBridge**（你的真实 Chrome） | 全功能 | 全功能 | 全功能 | Chrome MV3 扩展与平台无关，无论 daemon 在哪都通过 WebSocket 连回。常见组合：daemon 在 Linux，真实 Chrome 在 Windows/macOS。 |
 | **Xvfb / headed 模式** | 按需 | 原生 | 原生 | Xvfb **仅 Linux** 需要，且只在「无 `$DISPLAY` 时跑 headed」的场景自动启动。macOS/Windows 有原生显示服务，headed 模式无需 Xvfb。headless 模式在任何平台都不需要显示。 |

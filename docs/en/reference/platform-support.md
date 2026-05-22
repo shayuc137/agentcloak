@@ -8,7 +8,7 @@ CI runs the unit-test suite on `ubuntu-latest`, `windows-latest`, and `macos-lat
 
 | Feature | Linux | macOS | Windows | Notes |
 |---------|-------|-------|---------|-------|
-| **CloakBrowser** (default stealth backend) | Full | Full | Full | Binary auto-downloads per platform. Linux x86_64/arm64 & Windows x86_64 ship the full 57-patch build (Chromium 146); macOS arm64/x86_64 ship a 26-patch build (Chromium 145). macOS first launch needs a one-time Gatekeeper approval (right-click → Open). |
+| **CloakBrowser** (default stealth backend) | Full | Full | Full | Binary auto-downloads per platform. Linux x86_64/arm64 & Windows x86_64 ship the full 57-patch build (Chromium 146); macOS arm64/x86_64 currently track one Chromium major behind (Chromium 145). macOS first launch needs a one-time Gatekeeper approval (right-click → Open). |
 | **Playwright** (fallback backend) | Full | Full | Full | Standard Chromium, no stealth. On Linux run `playwright install-deps chromium` for the system libs (`doctor` checks this). |
 | **RemoteBridge** (your real Chrome) | Full | Full | Full | The Chrome MV3 extension is platform-independent; it connects back to the daemon over WebSocket regardless of where the daemon runs. Common layout: daemon on Linux, real Chrome on Windows/macOS. |
 | **Xvfb / headed mode** | Conditional | Native | Native | Xvfb is **Linux-only** and only needed to run *headed* on a box with no `$DISPLAY` (auto-spawned then). macOS/Windows have a native display server, so headed mode works without Xvfb. Headless mode needs no display anywhere. |

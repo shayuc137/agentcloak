@@ -80,9 +80,10 @@ Execute JavaScript in the browser page context.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `js` | `str` | required | JavaScript code to evaluate |
-| `world` | `str` | `main` | `main` (page globals visible) or `utility` (isolated) |
+| `js` | `str` | `""` | JavaScript code to evaluate (omit when using `preset`) |
+| `world` | `str` | `main` | `main` (page globals visible) or `isolated` |
 | `max_return_size` | `int` | `50000` | Max bytes of serialized result |
+| `preset` | `str` | `""` | Reverse-engineering preset (overrides `js`, forced to main world): `vue_inspect`, `react_inspect`, `jwt_decode`, `cookie_parse`, `storage_dump` |
 
 ### agentcloak_fetch
 
@@ -156,12 +157,13 @@ Wait for a condition before continuing.
 
 ### agentcloak_upload
 
-Upload files to a file input element.
+Upload files to a file input element. Pass `index` to target a visible input, or omit it to auto-find `input[type=file]` elements — including the `display:none` inputs drag-drop uploaders hide — and attach to the `nth` one.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `index` | `int` | required | Element `[N]` ref of file input |
 | `files` | `list[str]` | required | List of absolute file paths |
+| `index` | `int` | `null` | Element `[N]` ref of file input (omit to auto-find) |
+| `nth` | `int` | `0` | When auto-finding (no `index`), the nth file input to use (0-based) |
 
 ## Frame
 
@@ -293,10 +295,12 @@ Download files — fetch a URL directly or capture a click-triggered download.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `action` | `str` | `url` | `url` (direct fetch), `wait` (click-triggered), or `list` |
+| `action` | `str` | `url` | `url` (direct fetch), `wait` (click-triggered), `wait-click` (click `[index]` then await, atomic), or `list` |
 | `url` | `str` | `""` | Target URL (action=url only, SSRF-checked) |
 | `output_dir` | `str` | `""` | Directory to save into (daemon host) |
-| `timeout` | `float` | `0.0` | Max wait seconds for click-triggered download |
+| `timeout` | `float` | `0.0` | Max wait seconds for `wait` / `wait-click` |
+| `index` | `int` | `0` | Element `[N]` to click (required for `wait-click`) |
+| `force` | `bool` | `false` | Skip pointer check on the click (`wait-click` only) |
 
 ### agentcloak_storage
 

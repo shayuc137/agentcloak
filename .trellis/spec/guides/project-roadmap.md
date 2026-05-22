@@ -26,7 +26,7 @@
 
 ```
 Local browser:
-  ├─ Default: CloakBrowser (49 C++ patch, humanize, auto-updating binary)
+  ├─ Default: CloakBrowser (57 C++ patch, humanize, auto-updating binary)
   ├─ Fallback: PlaywrightContext (standard Chromium, no stealth)
   └─ Future: Camoufox (Firefox stealth, different API)
 

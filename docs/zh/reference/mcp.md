@@ -79,9 +79,10 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 38 个工具。已包含在�
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|-------|------|
-| `js` | `str` | 必填 | 要执行的 JavaScript 代码 |
-| `world` | `str` | `main` | `main`（可见页面全局对象）或 `utility`（隔离环境） |
+| `js` | `str` | `""` | 要执行的 JavaScript 代码（用 `preset` 时留空） |
+| `world` | `str` | `main` | `main`（可见页面全局对象）或 `isolated`（隔离环境） |
 | `max_return_size` | `int` | `50000` | 序列化结果的最大字节数 |
+| `preset` | `str` | `""` | 逆向 preset（覆盖 `js`，强制 main world）：`vue_inspect`、`react_inspect`、`jwt_decode`、`cookie_parse`、`storage_dump` |
 
 ### agentcloak_fetch
 
@@ -155,12 +156,13 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 38 个工具。已包含在�
 
 ### agentcloak_upload
 
-向文件输入元素上传文件。
+向文件输入元素上传文件。传 `index` 定位可见的输入，或省略它来自动查找 `input[type=file]`——包括 drag-drop 上传组件藏起来的 `display:none` 输入——并附加到 `nth` 那个。
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|-------|------|
-| `index` | `int` | 必填 | 文件输入的元素 `[N]` 引用 |
 | `files` | `list[str]` | 必填 | 绝对文件路径列表 |
+| `index` | `int` | `null` | 文件输入的元素 `[N]` 引用（省略则自动查找） |
+| `nth` | `int` | `0` | 自动查找时（无 `index`）使用第 nth 个 file input（从 0 开始） |
 
 ## Frame
 
@@ -292,10 +294,12 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 38 个工具。已包含在�
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `action` | `str` | `url` | `url`（直接下载）、`wait`（等点击触发下载）、`list`（列出已下载） |
+| `action` | `str` | `url` | `url`（直接下载）、`wait`（等点击触发下载）、`wait-click`（点击 `[index]` 后等待，一次完成）、`list`（列出已下载） |
 | `url` | `str` | `""` | 目标 URL（仅 action=url，受 SSRF 检查） |
 | `output_dir` | `str` | `""` | 保存目录（daemon 主机路径） |
-| `timeout` | `float` | `0.0` | 等待点击触发下载的最大秒数 |
+| `timeout` | `float` | `0.0` | `wait` / `wait-click` 的最大等待秒数 |
+| `index` | `int` | `0` | 要点击的元素 `[N]`（`wait-click` 必填） |
+| `force` | `bool` | `false` | 跳过点击的 pointer check（仅 `wait-click`） |
 
 ### agentcloak_storage
 

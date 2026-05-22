@@ -1011,10 +1011,11 @@ class DaemonClient:
 
     async def evaluate(
         self,
-        js: str,
+        js: str = "",
         *,
         world: str = "main",
         max_return_size: int | None = None,
+        preset: str = "",
     ) -> dict[str, Any]:
         return await self._send_async(
             "POST",
@@ -1025,6 +1026,7 @@ class DaemonClient:
                 "max_return_size": max_return_size
                 if max_return_size is not None
                 else self._cfg.browser.max_return_size,
+                "preset": preset,
             },
         )
 
@@ -1208,10 +1210,13 @@ class DaemonClient:
             },
         )
 
-    async def upload(self, *, index: int, files: list[str]) -> dict[str, Any]:
-        return await self._send_async(
-            "POST", "/upload", json_body={"index": index, "files": files}
-        )
+    async def upload(
+        self, *, index: int | None = None, files: list[str], nth: int = 0
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {"files": files, "nth": nth}
+        if index is not None:
+            body["index"] = index
+        return await self._send_async("POST", "/upload", json_body=body)
 
     async def frame_list(self) -> dict[str, Any]:
         return await self._send_async("GET", "/frame/list")
@@ -1303,6 +1308,21 @@ class DaemonClient:
 
     async def download_list(self) -> dict[str, Any]:
         return await self._send_async("GET", "/download/list")
+
+    async def download_wait_click(
+        self,
+        *,
+        index: int,
+        output_dir: str | None = None,
+        timeout: float | None = None,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {"index": index, "force": force}
+        if output_dir is not None:
+            body["output_dir"] = output_dir
+        if timeout is not None:
+            body["timeout"] = timeout
+        return await self._send_async("POST", "/download/wait-click", json_body=body)
 
     # --- Storage (async, 7a R4) ---
 

@@ -199,7 +199,21 @@ async def handle_snapshot(
 
 @router.post("/evaluate", response_model=OkEnvelope[EvaluateResponse])
 async def handle_evaluate(body: EvaluateRequest, ctx: BrowserCtxDep) -> dict[str, Any]:
-    result = await ctx.evaluate(body.js, world=body.world)
+    # A preset takes precedence over raw ``js`` and forces the main world —
+    # the snippets reach for page-framework globals (__vue__, __reactFiber$)
+    # an isolated world can't see. ``get_preset_js`` raises ``unknown_preset``
+    # (listing the valid set) for typos, which the global handler renders as a
+    # structured 400 envelope.
+    if body.preset:
+        from agentcloak.core.evaluate_presets import get_preset_js
+
+        js = get_preset_js(body.preset)
+        world = "main"
+    else:
+        js = body.js
+        world = body.world
+
+    result = await ctx.evaluate(js, world=world)
 
     # Truncate large results before they exceed MCP token limits.
     result_bytes = orjson.dumps(result)

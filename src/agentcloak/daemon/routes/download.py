@@ -21,6 +21,7 @@ from agentcloak.daemon.models import (
     DownloadListResponse,
     DownloadResponse,
     DownloadUrlRequest,
+    DownloadWaitClickRequest,
     DownloadWaitRequest,
     OkEnvelope,
 )
@@ -49,6 +50,20 @@ async def handle_download_wait(
 ) -> dict[str, Any]:
     output_dir = body.output_dir or gettempdir()
     result = await ctx.download_wait(output_dir=output_dir, timeout=body.timeout)
+    return _ok(result, seq=ctx.seq)
+
+
+@router.post("/download/wait-click", response_model=OkEnvelope[DownloadResponse])
+async def handle_download_wait_click(
+    body: DownloadWaitClickRequest, ctx: BrowserCtxDep
+) -> dict[str, Any]:
+    output_dir = body.output_dir or gettempdir()
+    result = await ctx.download_wait_click(
+        index=body.index,
+        output_dir=output_dir,
+        timeout=body.timeout,
+        force=body.force,
+    )
     return _ok(result, seq=ctx.seq)
 
 

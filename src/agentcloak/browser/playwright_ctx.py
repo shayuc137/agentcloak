@@ -916,6 +916,30 @@ class PlaywrightContext(BrowserContextBase):
         await element.set_input_files(files)
         return {"uploaded": True}
 
+    async def _upload_auto_find_impl(
+        self, files: list[str], *, nth: int
+    ) -> dict[str, Any]:
+        # query_selector_all returns hidden inputs too (display:none doesn't
+        # remove them from the DOM), which is exactly what drag-drop uploaders
+        # need. Run against the active frame so ``frame focus`` is honoured.
+        handles = await self._target_frame.query_selector_all('input[type="file"]')
+        count = len(handles)
+        if count == 0:
+            raise ElementNotFoundError(
+                error="no_file_input_found",
+                hint="No <input type=file> elements found on the page",
+                action="check the page has a file input, or pass --index for a"
+                " specific element",
+            )
+        if nth < 0 or nth >= count:
+            raise ElementNotFoundError(
+                error="file_input_index_out_of_range",
+                hint=f"--nth {nth} out of range ({count} file input(s) found)",
+                action=f"use --nth between 0 and {count - 1}",
+            )
+        await handles[nth].set_input_files(files)
+        return {"uploaded": True, "candidates_count": count, "used_nth": nth}
+
     # ------------------------------------------------------------------
     # Atomic: console capture (7a R1)
     # ------------------------------------------------------------------
@@ -1037,16 +1061,21 @@ class PlaywrightContext(BrowserContextBase):
         )
 
     async def _download_wait_impl(
-        self, output_dir: str, *, timeout: float
+        self,
+        output_dir: str,
+        *,
+        timeout: float,
+        _waiter: asyncio.Future[Any] | None = None,
     ) -> DownloadEntry:
-        loop = asyncio.get_running_loop()
-        fut: asyncio.Future[Any] = loop.create_future()
-        self._download_waiters.append(fut)
+        if _waiter is None:
+            loop = asyncio.get_running_loop()
+            _waiter = loop.create_future()
+            self._download_waiters.append(_waiter)
         try:
-            download = await asyncio.wait_for(fut, timeout=timeout)
+            download = await asyncio.wait_for(_waiter, timeout=timeout)
         except TimeoutError as exc:
             with contextlib.suppress(ValueError):
-                self._download_waiters.remove(fut)
+                self._download_waiters.remove(_waiter)
             raise BrowserTimeoutError(
                 error="download_timeout",
                 hint=f"No download started within {timeout}s",

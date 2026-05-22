@@ -34,7 +34,11 @@ from agentcloak.browser.state import (
     TabInfo,
 )
 from agentcloak.core.capture import is_recordable_content
-from agentcloak.core.errors import BackendError, BrowserTimeoutError
+from agentcloak.core.errors import (
+    BackendError,
+    BrowserTimeoutError,
+    ElementNotFoundError,
+)
 from agentcloak.core.types import StealthTier
 
 if TYPE_CHECKING:
@@ -878,6 +882,51 @@ class RemoteBridgeContext(BrowserContextBase):
         )
         return {"uploaded": True}
 
+    async def _upload_auto_find_impl(
+        self, files: list[str], *, nth: int
+    ) -> dict[str, Any]:
+        # CDP DOM.querySelectorAll surfaces hidden inputs (display:none stays in
+        # the DOM), so drag-drop uploaders without a visible file input still
+        # resolve. getDocument first to get the root nodeId to query under.
+        doc = await self._send("cdp", {"method": "DOM.getDocument", "params": {}})
+        root_id = doc.get("root", {}).get("nodeId", 0)
+        if not root_id:
+            raise BackendError(
+                error="upload_failed",
+                hint="Could not read the document root via CDP",
+                action="reload the page and retry",
+            )
+        result = await self._send(
+            "cdp",
+            {
+                "method": "DOM.querySelectorAll",
+                "params": {"nodeId": root_id, "selector": 'input[type="file"]'},
+            },
+        )
+        node_ids: list[int] = list(result.get("nodeIds", []))
+        count = len(node_ids)
+        if count == 0:
+            raise ElementNotFoundError(
+                error="no_file_input_found",
+                hint="No <input type=file> elements found on the page",
+                action="check the page has a file input, or pass --index for a"
+                " specific element",
+            )
+        if nth < 0 or nth >= count:
+            raise ElementNotFoundError(
+                error="file_input_index_out_of_range",
+                hint=f"--nth {nth} out of range ({count} file input(s) found)",
+                action=f"use --nth between 0 and {count - 1}",
+            )
+        await self._send(
+            "cdp",
+            {
+                "method": "DOM.setFileInputFiles",
+                "params": {"files": files, "nodeId": node_ids[nth]},
+            },
+        )
+        return {"uploaded": True, "candidates_count": count, "used_nth": nth}
+
     # ------------------------------------------------------------------
     # Atomic: console capture (7a R1)
     # ------------------------------------------------------------------
@@ -1049,12 +1098,12 @@ class RemoteBridgeContext(BrowserContextBase):
         )
 
     async def _download_wait_impl(
-        self, output_dir: str, *, timeout: float
+        self,
+        output_dir: str,
+        *,
+        timeout: float,
+        _waiter: asyncio.Future[Any] | None = None,
     ) -> DownloadEntry:
-        # Enable download events, then park a waiter the ``Page.downloadWillBegin``
-        # handler resolves. The remote browser saves the file on the user's
-        # machine, so we re-fetch the captured URL via httpx to land a copy on
-        # the daemon host (what the CLI caller can actually access).
         with contextlib.suppress(Exception):
             await self._send(
                 "cdp",
@@ -1064,14 +1113,15 @@ class RemoteBridgeContext(BrowserContextBase):
                 },
             )
 
-        loop = asyncio.get_running_loop()
-        fut: asyncio.Future[Any] = loop.create_future()
-        self._download_waiters.append(fut)
+        if _waiter is None:
+            loop = asyncio.get_running_loop()
+            _waiter = loop.create_future()
+            self._download_waiters.append(_waiter)
         try:
-            meta = await asyncio.wait_for(fut, timeout=timeout)
+            meta = await asyncio.wait_for(_waiter, timeout=timeout)
         except TimeoutError as exc:
             with contextlib.suppress(ValueError):
-                self._download_waiters.remove(fut)
+                self._download_waiters.remove(_waiter)
             raise BrowserTimeoutError(
                 error="download_timeout",
                 hint=f"No download started within {timeout}s",

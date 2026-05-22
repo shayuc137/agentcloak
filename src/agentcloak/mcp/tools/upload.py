@@ -23,20 +23,25 @@ __all__ = ["register"]
 def register(mcp: FastMCP, client: DaemonClient) -> None:
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
     async def agentcloak_upload(
-        index: int,
         files: list[str],
+        index: int | None = None,
+        nth: int = 0,
     ) -> str:
         """Upload file(s) to a file input element.
 
-        Use agentcloak_snapshot to find the file input element's [N] ref.
+        Pass ``index`` (an [N] ref from agentcloak_snapshot) to target a visible
+        file input. Omit it to auto-find ``input[type=file]`` elements — including
+        the ``display:none`` inputs drag-drop uploaders hide — and attach to the
+        ``nth`` one.
 
         Args:
-            index: Element [N] reference of the file input
             files: List of absolute file paths to upload
+            index: Element [N] reference of the file input (omit to auto-find)
+            nth: When auto-finding (no index), the nth file input to use (0-based)
 
         Returns:
             JSON with upload confirmation and file names.
         """
         return await format_call(
-            client.upload(index=index, files=files), render_upload_text
+            client.upload(index=index, files=files, nth=nth), render_upload_text
         )

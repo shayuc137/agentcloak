@@ -125,7 +125,8 @@ class SnapshotResponse(BaseModel):
 
 class EvaluateRequest(BaseModel):
     js: str = Field(
-        description="JavaScript expression or function body to evaluate in the page."
+        "",
+        description="JavaScript expression or function body to evaluate in the page.",
     )
     world: Literal["main", "isolated"] = Field(
         "main",
@@ -134,6 +135,14 @@ class EvaluateRequest(BaseModel):
     max_return_size: int = Field(
         DEFAULT_MAX_RETURN_SIZE,
         description="Max serialized result bytes; larger results are truncated.",
+    )
+    preset: str = Field(
+        "",
+        description=(
+            "Reverse-engineering preset to run instead of 'js' (forced to the "
+            "main world). One of: vue_inspect, react_inspect, jwt_decode, "
+            "cookie_parse, storage_dump."
+        ),
     )
 
 

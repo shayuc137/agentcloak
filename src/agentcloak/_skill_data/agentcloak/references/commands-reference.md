@@ -163,9 +163,10 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak js evaluate`
 - MCP: `agentcloak_evaluate`
 - Body:
-  - `js` (string, default: *required*) — JavaScript expression or function body to evaluate in the page.
+  - `js` (string, default: "") — JavaScript expression or function body to evaluate in the page.
   - `world` (enum("main" | "isolated"), default: "main") — World: main (sees site globals) or isolated (sandboxed).
   - `max_return_size` (integer, default: 50000) — Max serialized result bytes; larger results are truncated.
+  - `preset` (string, default: "") — Reverse-engineering preset to run instead of 'js' (forced to the main world). One of: vue_inspect, react_inspect, jwt_decode, cookie_parse, storage_dump.
 
 ### `POST /fetch`
 
@@ -185,8 +186,9 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak upload --index N --file PATH`
 - MCP: `agentcloak_upload`
 - Body:
-  - `index` (integer, default: *required*) — Element [N] of the file input to attach files to.
+  - `index` (integer | null, default: —) — Element [N] of the file input. Omit to auto-find hidden input[type=file] elements (drag-drop uploaders).
   - `files` (array<string>, default: *required*) — Absolute file paths the daemon reads and hands to the file input.
+  - `nth` (integer, default: 0) — When auto-finding (no index), pick the nth file input (0-based).
 
 ## Capture
 
@@ -307,6 +309,16 @@ Read this file when you need full parameter detail. For the common path, the qui
 - Body:
   - `output_dir` (string | null, default: —) — Directory to save into. Defaults to the system temp dir.
   - `timeout` (number | null, default: —) — Seconds to wait for a download. Defaults to navigation_timeout.
+
+### `POST /download/wait-click`
+
+- CLI: `cloak download wait-click --index N`
+- MCP: `agentcloak_download (action=wait-click)`
+- Body:
+  - `index` (integer, default: *required*) — Element [N] to click (the download trigger).
+  - `output_dir` (string | null, default: —) — Directory to save into. Defaults to the system temp dir.
+  - `timeout` (number | null, default: —) — Seconds to wait for a download. Defaults to navigation_timeout.
+  - `force` (boolean, default: false) — Pass force=True to the click (skip pointer check).
 
 ### `GET /download/list`
 

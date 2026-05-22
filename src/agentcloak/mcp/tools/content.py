@@ -28,9 +28,10 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
 
     @mcp.tool(annotations=ToolAnnotations(destructiveHint=False, readOnlyHint=False))
     async def agentcloak_evaluate(
-        js: str,
+        js: str = "",
         world: str = "main",
         max_return_size: int = cfg.browser.max_return_size,
+        preset: str = "",
     ) -> str:
         """Execute JavaScript in the browser page context. Can modify page state.
 
@@ -42,6 +43,14 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         to inspect them after a short delay.
         Supports async/await via IIFE: `(async () => { return await fn(); })()`
 
+        Reverse-engineering presets (set ``preset``, leave ``js`` empty) run a
+        canned snippet in the main world and return parsed JSON:
+          vue_inspect   — Vue 2/3 component data/method/computed key names
+          react_inspect — React component tree (names + props/state keys)
+          jwt_decode    — decode JWTs found in cookies/local/sessionStorage
+          cookie_parse  — structured document.cookie
+          storage_dump  — full localStorage + sessionStorage dump
+
         Args:
             js: JavaScript code to evaluate (runs in page context with full DOM access)
             world: Execution context — 'main' (page globals visible)
@@ -49,13 +58,15 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             max_return_size: Max bytes of serialized result to return
                 (default from config.browser.max_return_size). Large objects are
                 truncated with a [truncated] marker.
+            preset: Reverse-engineering preset name; takes precedence over 'js'
+                and forces the main world.
 
         Returns:
             JSON with the evaluation result. Complex objects are serialized.
         """
         try:
             envelope = await client.evaluate(
-                js, world=world, max_return_size=max_return_size
+                js, world=world, max_return_size=max_return_size, preset=preset
             )
         except AgentBrowserError as exc:
             return error_json(exc)

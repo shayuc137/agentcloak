@@ -97,6 +97,7 @@ from agentcloak.daemon.models.download import (
     DownloadListResponse,
     DownloadResponse,
     DownloadUrlRequest,
+    DownloadWaitClickRequest,
     DownloadWaitRequest,
 )
 from agentcloak.daemon.models.emulation import HeadersRequest, HeadersResponse
@@ -270,6 +271,7 @@ __all__ = [
     "DownloadListResponse",
     "DownloadResponse",
     "DownloadUrlRequest",
+    "DownloadWaitClickRequest",
     "DownloadWaitRequest",
     "ErrorResponse",
     "EvaluateRequest",

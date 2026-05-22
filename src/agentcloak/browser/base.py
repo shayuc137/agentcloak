@@ -493,6 +493,24 @@ class BrowserContextBase(ABC):
     async def _upload_impl(self, index: int, files: list[str]) -> dict[str, Any]: ...
 
     @abstractmethod
+    async def _upload_auto_find_impl(
+        self, files: list[str], *, nth: int
+    ) -> dict[str, Any]:
+        """Find ``input[type=file]`` elements (including hidden ones) and upload.
+
+        Used when ``upload`` is called without an explicit ``[N]`` index — modern
+        drag-and-drop uploaders (Dropzone, react-dropzone, Ant Upload) hide the
+        real ``<input type=file>`` with ``display:none``, so it never shows up in
+        the accessibility tree and has no snapshot ref. This locates all matching
+        inputs via ``querySelectorAll`` and attaches ``files`` to the ``nth`` one.
+
+        Returns ``{uploaded, candidates_count, used_nth}``. Raises
+        :class:`ElementNotFoundError` (``no_file_input_found``) when there are no
+        file inputs, or (``file_input_index_out_of_range``) when ``nth`` exceeds
+        the number found.
+        """
+
+    @abstractmethod
     async def _fetch_impl(
         self,
         url: str,
@@ -569,9 +587,19 @@ class BrowserContextBase(ABC):
 
     @abstractmethod
     async def _download_wait_impl(
-        self, output_dir: str, *, timeout: float
+        self,
+        output_dir: str,
+        *,
+        timeout: float,
+        _waiter: asyncio.Future[Any] | None = None,
     ) -> DownloadEntry:
-        """Block until the next click-triggered download finishes, saving it."""
+        """Block until the next click-triggered download finishes, saving it.
+
+        When ``_waiter`` is provided (pre-armed by :meth:`download_wait_click`),
+        use it instead of creating a new future. This avoids the race where the
+        download event resolves the pre-armed future before a newly-created one
+        is registered.
+        """
 
     # --- Clipboard (7a R5) ---
 
@@ -1226,7 +1254,9 @@ class BrowserContextBase(ABC):
     # Upload
     # ------------------------------------------------------------------
 
-    async def upload(self, index: int, files: list[str]) -> dict[str, Any]:
+    async def upload(
+        self, index: int | None, files: list[str], *, nth: int = 0
+    ) -> dict[str, Any]:
         from pathlib import Path
 
         self._check_debugger_paused()
@@ -1243,13 +1273,20 @@ class BrowserContextBase(ABC):
                 )
             validated.append(str(p.resolve()))
 
+        # ``index is None`` (no snapshot ref) → auto-find hidden file inputs;
+        # an explicit index takes precedence and ``nth`` is ignored.
+        auto_find = index is None
         try:
-            await self._upload_impl(index, validated)
+            if auto_find:
+                impl_result = await self._upload_auto_find_impl(validated, nth=nth)
+            else:
+                impl_result = await self._upload_impl(index, validated)
         except Exception as exc:
             self._maybe_mark_browser_closed(exc)
             raise
 
         new_seq = self._seq_counter.increment_action()
+        ref = f"[{index}]" if not auto_find else f"auto(nth={nth})"
         self._ring_buffer.append(
             SeqEvent(
                 seq=new_seq,
@@ -1266,16 +1303,25 @@ class BrowserContextBase(ABC):
             action="upload",
             seq=new_seq,
             files=[Path(f).name for f in validated],
-            ref=f"[{index}]",
+            ref=ref,
             url=url,
         )
-        return {
+        result: dict[str, Any] = {
             "ok": True,
             "action": "upload",
-            "ref": f"[{index}]",
+            "ref": ref,
             "files": [Path(f).name for f in validated],
             "seq": new_seq,
         }
+        if not auto_find:
+            result["index"] = index
+        # Surface how many file inputs were found and which one was used so the
+        # agent can re-issue with a different ``--nth`` if it picked wrong.
+        if "candidates_count" in impl_result:
+            result["candidates_count"] = impl_result["candidates_count"]
+        if "used_nth" in impl_result:
+            result["used_nth"] = impl_result["used_nth"]
+        return result
 
     # ------------------------------------------------------------------
     # Frame list / focus
@@ -1607,6 +1653,43 @@ class BrowserContextBase(ABC):
                 for e in self._downloads
             ],
             "count": len(self._downloads),
+        }
+
+    async def download_wait_click(
+        self,
+        *,
+        index: int,
+        output_dir: str,
+        timeout: float | None = None,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """Arm a download waiter, click ``[index]``, then await the download."""
+        self._check_browser_alive()
+        self._check_page_valid()
+        if timeout is None:
+            timeout = float(self._browser_config.navigation_timeout)
+
+        loop = asyncio.get_running_loop()
+        fut: asyncio.Future[Any] = loop.create_future()
+        self._download_waiters.append(fut)
+
+        try:
+            await self.action("click", target=str(index), force=force)
+        except Exception:
+            if not fut.done():
+                fut.cancel()
+            with contextlib.suppress(ValueError):
+                self._download_waiters.remove(fut)
+            raise
+
+        entry = await self._download_wait_impl(output_dir, timeout=timeout, _waiter=fut)
+        self._downloads.append(entry)
+        return {
+            "filename": entry.filename,
+            "path": entry.path,
+            "size": entry.size,
+            "url": entry.url,
+            "source": entry.source,
         }
 
     # ------------------------------------------------------------------

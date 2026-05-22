@@ -73,6 +73,39 @@ def download_wait(
     )
 
 
+@app.command("wait-click")
+def download_wait_click(
+    index: int = typer.Option(
+        ..., "--index", "-i", help="Element [N] to click (the download trigger)."
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Directory to save into (default: system temp dir).",
+    ),
+    timeout: float | None = typer.Option(
+        None, "--timeout", help="Seconds to wait for the download."
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Skip pointer check on the click."
+    ),
+) -> None:
+    """Click an element and wait for the triggered download to complete."""
+    body: dict[str, object] = {"index": index, "force": force}
+    if output is not None:
+        body["output_dir"] = str(output)
+    if timeout is not None:
+        body["timeout"] = timeout
+    dispatch_text_or_json(
+        DaemonClient(),
+        "POST",
+        "/download/wait-click",
+        json_body=body,
+        renderer=render_download_text,
+    )
+
+
 @app.command("list")
 def download_list() -> None:
     """List downloads saved during this session."""

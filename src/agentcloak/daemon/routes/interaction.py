@@ -229,12 +229,14 @@ async def handle_upload(body: UploadRequest, ctx: BrowserCtxDep) -> dict[str, An
                 "action": "provide 'files' as a list of file paths",
             },
         )
-    result = await ctx.upload(body.index, body.files)
+    result = await ctx.upload(body.index, body.files, nth=body.nth)
     # ``uploaded`` + ``index`` are echoed so the response is self-describing
     # for ``uploaded 2 files to [7]`` — both JSON consumers and the CLI/MCP
-    # renderer benefit.
+    # renderer benefit. With auto-find (index omitted) there's no [N] to echo;
+    # the base attaches ``candidates_count`` / ``used_nth`` instead.
     result.setdefault("uploaded", len(body.files))
-    result.setdefault("index", body.index)
+    if body.index is not None:
+        result.setdefault("index", body.index)
     return _ok(result, seq=ctx.seq)
 
 

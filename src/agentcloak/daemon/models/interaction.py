@@ -154,9 +154,21 @@ class WaitResponse(BaseModel):
 
 
 class UploadRequest(BaseModel):
-    index: int = Field(description="Element [N] of the file input to attach files to.")
+    index: int | None = Field(
+        None,
+        description=(
+            "Element [N] of the file input. Omit to auto-find hidden "
+            "input[type=file] elements (drag-drop uploaders)."
+        ),
+    )
     files: list[str] = Field(
         description="Absolute file paths the daemon reads and hands to the file input."
+    )
+    nth: int = Field(
+        0,
+        description=(
+            "When auto-finding (no index), pick the nth file input (0-based)."
+        ),
     )
 
 

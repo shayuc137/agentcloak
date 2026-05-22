@@ -15,6 +15,7 @@ __all__ = [
     "DownloadListResponse",
     "DownloadResponse",
     "DownloadUrlRequest",
+    "DownloadWaitClickRequest",
     "DownloadWaitRequest",
 ]
 
@@ -39,6 +40,23 @@ class DownloadWaitRequest(BaseModel):
     timeout: float | None = Field(
         None,
         description="Seconds to wait for a download. Defaults to navigation_timeout.",
+    )
+
+
+class DownloadWaitClickRequest(BaseModel):
+    """Atomic click-then-download: arm waiter, click [index], await download."""
+
+    index: int = Field(description="Element [N] to click (the download trigger).")
+    output_dir: str | None = Field(
+        None,
+        description="Directory to save into. Defaults to the system temp dir.",
+    )
+    timeout: float | None = Field(
+        None,
+        description="Seconds to wait for a download. Defaults to navigation_timeout.",
+    )
+    force: bool = Field(
+        False, description="Pass force=True to the click (skip pointer check)."
     )
 
 

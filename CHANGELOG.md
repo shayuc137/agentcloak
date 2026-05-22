@@ -1,5 +1,75 @@
 # Changelog
 
+## 0.3.0 (2026-05-22)
+
+Major release: web reverse engineering, multi-session, DX improvements, platform compatibility.
+
+### Web Reverse Engineering (Phase 7b)
+
+agentcloak now covers ~90% of web reverse engineering scenarios natively, replacing the need for jshookmcp in browser contexts.
+
+- **Debugger** — breakpoints (URL regex + XHR pattern), single-step (over/into/out), call stack inspection, scope variable reading, paused-frame evaluation, source code search. Anti-debug bypass via `skip-pauses`
+- **Source maps** — discover `.map` files from parsed scripts, pure-Python VLQ decode, reverse lookup (compiled line:col → original source:line:col), embedded source tree extraction
+- **Streaming monitor** — WebSocket frame capture (sent/received) + Server-Sent Events monitoring, ring buffer with seq/since paging
+- **Init script hooks** — inject JS before page scripts; 5 presets: `fetch`, `xhr`, `json_parse`, `crypto`, `timing` (log intercepted calls to console)
+- **Network route interception** — abort/fulfill/continue with URL glob, resource type, and HTTP method filters
+- **Header injection** — extra HTTP headers on every request (forged auth tokens)
+- **GraphQL** — schema introspection + arbitrary query execution with browser cookies
+
+### JS Profiling (Phase 7f)
+
+- **Code coverage** — precise per-function coverage recording; find which JS ran during an operation
+- **CPU profiling** — execution time distribution; locate hot functions (encryption/signing)
+- **Heap snapshot** — V8 object graph dump; grep for keys/tokens/decrypted data
+- **Performance metrics** — DOM node count, JS heap size, layout/recalc counts
+
+### Multi-Session (Phase 7d)
+
+- **SessionManager** — named sessions with independent browsers, per-session idle timeout (5min default), three-state lifecycle (registered/active/suspended)
+- **Zero-config isolation** — `CLAUDE_CODE_SESSION_ID` auto-detected; each Claude Code instance gets its own browser without configuration
+- **MCP session isolation** — `mcp-{pid}` auto-session with atexit cleanup
+- **Session management** — `cloak session list` / `close`
+
+### DX Improvements (Phase 6f)
+
+- **Evaluate presets** — `--preset vue_inspect|react_inspect|jwt_decode|cookie_parse|storage_dump` for common reverse-engineering operations
+- **Upload auto-find** — omit `--index` to auto-discover hidden `input[type=file]` elements (drag-drop uploaders); `--nth` selects which one
+- **Download wait-click** — `cloak download wait-click --index N` atomic operation (arm waiter → click → await download in one request)
+- **click --force** — skip pointer-event check for covered elements
+- **Debugger URL search** — search across multiple scripts by URL pattern
+- **Sourcemap 404** — clear HTTP status in error instead of cryptic parse failure
+- **Auto WS/SSE monitor** — navigate auto-starts WebSocket/SSE listeners
+
+### Platform Compatibility (Phase 6c)
+
+- **Health metrics** — `/health` returns `uptime_seconds`, `request_count`, `active_connections` via ASGI middleware
+- **CI matrix** — unit tests now run on ubuntu × windows × macos × Python 3.12/3.13/3.14
+- **Platform support docs** — `docs/{en,zh}/reference/platform-support.md` with feature × platform matrix
+- **Stale chromium detection** — `cloak doctor` warns about old CloakBrowser binaries (~700MB each) with cleanup command
+
+### Daemon Reliability
+
+- **Auto re-spawn** — daemon crash recovery with health probe confirmation
+- **httpx retry** — `HTTPTransport(retries=2)` + split timeouts (connect=5s / read=90s)
+- **Version consistency** — `/health` exposes version + route count; `doctor` warns on CLI/daemon mismatch; CLI 404 suggests daemon restart
+
+### Bug Fixes
+
+- `_cdp_send_impl` / `_cdp_enable_domain_impl` now wrapped with BackendError
+- Console capture fallback via CDP `Runtime.consoleAPICalled`
+- Config get fixed after nested config refactor (6d)
+- Clipboard read fast-fail (5s) with clear headless limitation error
+- SSRF guard uses explicit blocklist; unblocks `198.18.0.0/15` fake-IP range
+- Three dogfood UX fixes (config list keys, console timing, storage get)
+
+### Stats
+
+- Routes: 59 → 102 (+43)
+- MCP tools: 29 → 38 (+9)
+- CLI commands: 27 → 38 (+11)
+- Unit tests: 701 → 927 (+226)
+- Chrome extension: on-demand CDP domain enable for reverse engineering
+
 ## 0.2.4 (2026-05-20)
 
 Windows compatibility fixes from seed-user testing.

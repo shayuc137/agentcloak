@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "agentcloak",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Remote browser control bridge for agentcloak — connects your Chrome to a remote agentcloak daemon over WebSocket.",
   "permissions": [
     "alarms",

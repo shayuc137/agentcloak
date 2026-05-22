@@ -102,5 +102,45 @@
   {
     "query": "帮我用 Puppeteer 写个自动化脚本，要求能抢演唱会的票，代码写好我自己跑",
     "should_trigger": false
+  },
+  {
+    "query": "这个网站登录的时候请求里带了个 sign 参数，我想知道它是怎么算出来的，帮我 hook 一下 fetch 看看",
+    "should_trigger": true
+  },
+  {
+    "query": "帮我在这个 SPA 上设个断点，看看点击购买按钮后调了哪些函数，参数是什么",
+    "should_trigger": true
+  },
+  {
+    "query": "这个站打包后的 JS 全是混淆的，帮我找到 source map 还原一下原始代码",
+    "should_trigger": true
+  },
+  {
+    "query": "I need to monitor WebSocket messages on this trading site to see what data format they use for real-time price updates",
+    "should_trigger": true
+  },
+  {
+    "query": "这个页面用的 Vue，帮我看看组件里的 data 和 methods 都有什么",
+    "should_trigger": true
+  },
+  {
+    "query": "页面上有个上传头像的按钮，但是用的是 drag-drop 组件，snapshot 里看不到 file input，帮我把 /tmp/avatar.png 传上去",
+    "should_trigger": true
+  },
+  {
+    "query": "这个下载按钮点了之后会触发一个文件下载，帮我点击按钮然后把文件保存下来",
+    "should_trigger": true
+  },
+  {
+    "query": "帮我用 Frida 给这个安卓 app 的 SSL pinning 解掉，然后抓包看看它的 API",
+    "should_trigger": false
+  },
+  {
+    "query": "我想用 mitmproxy 做个中间人代理，改掉所有请求里的 User-Agent 头",
+    "should_trigger": false
+  },
+  {
+    "query": "帮我用 Ghidra 反编译这个 .so 文件，找到加密函数的实现",
+    "should_trigger": false
   }
 ]

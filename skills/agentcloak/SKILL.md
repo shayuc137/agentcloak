@@ -1,6 +1,6 @@
 ---
 name: agentcloak
-description: "Browser automation via cloak CLI. Navigates pages with anti-bot stealth, snapshots accessibility tree with [N] element refs for interaction, takes screenshots, evaluates JS, fetches HTTP with cookies, captures network traffic, manages profiles/tabs. Use this skill whenever the task involves ANY web page interaction: opening URLs, reading page content, filling forms, clicking buttons, taking screenshots, extracting data from websites, logging into sites, checking what a page shows, scraping, or automating browser workflows. Also use when the user mentions a URL and wants to see or interact with its content, even if they don't say 'browser'. This skill provides stealth bypass for anti-bot protections."
+description: "Browser automation and web reverse engineering via cloak CLI. Navigates pages with anti-bot stealth, snapshots accessibility tree with [N] element refs for interaction, takes screenshots, evaluates JS, fetches HTTP with cookies, captures network traffic, manages profiles/tabs. Also debugs JavaScript (breakpoints, call stacks, scope inspection), parses source maps, monitors WebSocket/SSE streams, intercepts/modifies network requests, injects hooks (fetch/XHR/crypto), and profiles JS execution (coverage, CPU, heap). Use this skill whenever the task involves ANY web page interaction: opening URLs, reading page content, filling forms, clicking buttons, taking screenshots, extracting data from websites, logging into sites, checking what a page shows, scraping, or automating browser workflows. Also use when the user mentions a URL and wants to see or interact with its content, even if they don't say 'browser'. Also use for web reverse engineering: debugging JS, finding how a site encrypts or signs requests, inspecting API calls, hooking fetch/XHR, reading source maps, monitoring WebSocket traffic, or analyzing page performance. This skill provides stealth bypass for anti-bot protections."
 ---
 
 # agentcloak
@@ -99,7 +99,7 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak keydown/keyup Shift` | Hold/release key |
 | `cloak dialog accept` / `dismiss` | Handle confirm/prompt dialog |
 | `cloak wait --selector ".results"` | Wait for element / URL / JS condition / time |
-| `cloak upload --index N --file path` | Upload file to input element |
+| `cloak upload --file path [--index N] [--nth N]` | Upload file; omit `--index` to auto-find hidden `input[type=file]` (drag-drop uploaders), `--nth` picks which one |
 | `cloak frame focus --name "x"` | Switch to iframe (`--main` to return) |
 | `--snap` (flag on any action) | Attach a compact snapshot to the result — see Smart Behaviors |
 

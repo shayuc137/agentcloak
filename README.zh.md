@@ -21,7 +21,7 @@ Agent 原生隐身浏览器 -- 看见、交互、自动化。
 
 - **页面即结构化文本** -- 页面转化为无障碍树，每个可交互元素带有 `[N]` 索引，agent 通过索引操作而非脆弱的 CSS 选择器
 - **CLI + Skill 按需加载** -- agent 通过 Bash 调用 `cloak` 命令，Skill 按需加载仅占 ~300 tokens（MCP 工具定义常驻 ~6,000 tokens）
-- **CloakBrowser 内置隐身** -- 基于 57 个 C++ 补丁的 Chromium，对抗常见指纹检测和 JS 挑战
+- **CloakBrowser 内置隐身** -- 基于 57 个 C++ 补丁的 Chromium，呈现真实浏览器指纹，让 agent 浏览时不会被误判为机器人
 - **登录态复用** -- 保存/恢复登录 profile，通过 RemoteBridge 操控真实 Chrome 浏览器
 - **网络配置** -- 代理（SOCKS5/HTTP）、DNS-over-HTTPS 控制、自定义 Chromium 参数，通过 `cloak config set` 管理
 - **Daemon 架构** -- 首次命令自动启动，管理浏览器生命周期，单调递增的 seq 计数器追踪状态

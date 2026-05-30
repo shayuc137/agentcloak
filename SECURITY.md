@@ -33,7 +33,7 @@ The following are in scope:
 The following are out of scope:
 
 - Vulnerabilities in upstream dependencies (CloakBrowser, Playwright, aiohttp) -- report those to the respective projects
-- Anti-bot detection bypass effectiveness -- this is expected behavior, not a security issue
+- Bot-detection classification of automated traffic -- agentcloak presents a realistic browser environment by design; detection outcomes are not security vulnerabilities
 - Issues requiring physical access to the machine running agentcloak
 
 ## Supported Versions

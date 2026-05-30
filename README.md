@@ -21,7 +21,7 @@ You need a browser. Your agents do too.
 
 - **Pages as structured text** -- every page becomes an accessibility tree with `[N]` indexed elements; agents interact by index, not fragile CSS selectors
 - **CLI + Skill on-demand loading** -- agents call `cloak` via Bash; the Skill lazy-loads at ~300 tokens (vs ~6,000 for MCP tool definitions)
-- **CloakBrowser built-in stealth** -- 57 C++ patches on Chromium, passes common fingerprint checks and JS challenges
+- **CloakBrowser built-in stealth** -- 57 C++ patches on Chromium for realistic browser fingerprinting; agents browse without being misidentified as bots
 - **Session reuse** -- save/restore login profiles + RemoteBridge to operate your real Chrome browser
 - **Network config** -- proxy (SOCKS5/HTTP), DNS-over-HTTPS control, and custom Chromium args via `cloak config set`
 - **Daemon architecture** -- auto-starts on first command, manages browser lifecycle with a monotonic seq counter

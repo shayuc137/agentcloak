@@ -129,7 +129,7 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak script remove ID` / `list` | Remove an init script by identifier / list active ones |
 | `cloak route add PATTERN --action abort\|fulfill\|continue` | Intercept matching requests; `--status`/`--content-type`/`--body` shape a `fulfill` response, `--method`/`--resource-type` narrow the match |
 | `cloak route remove [PATTERN]` / `list` | Remove a route rule (omit PATTERN to clear all) / list active rules |
-| `cloak emulation headers -H 'Name: value'` | Inject extra HTTP headers on every request (forged auth/tokens); no `-H` clears them |
+| `cloak emulation headers -H 'Name: value'` | Inject extra HTTP headers on every request (custom auth/tokens); no `-H` clears them |
 | `cloak graphql introspect URL` | Run the standard `__schema` introspection query (via the session's cookies) |
 | `cloak graphql query URL QUERY [--variables '{...}']` | Send an arbitrary GraphQL operation |
 | `cloak ws list` | List tracked WebSocket connections (capture turns on lazily; cleared on navigation) |

@@ -1,7 +1,7 @@
 """Emulation commands (7b T1.2) — inject extra HTTP headers.
 
-Set headers applied to every subsequent request (forged Authorization / custom
-tokens for API debugging). Repeat ``--header`` for multiple; run with no headers
+Set headers applied to every subsequent request (custom Authorization / tokens
+for API debugging). Repeat ``--header`` for multiple; run with no headers
 to clear the override.
 """
 

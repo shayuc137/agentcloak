@@ -1,7 +1,7 @@
 """Pydantic models for emulation routes (7b T1.2).
 
 Currently a single capability: extra HTTP headers injected on every request
-(forged Authorization / custom tokens for API debugging). ``POST
+(custom Authorization / tokens for API debugging). ``POST
 /emulation/headers`` sets the active set; passing an empty map clears it.
 """
 

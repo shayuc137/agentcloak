@@ -38,9 +38,11 @@ The following are out of scope:
 
 ## Supported Versions
 
-| Version | Supported |
-|---------|-----------|
-| 0.1.x   | Yes       |
+| Version | Supported           |
+|---------|---------------------|
+| 0.3.x   | Yes                 |
+| 0.2.x   | Security fixes only |
+| < 0.2   | No                  |
 
 ## Disclosure
 

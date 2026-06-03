@@ -1,18 +1,17 @@
 """BridgeService — owns Chrome Extension WebSocket lifecycle.
 
-The daemon exposes two WebSocket endpoints for Chrome Extension connectivity:
+The daemon exposes a single WebSocket endpoint for Chrome Extension
+connectivity:
 
-* ``/bridge/ws`` — used by the legacy Python ``bridge`` process running on the
-  user's desktop. Authenticates via ``Authorization: Bearer <token>`` header.
 * ``/ext`` — direct WebSocket from the Chrome Extension. The browser
   WebSocket API cannot set custom headers, so auth is done via a ``hello``
-  message containing the token.
+  message containing the token (localhost connections bypass auth).
 
-Both endpoints share the same lifecycle: verify auth, enforce remote-context
-mutex (or replace, for ``/ext``), accept the connection, instantiate
-:class:`RemoteBridgeContext`, pump messages, and clean up on disconnect.
-Routes used to inline ~110 lines of this logic; centralising it here keeps
-the WebSocket handlers thin and makes the lifecycle one unit of testable code.
+The lifecycle: accept the connection, verify the hello-token (for non-local
+peers), replace any stale remote, instantiate :class:`RemoteBridgeContext`,
+pump messages, and clean up on disconnect. The route handler used to inline
+this logic; centralising it here keeps the WebSocket handler thin and makes
+the lifecycle one unit of testable code.
 """
 
 from __future__ import annotations
@@ -80,23 +79,6 @@ class BridgeService:
 
     def __init__(self, app_state: Any) -> None:
         self._state = app_state
-
-    # ------------------------------------------------------------------
-    # Auth
-    # ------------------------------------------------------------------
-
-    def _check_bridge_token(self, websocket: WebSocket) -> bool:
-        """Verify bridge auth token. Localhost connections skip auth."""
-        client = websocket.client
-        if client and client.host in ("127.0.0.1", "::1", "localhost"):
-            return True
-
-        expected = getattr(self._state, "bridge_token", None)
-        if not expected:
-            return True
-
-        auth = websocket.headers.get("Authorization", "")
-        return secrets.compare_digest(auth, f"Bearer {expected}")
 
     # ------------------------------------------------------------------
     # State manipulation helpers
@@ -171,52 +153,6 @@ class BridgeService:
     # Connection handlers
     # ------------------------------------------------------------------
 
-    async def handle_bridge_connection(self, websocket: WebSocket) -> None:
-        """Run the full ``/bridge/ws`` lifecycle for one connection.
-
-        The legacy Python bridge connects here with a Bearer-token header.
-        Mutex semantics: only one remote_ctx may be active — reject when
-        an alive one already exists.
-        """
-        if not self._check_bridge_token(websocket):
-            await websocket.close(code=1008, reason="invalid bridge token")
-            return
-
-        if self._existing_remote_alive():
-            await websocket.close(code=4002, reason="remote_ctx_in_use")
-            logger.warning("bridge_ws_rejected", reason="remote_ctx_in_use")
-            return
-
-        self._cleanup_dead_remote()
-
-        # Late import: pulling ``RemoteBridgeContext`` at module scope can
-        # create import cycles if the browser package ever needs daemon
-        # service types.
-        from agentcloak.browser.remote_ctx import RemoteBridgeContext
-
-        await websocket.accept()
-        adapter = BridgeWSAdapter(websocket)
-        cfg = getattr(self._state, "config", None)
-        browser_cfg = cfg.browser if cfg is not None else None
-        remote_ctx: RemoteBridgeContext = RemoteBridgeContext(  # type: ignore[arg-type]
-            bridge_ws=adapter,
-            browser_config=browser_cfg,
-        )
-        self._state.bridge_ws = adapter
-        self._notify_extension_connected(remote_ctx)
-
-        try:
-            while True:
-                data = await websocket.receive_text()
-                remote_ctx.feed_message(data)
-        except WebSocketDisconnect:
-            pass
-        finally:
-            adapter.mark_closed()
-            self._fail_pending(remote_ctx, "bridge websocket closed")
-            self._state.bridge_ws = None
-            self._notify_extension_disconnected()
-
     async def handle_ext_connection(self, websocket: WebSocket) -> None:
         """Run the full ``/ext`` lifecycle for one connection.
 
@@ -261,7 +197,7 @@ class BridgeService:
 
         # ``/ext`` is exclusively used by the Chrome Extension. MV3 service
         # workers restart frequently — a new connection always replaces the
-        # old one (no reject like ``/bridge/ws``).
+        # old one.
         if self._existing_remote_alive():
             logger.info("ext_ws_replacing", remote=client.host if client else None)
             old_ws = getattr(self._state, "ext_ws", None)

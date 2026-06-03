@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 from fastapi import Depends, HTTPException, Request
 
 from agentcloak.core.config import AgentcloakConfig, load_config
+from agentcloak.core.types import StealthTier
 
 if TYPE_CHECKING:
     import asyncio
@@ -92,6 +93,34 @@ def _session_id_of(request: Request) -> str:
     return request.headers.get(_SESSION_HEADER, _DEFAULT_SESSION_ID)
 
 
+def session_id_of(request: Request) -> str:
+    """Public alias of :func:`_session_id_of` for cross-module use."""
+    return _session_id_of(request)
+
+
+def _routes_to_remote(request: Request) -> bool:
+    """Return ``True`` if this request must hit the shared ``remote_ctx``.
+
+    ``/launch --tier remote_bridge`` records the launching session id on
+    ``app.state.remote_session_id``. Because every Claude Code request carries
+    a non-``default`` ``X-Agentcloak-Session`` header, the tier switch alone is
+    invisible to :func:`get_browser_ctx` — without this hook the launching
+    session would silently fall through to :class:`SessionManager` and get an
+    isolated *local* browser instead of the extension-backed remote one.
+
+    Only the session that launched remote_bridge is routed to ``remote_ctx``;
+    every other session keeps its own local browser, so multi-session
+    isolation is preserved. When ``remote_session_id`` is unset we fall back to
+    ``"default"`` so a daemon that booted straight into remote_bridge tier
+    still serves header-less / default callers from the shared context.
+    """
+    state = request.app.state
+    if getattr(state, "active_tier", None) != StealthTier.REMOTE_BRIDGE:
+        return False
+    launching_session = getattr(state, "remote_session_id", None) or _DEFAULT_SESSION_ID
+    return _session_id_of(request) == launching_session
+
+
 def _browser_not_ready(request: Request) -> HTTPException:
     """Build the standard ``browser_not_ready`` 503 for the default session."""
     # Tailor the hint based on whether the daemon is in remote_bridge mode
@@ -136,7 +165,18 @@ async def get_browser_ctx(request: Request) -> Any:
 
     The provider is ``async`` because launching a session browser awaits;
     FastAPI supports async dependency providers natively.
+
+    remote_bridge override: the session that launched remote_bridge is routed
+    to the shared ``browser_ctx`` (the extension-backed remote ctx) *before*
+    the SessionManager fork, so it never gets a local browser by mistake. See
+    :func:`_routes_to_remote`.
     """
+    if _routes_to_remote(request):
+        ctx = request.app.state.browser_ctx
+        if ctx is None:
+            raise _browser_not_ready(request)
+        return ctx
+
     session_mgr = getattr(request.app.state, "session_manager", None)
     session_id = _session_id_of(request)
     if session_mgr is not None and session_id != _DEFAULT_SESSION_ID:
@@ -159,8 +199,13 @@ async def get_optional_browser_ctx(request: Request) -> Any:
 
     For a named session this lazily launches the browser (same as
     :func:`get_browser_ctx`); for the default session it returns whatever is
-    on ``app.state.browser_ctx`` without raising.
+    on ``app.state.browser_ctx`` without raising. The remote_bridge launcher is
+    routed to the shared ``browser_ctx`` (may be ``None`` while the extension
+    is still connecting — ``/health`` reports that state happily).
     """
+    if _routes_to_remote(request):
+        return getattr(request.app.state, "browser_ctx", None)
+
     session_mgr = getattr(request.app.state, "session_manager", None)
     session_id = _session_id_of(request)
     if session_mgr is not None and session_id != _DEFAULT_SESSION_ID:

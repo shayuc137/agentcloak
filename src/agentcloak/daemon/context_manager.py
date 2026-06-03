@@ -10,8 +10,7 @@ The daemon owns three slots on ``app.state``:
   cost. Auto-closed after :attr:`AgentcloakConfig.local_idle_timeout`
   seconds of dormancy when the active tier is ``remote_bridge``.
 * ``remote_ctx`` — the extension-backed :class:`RemoteBridgeContext`. Set
-  by the ``/ext`` (or ``/bridge/ws``) handler on connect and torn down
-  on disconnect.
+  by the ``/ext`` handler on connect and torn down on disconnect.
 
 The manager itself is stateless beyond the slots above plus an idle
 :class:`asyncio.TimerHandle`. All operations run on the daemon event

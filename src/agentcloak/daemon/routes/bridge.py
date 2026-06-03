@@ -1,9 +1,9 @@
 """Bridge / Chrome-extension routes.
 
-Two WebSocket endpoints accept extension connections — ``/bridge/ws`` for
-legacy clients and ``/ext`` for the direct-attach path. Both delegate the
-full lifecycle (handshake, token check, message pump, disconnect cleanup)
-to :class:`BridgeService` which lives on ``app.state.bridge_service``.
+The ``/ext`` WebSocket endpoint accepts the direct Chrome-extension
+connection and delegates the full lifecycle (handshake, hello-token check,
+message pump, disconnect cleanup) to :class:`BridgeService` which lives on
+``app.state.bridge_service``.
 
 The three HTTP routes here are user-facing UX: claim an existing tab,
 finalize a session, and rotate the persistent auth token.
@@ -36,23 +36,7 @@ logger = structlog.get_logger()
 router = APIRouter()
 
 
-# --- Bridge WebSocket endpoints (delegated to BridgeService) ---------------
-
-
-@router.websocket("/bridge/ws")
-async def handle_bridge_ws(websocket: WebSocket) -> None:
-    """WebSocket endpoint for legacy bridge connections.
-
-    Looks up :class:`BridgeService` on ``app.state`` (rather than via
-    Depends, which doesn't apply to ``websocket`` routes) and hands the
-    full lifecycle off in one call. Connection-mutex, token verification,
-    message pumping, and disconnect cleanup all live in the service.
-    """
-    bridge = getattr(websocket.app.state, "bridge_service", None)
-    if bridge is None:
-        await websocket.close(code=1011, reason="bridge service not ready")
-        return
-    await bridge.handle_bridge_connection(websocket)
+# --- Bridge WebSocket endpoint (delegated to BridgeService) ----------------
 
 
 @router.websocket("/ext")
@@ -60,7 +44,10 @@ async def handle_ext_ws(websocket: WebSocket) -> None:
     """Direct WebSocket endpoint for the Chrome Extension.
 
     See :class:`BridgeService.handle_ext_connection` for the protocol
-    details — this handler is just the transport adapter.
+    details — this handler is just the transport adapter. Looks up
+    :class:`BridgeService` on ``app.state`` (rather than via Depends, which
+    doesn't apply to ``websocket`` routes) and hands the full lifecycle off
+    in one call.
     """
     bridge = getattr(websocket.app.state, "bridge_service", None)
     if bridge is None:

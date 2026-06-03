@@ -1,5 +1,5 @@
 // agentcloak Bridge — Chrome MV3 service worker
-// Connects to bridge/daemon via WebSocket with auto-discovery.
+// Connects to the agentcloak daemon's /ext WebSocket with port auto-discovery.
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 18765;
@@ -26,7 +26,7 @@ let attachedTabs = new Map();
 let enabledDomainsByTab = new Map();
 let currentHost = null;
 let currentPort = null;
-let currentService = null; // "agentcloak-daemon" or "agentcloak-bridge"
+let currentService = null; // "agentcloak-daemon" when connected, else null
 let isReconnecting = false;
 let agentTabGroupId = null; // Chrome tab group for agent-managed tabs
 let managedTabIds = new Set(); // tabs created or claimed by agent
@@ -242,7 +242,7 @@ async function saveLastConnected(host, port, service) {
   });
 }
 
-// --- Auto-Discovery (daemon preferred over bridge) ---
+// --- Auto-Discovery (daemon /ext only) ---
 
 async function probeHealth(host, port) {
   const controller = new AbortController();
@@ -253,11 +253,7 @@ async function probeHealth(host, port) {
     });
     const data = await resp.json();
     clearTimeout(timer);
-    if (
-      data.ok &&
-      (data.service === "agentcloak-daemon" ||
-        data.service === "agentcloak-bridge")
-    ) {
+    if (data.ok && data.service === "agentcloak-daemon") {
       return { host, port, service: data.service };
     }
     return null;
@@ -304,17 +300,17 @@ async function discoverTarget(config) {
     }
   }
 
-  // Prefer the service we successfully connected to last time, then daemon, then bridge.
-  if (config.last_connected_service) {
+  // Prefer the daemon we successfully connected to last time, else the first
+  // daemon that answered the probe.
+  if (config.last_connected_port) {
     const preferred = allResults.find(
-      (r) => r.service === config.last_connected_service
+      (r) => r.host === config.last_connected_host &&
+        r.port === config.last_connected_port
     );
     if (preferred) return preferred;
   }
   const daemon = allResults.find((r) => r.service === "agentcloak-daemon");
   if (daemon) return daemon;
-  const bridge = allResults.find((r) => r.service === "agentcloak-bridge");
-  if (bridge) return bridge;
 
   return {
     host: config.bridge_host || DEFAULT_HOST,

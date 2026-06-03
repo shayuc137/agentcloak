@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
-from agentcloak.daemon.dependencies import (  # noqa: TC001
+from agentcloak.daemon.dependencies import (
     ActiveTierDep,
     BrowserCtxDep,
     ConfigDep,
@@ -22,6 +22,7 @@ from agentcloak.daemon.dependencies import (  # noqa: TC001
     RemoteCtxDep,
     ResumeWriterDep,
     ShutdownEventDep,
+    session_id_of,
 )
 from agentcloak.daemon.models import (
     CDPEndpointResponse,
@@ -91,11 +92,17 @@ async def handle_shutdown(event: ShutdownEventDep) -> dict[str, Any]:
 async def handle_launch(
     body: LaunchRequest,
     manager: ContextManagerDep,
+    request: Request,
 ) -> dict[str, Any]:
     """Hot-switch the active browser tier without restarting the daemon.
 
     ``cloak``/``playwright`` create or re-use a local browser; remote_bridge
     waits for the Chrome extension to connect (if it isn't already).
+
+    When switching to remote_bridge we stamp the launching session id onto
+    ``app.state.remote_session_id`` so :func:`get_browser_ctx` routes *this*
+    session's subsequent actions to the shared extension-backed context. Any
+    other tier clears it, restoring full multi-session isolation.
     """
     from agentcloak.core.config import resolve_tier
     from agentcloak.core.types import StealthTier
@@ -115,6 +122,12 @@ async def handle_launch(
         ) from exc
 
     result = await manager.switch_tier(tier_enum, profile=body.profile)
+
+    if tier_enum == StealthTier.REMOTE_BRIDGE:
+        request.app.state.remote_session_id = session_id_of(request)
+    else:
+        request.app.state.remote_session_id = None
+
     return _ok(result, seq=0)
 
 

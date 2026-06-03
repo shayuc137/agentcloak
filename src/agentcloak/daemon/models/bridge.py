@@ -1,9 +1,9 @@
 """Pydantic models for bridge / extension routes.
 
 Covers tab claim, session finalize, and the persistent auth token reset.
-The bridge WebSocket endpoints themselves (``/bridge/ws``, ``/ext``) don't
-have request/response models — they speak a JSON-RPC-style protocol
-documented in :mod:`agentcloak.daemon.services.bridge_service`.
+The extension WebSocket endpoint itself (``/ext``) doesn't have
+request/response models — it speaks a JSON-RPC-style protocol documented in
+:mod:`agentcloak.daemon.services.bridge_service`.
 """
 
 from __future__ import annotations

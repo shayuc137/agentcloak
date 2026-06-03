@@ -18,20 +18,16 @@ Copy that directory to your Chrome machine, then:
 
 ### 2. Start the Connection
 
-**Direct mode** (extension connects to daemon directly):
 ```bash
 cloak daemon start -b   # daemon on port 18765
-# Extension auto-discovers daemon via port probing (18765-18774)
-```
-
-**Bridge mode** (for NAT/firewall traversal):
-```bash
-cloak bridge start -b   # bridge process relays between extension and daemon
+# Extension auto-discovers the daemon via port probing (18765-18774) and
+# connects to its /ext WebSocket. No separate bridge process — point the
+# extension's options at the daemon's host:port if it's on another machine.
 ```
 
 ### Token Authentication
 
-Localhost connections are trusted automatically. For **remote** (non-localhost) connections the extension must present a bearer token:
+Localhost connections are trusted automatically. For **remote** (non-localhost) connections the extension must present a bearer token in its `hello` message (the browser WebSocket API can't set request headers):
 
 ```bash
 cloak bridge token            # print the persistent token (stored in ~/.agentcloak/config.toml [bridge] token)
@@ -43,10 +39,10 @@ Paste the token into the Chrome Extension's Options page to authorise its WebSoc
 ### Diagnose Connection Problems
 
 ```bash
-cloak bridge doctor   # checks bridge config, extension files, and the WS toolchain (starlette/websockets/uvicorn)
+cloak bridge doctor   # checks daemon liveness, extension attachment, and extension files
 ```
 
-Run this first when the extension can't connect — it reports the bridge port, candidate daemon list, whether the extension files are present, and whether the Python WS dependencies are installed.
+Run this first when the extension can't connect — it reports whether the daemon is running, whether an extension is currently attached (`remote_connected`), and whether the packaged extension files are present on disk.
 
 ## Usage
 

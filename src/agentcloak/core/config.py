@@ -53,6 +53,18 @@ class Paths:
         return self.root / "active-session.json"
 
     @property
+    def daemon_file(self) -> Path:
+        """Portfile written at daemon startup (pid/port/version/host).
+
+        Distinct from ``active_session_file`` (which also tracks the browser
+        tier/profile/bridge_token for the *running* session): ``daemon.json``
+        is the minimal record :class:`agentcloak.client.DaemonClient` reads to
+        discover which port the live daemon bound, so a CLI invocation lands on
+        the right port even when the daemon stepped off the default 18765.
+        """
+        return self.root / "daemon.json"
+
+    @property
     def resume_file(self) -> Path:
         return self.root / "resume.json"
 

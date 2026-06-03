@@ -65,36 +65,17 @@ def _make_websocket(
 
 
 # ---------------------------------------------------------------------------
-# B4.1: Connection mutex (already-connected bridge rejects new)
+# B4.1: Remote-context liveness heuristic
 # ---------------------------------------------------------------------------
 
 
-class TestConnectionMutex:
-    """A second bridge connection while a remote is alive must be rejected."""
+class TestRemoteLiveness:
+    """``_existing_remote_alive`` gates whether ``/ext`` replaces a stale ctx.
 
-    @pytest.mark.asyncio
-    async def test_bridge_ws_rejects_when_remote_alive(self) -> None:
-        """``/bridge/ws`` must close with code 4002 if remote_ctx already exists."""
-        state = _make_state()
-        # Stub an alive remote_ctx — _existing_remote_alive checks ``_ws.closed``.
-        live_ws = MagicMock()
-        live_ws.closed = False
-        existing_remote = MagicMock()
-        existing_remote._ws = live_ws
-        state.remote_ctx = existing_remote
-
-        svc = BridgeService(state)
-        ws = _make_websocket(client_host="127.0.0.1")
-
-        await svc.handle_bridge_connection(ws)
-
-        # The connection must be closed before accept() is ever called.
-        ws.accept.assert_not_called()
-        ws.close.assert_awaited_once()
-        # Inspect the close call — the reason carries the mutex hint.
-        call_kwargs = ws.close.await_args.kwargs
-        assert call_kwargs["code"] == 4002
-        assert "remote_ctx_in_use" in call_kwargs["reason"]
+    The standalone ``/bridge/ws`` mutex (reject with 4002) was removed with the
+    bridge process; ``/ext`` always *replaces* a stale remote instead of
+    rejecting. The liveness heuristic that drives that decision still matters.
+    """
 
     @pytest.mark.asyncio
     async def test_existing_remote_alive_detects_dead_inner_ws(self) -> None:
@@ -108,31 +89,29 @@ class TestConnectionMutex:
         state.remote_ctx = existing_remote
 
         svc = BridgeService(state)
-        # The helper is internal but encodes the mutex contract.
+        # The helper is internal but encodes the replace-vs-keep contract.
         assert svc._existing_remote_alive() is False
 
+    def test_existing_remote_alive_true_for_open_inner_ws(self) -> None:
+        """An open inner WS counts as alive so ``/ext`` replaces it cleanly."""
+        state = _make_state()
+        live_ws = MagicMock()
+        live_ws.closed = False
+        existing_remote = MagicMock()
+        existing_remote._ws = live_ws
+        state.remote_ctx = existing_remote
 
-# ---------------------------------------------------------------------------
-# B4.2: Token verification
-# ---------------------------------------------------------------------------
-
-
-class TestTokenVerification:
-    """Auth-token gating for non-localhost bridge connections."""
-
-    @pytest.mark.asyncio
-    async def test_invalid_token_closes_with_1008(self) -> None:
-        """Remote client with bad bearer → close code 1008 (policy violation)."""
-        state = _make_state(bridge_token="secret")
         svc = BridgeService(state)
-        ws = _make_websocket(client_host="192.168.1.100", auth_header="Bearer wrong")
+        assert svc._existing_remote_alive() is True
 
-        await svc.handle_bridge_connection(ws)
 
-        ws.accept.assert_not_called()
-        ws.close.assert_awaited_once()
-        call_kwargs = ws.close.await_args.kwargs
-        assert call_kwargs["code"] == 1008
+# ---------------------------------------------------------------------------
+# B4.2: Token rotation
+# ---------------------------------------------------------------------------
+
+
+class TestTokenRotation:
+    """Token rotation writes through to app state for the ``/ext`` hello check."""
 
     def test_set_token_writes_to_state(self) -> None:
         """Token rotation flips the app-state slot."""

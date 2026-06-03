@@ -105,6 +105,27 @@ _HEALTH_PROBE_TIMEOUT_S = 2.0
 _RECONNECT_PROBE_TIMEOUT_S = 1.0
 
 
+_WILDCARD_HOSTS = frozenset({"0.0.0.0", "::", ""})
+
+
+def _read_daemon_file(paths: Any) -> tuple[str | None, int | None]:
+    """Read host/port from the daemon portfile, if it exists and is fresh."""
+    from agentcloak.core.process import pid_alive
+
+    try:
+        data = orjson.loads(paths.daemon_file.read_bytes())
+        pid = data.get("pid")
+        if pid is not None and not pid_alive(pid):
+            paths.daemon_file.unlink(missing_ok=True)
+            return None, None
+        host = data.get("host")
+        if host in _WILDCARD_HOSTS:
+            host = "127.0.0.1"
+        return host, data.get("port")
+    except (FileNotFoundError, orjson.JSONDecodeError, KeyError):
+        return None, None
+
+
 class DaemonClient:
     """HTTP client wrapping the agentcloak daemon API.
 
@@ -154,10 +175,15 @@ class DaemonClient:
         auto_start: bool = True,
         session_id: str | None = None,
     ) -> None:
-        _, cfg = load_config()
+        paths, cfg = load_config()
         self._cfg: AgentcloakConfig = cfg
-        self._host = host or cfg.daemon.host
-        self._port = port or cfg.daemon.port
+        resolved_host, resolved_port = host, port
+        if resolved_host is None or resolved_port is None:
+            dh, dp = _read_daemon_file(paths)
+            resolved_host = resolved_host or dh or cfg.daemon.host
+            resolved_port = resolved_port or dp or cfg.daemon.port
+        self._host = resolved_host
+        self._port = resolved_port
         self._base = f"http://{self._host}:{self._port}"
         self._auto_start = auto_start
         self._session_id = session_id or auto_detect_session_id()
@@ -372,6 +398,15 @@ class DaemonClient:
         """Decode a daemon response and raise on error envelope."""
         if resp.status_code == 404:
             req = resp.request
+            service = self._probe_service()
+            if service and service != "agentcloak-daemon":
+                raise AgentBrowserError(
+                    error="wrong_service",
+                    hint=(
+                        f"port {self._port} is occupied by '{service}', not the daemon"
+                    ),
+                    action="stop the conflicting service or set AGENTCLOAK_PORT",
+                )
             raise AgentBrowserError(
                 error="route_not_found",
                 hint=f"Daemon returned 404 for {req.method} {req.url.path}",
@@ -396,6 +431,20 @@ class DaemonClient:
                 action=str(data.get("action", "")),
             )
         return data
+
+    # ------------------------------------------------------------------
+    # Service detection
+    # ------------------------------------------------------------------
+
+    def _probe_service(self) -> str | None:
+        """Quick /health check to identify what service occupies our port."""
+        try:
+            with httpx.Client(timeout=_HEALTH_PROBE_TIMEOUT_S) as client:
+                resp = client.get(f"{self._base}/health")
+                data = orjson.loads(resp.content)
+                return data.get("service")
+        except Exception:
+            return None
 
     # ------------------------------------------------------------------
     # Auto-start: subprocess spawn + health polling

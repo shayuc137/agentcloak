@@ -13,7 +13,7 @@ Remote Bridge 让 agentcloak daemon 驱动运行在另一台机器上的真实 C
 
 Chrome 扩展通过 `chrome.debugger` 说 CDP，把 daemon 的每条命令通过 WebSocket 隧道转发。daemon 的 `RemoteBridgeAdapter` 把 Playwright 风格的请求翻译成原始 CDP 命令并通过隧道送出。
 
-对于扩展无法直连 daemon 的网络场景（NAT、防火墙、跨子网），可以跑一个中间 `bridge` 进程做中继。
+扩展直接连 daemon 的 `/ext` WebSocket——把它指向 daemon 的 host:port（默认自动探测 `18765-18774` 范围）。只要 daemon 监听在扩展所在机器能访问的网卡上即可，不需要单独的中继进程。
 
 ## 配置步骤
 
@@ -105,22 +105,14 @@ cloak bridge finalize --mode deliverable   # 重命名分组为 "agentcloak resu
 
 按交接意图选择：`close` 用于全自主跑完，`handoff` 用于"接下来用户手动继续"，`deliverable` 用于标记需要用户审阅的结果。
 
-## Bridge 中继模式
-
-NAT 或防火墙让扩展无法直连 daemon 的场景下，跑一个中继：
-
-```bash
-cloak bridge start -b --port 18770
-```
-
-把扩展配置指向中继地址（而非 daemon 地址）。中继把扩展 WebSocket 流量转发到 daemon 的 `/ext` 端点。
-
 ## WebSocket 认证
 
-`/ext` 和 `/bridge/ws` 端点接受 Bearer token（daemon 启动时自动生成，打印在日志里，存在 session 文件中）。扩展通过选项 UI 取到它。
+扩展直接连 daemon 的 `/ext` WebSocket。该端点接受 Bearer token（daemon 启动时自动生成，打印在日志里，存在 session 文件中）。扩展通过选项 UI 取到它，并在 `hello` 消息里发送——浏览器 WebSocket API 无法设置请求头，所以 token 走带内传递。
 
 - **localhost 连接**绕过认证（你本来就在本机）
-- **远程连接**必须带 `Authorization: Bearer <token>`
+- **远程连接**必须在 `hello` 消息里带上 token；不匹配会以 `4001` 关闭
+
+用 `cloak bridge token --reset` 轮换（对运行中的 daemon 热生效），或重启 daemon。
 
 重启 daemon 即轮换——每次启动会生成新 token。
 

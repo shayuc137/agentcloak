@@ -32,10 +32,11 @@ if TYPE_CHECKING:
 __all__ = ["MetricsState", "install_middlewares"]
 
 
-# WebSocket endpoints handle their own localhost gating via the bridge token.
-# Health is intentionally open so monitoring tools can probe it from anywhere.
+# The ``/ext`` WebSocket endpoint handles its own localhost gating via the
+# hello-token. Health is intentionally open so monitoring tools can probe it
+# from anywhere.
 _LOCALHOST_BYPASS_PATHS = frozenset(
-    {"/health", "/bridge/ws", "/ext", "/openapi.json", "/docs", "/redoc"}
+    {"/health", "/ext", "/openapi.json", "/docs", "/redoc"}
 )
 # `testclient` is the synthetic client.host that Starlette's TestClient sets
 # on its requests. Keeping it in the local set lets the standard test suite

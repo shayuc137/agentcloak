@@ -174,7 +174,7 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak version` | Show agentcloak version (same value as `cloak --version`) |
 | `cloak doctor` | Self-check diagnostics (`--detail` for one line per probe; default is a 2-line summary + runtime status) |
 | `cloak skill install` / `update` / `uninstall` | Install this skill bundle into an agent platform (`--platform claude\|codex\|cursor\|opencode\|all`, `--path DIR`; see `getting-started.md`) |
-| `cloak bridge start` / `claim` / `finalize` / `doctor` | RemoteBridge (real browser); `bridge doctor` checks the extension + WS toolchain |
+| `cloak bridge claim` / `finalize` / `doctor` | RemoteBridge (real browser); `bridge doctor` checks daemon liveness + extension attachment |
 | `cloak bridge token` / `--reset` | Show or rotate the persistent bridge auth token |
 
 ## Response Convention

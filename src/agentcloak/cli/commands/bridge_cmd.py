@@ -1,8 +1,12 @@
-"""Bridge lifecycle commands — start, doctor, claim, finalize, token."""
+"""Bridge lifecycle commands — doctor, claim, finalize, token.
+
+The Chrome extension connects directly to the daemon's ``/ext`` WebSocket;
+there is no longer a standalone bridge process. ``doctor`` reflects that by
+probing the daemon and reporting whether the extension is currently attached.
+"""
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -20,40 +24,64 @@ __all__ = ["app"]
 app = typer.Typer()
 
 
-@app.command("start")
-def bridge_start(
-    host: str = typer.Option("127.0.0.1", "--host", help="Bind host for extension WS."),
-    port: int | None = typer.Option(None, "--port", help="Bind port."),
-) -> None:
-    """Start the bridge process (connects extension to daemon)."""
-    from agentcloak.bridge.server import start_bridge
-
-    asyncio.run(start_bridge(host=host, port=port))
+def _extension_dir() -> Path:
+    bridge_root = Path(__file__).parent.parent.parent / "bridge"
+    return bridge_root / "agentcloak-chrome-extension"
 
 
 @app.command("doctor")
 def bridge_doctor() -> None:
-    """Check bridge component status."""
+    """Check bridge readiness: daemon running, extension connected, files present.
+
+    The extension attaches to the daemon's ``/ext`` WebSocket, so a healthy
+    bridge means (1) the daemon answers ``/health``, (2) that health payload
+    reports ``remote_connected``, and (3) the packaged extension files exist
+    on disk for the user to load into Chrome.
+    """
+    from agentcloak.client import DaemonClient
+    from agentcloak.core.errors import AgentBrowserError, DaemonConnectionError
+
     checks: list[dict[str, Any]] = []
 
-    # Check bridge config
-    from agentcloak.bridge.config import load_bridge_config
+    # 1. Daemon liveness + extension connection — read off a single /health.
+    # ``auto_start=False`` so ``doctor`` never silently spawns a daemon just
+    # to introspect it.
+    daemon_running = False
+    remote_connected = False
+    health_detail = "daemon not reachable"
+    try:
+        result = DaemonClient(auto_start=False).health_sync()
+        data = result.get("data", result)
+        daemon_running = bool(data.get("ok", True))
+        remote_connected = bool(data.get("remote_connected", False))
+        health_detail = f"daemon up (v{data.get('version', '?')})"
+    except (DaemonConnectionError, AgentBrowserError) as exc:
+        health_detail = f"daemon not reachable ({exc.error})"
 
-    cfg = load_bridge_config()
     checks.append(
         {
-            "name": "bridge_config",
-            "ok": True,
-            "detail": f"port={cfg.bridge_port}, "
-            f"candidates={len(cfg.daemon_candidates)}",
-            "hint": "",
+            "name": "daemon",
+            "ok": daemon_running,
+            "detail": health_detail,
+            "hint": "" if daemon_running else "run: cloak daemon start -b",
+        }
+    )
+    checks.append(
+        {
+            "name": "extension_connected",
+            "ok": remote_connected,
+            "detail": "connected" if remote_connected else "no extension attached",
+            "hint": ""
+            if remote_connected
+            else (
+                "load the extension in chrome://extensions and "
+                "run 'cloak launch --tier remote_bridge'"
+            ),
         }
     )
 
-    # Check extension directory
-    ext_dir = (
-        Path(__file__).parent.parent.parent / "bridge" / "agentcloak-chrome-extension"
-    )
+    # 2. Extension files present on disk.
+    ext_dir = _extension_dir()
     manifest = ext_dir / "manifest.json"
     checks.append(
         {
@@ -63,28 +91,6 @@ def bridge_doctor() -> None:
             "hint": "" if manifest.is_file() else "extension files missing",
         }
     )
-
-    # Check the WS toolchain — Starlette (server) + websockets (client).
-    for pkg_name in ("starlette", "websockets", "uvicorn"):
-        try:
-            mod = __import__(pkg_name)
-            checks.append(
-                {
-                    "name": pkg_name,
-                    "ok": True,
-                    "detail": getattr(mod, "__version__", "unknown"),
-                    "hint": "",
-                }
-            )
-        except ImportError:
-            checks.append(
-                {
-                    "name": pkg_name,
-                    "ok": False,
-                    "detail": "not installed",
-                    "hint": f"pip install {pkg_name}",
-                }
-            )
 
     all_ok = all(c["ok"] for c in checks)
     if is_json_mode():
@@ -106,9 +112,7 @@ def bridge_doctor() -> None:
 @app.command("extension-path")
 def bridge_extension_path() -> None:
     """Print the path to the Chrome extension directory."""
-    ext_dir = (
-        Path(__file__).parent.parent.parent / "bridge" / "agentcloak-chrome-extension"
-    )
+    ext_dir = _extension_dir()
     if is_json_mode():
         emit_envelope({"ok": True, "seq": 0, "data": {"path": str(ext_dir.resolve())}})
         return

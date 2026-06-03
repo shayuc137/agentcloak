@@ -13,7 +13,7 @@ Remote Bridge lets an agentcloak daemon drive a real Chrome browser running on a
 
 The Chrome extension speaks CDP (via `chrome.debugger`) and tunnels every command from the daemon over WebSocket. The daemon's `RemoteBridgeAdapter` translates Playwright-style requests into raw CDP and ships them through the tunnel.
 
-For network setups where the extension can't reach the daemon directly (NAT, firewall, different subnet), an intermediate `bridge` process can be run as a relay.
+The extension connects directly to the daemon's `/ext` WebSocket — point it at the daemon's host:port (defaulting to the auto-probed `18765-18774` range). Running the daemon on an interface the extension's machine can reach is all that's required; there is no separate relay process.
 
 ## Setup
 
@@ -109,24 +109,14 @@ cloak bridge finalize --mode deliverable   # rename group to "agentcloak results
 
 Pick the mode that matches your hand-off intent: `close` for fully autonomous runs, `handoff` for "continue manually here", `deliverable` to flag results the user should review.
 
-## Bridge relay mode
-
-For NAT or firewall scenarios where the extension can't reach the daemon, run a relay:
-
-```bash
-cloak bridge start -b --port 18770
-```
-
-Configure the extension to point at the relay address instead of the daemon. The relay forwards extension WebSocket traffic to the daemon's `/ext` endpoint.
-
 ## WebSocket authentication
 
-The `/ext` and `/bridge/ws` endpoints accept a Bearer token (auto-generated per daemon, printed at startup, stored in the session file). The extension picks it up via the options UI.
+The extension connects directly to the daemon's `/ext` WebSocket. That endpoint accepts a Bearer token (auto-generated per daemon, printed at startup, stored in the session file). The extension picks it up via the options UI and sends it in its `hello` message — the browser WebSocket API can't set request headers, so the token travels in-band.
 
 - **Localhost connections** bypass auth (you already have local access)
-- **Remote connections** must present `Authorization: Bearer <token>`
+- **Remote connections** must include the token in the `hello` message; mismatches are closed with code `4001`
 
-Rotate by restarting the daemon — a new token is generated each launch.
+Rotate with `cloak bridge token --reset` (hot-applies to a running daemon), or by restarting the daemon.
 
 ## mDNS auto-discovery (optional)
 

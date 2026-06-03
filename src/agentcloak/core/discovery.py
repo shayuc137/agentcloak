@@ -131,7 +131,7 @@ def discover_daemon(timeout: float = 3.0) -> str | None:
 
         if found:
             d = found[0]
-            url = f"ws://{d['ip']}:{d['port']}/bridge/ws"
+            url = f"ws://{d['ip']}:{d['port']}/ext"
             logger.info("mdns_discovered", url=url)
             return url
 

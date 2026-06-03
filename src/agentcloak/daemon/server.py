@@ -128,23 +128,30 @@ def _clear_session(paths: Paths) -> None:
         paths.active_session_file.unlink()
 
 
-def _pid_alive(pid: int) -> bool:
-    if sys.platform == "win32":
-        import ctypes
+def _write_daemon_file(paths: Paths, *, host: str, port: int) -> None:
+    from agentcloak import __version__
 
-        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
-        handle = kernel32.OpenProcess(0x1000, False, pid)
-        if handle:
-            kernel32.CloseHandle(handle)
-            return True
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+    data: dict[str, object] = {
+        "pid": os.getpid(),
+        "port": port,
+        "host": host,
+        "version": __version__,
+    }
+    paths.ensure_dirs()
+    paths.daemon_file.write_bytes(orjson.dumps(data))
+    with contextlib.suppress(OSError):
+        os.chmod(str(paths.daemon_file), 0o600)
+
+
+def _clear_daemon_file(paths: Paths) -> None:
+    with contextlib.suppress(OSError):
+        paths.daemon_file.unlink(missing_ok=True)
+
+
+def _pid_alive(pid: int) -> bool:
+    from agentcloak.core.process import pid_alive
+
+    return pid_alive(pid)
 
 
 def _check_stale_pid(paths: Paths) -> bool:
@@ -156,10 +163,12 @@ def _check_stale_pid(paths: Paths) -> bool:
     except (ValueError, OSError):
         _clear_pid(paths)
         _clear_session(paths)
+        _clear_daemon_file(paths)
         return False
     if not _pid_alive(pid):
         _clear_pid(paths)
         _clear_session(paths)
+        _clear_daemon_file(paths)
         return False
 
     # Process exists — verify it's actually an agentcloak daemon via /health.
@@ -180,6 +189,7 @@ def _check_stale_pid(paths: Paths) -> bool:
         pass
     _clear_pid(paths)
     _clear_session(paths)
+    _clear_daemon_file(paths)
     return False
 
 
@@ -476,6 +486,7 @@ async def start(
                 xvfb_mgr.cleanup()
             _clear_pid(paths)
             _clear_session(paths)
+            _clear_daemon_file(paths)
             raise
     else:
         logger.info(
@@ -537,8 +548,8 @@ async def start(
     app.state.context_manager = context_manager
 
     # BridgeService owns Chrome Extension WebSocket lifecycle. Created at
-    # startup so route handlers (``/bridge/ws``, ``/ext``, token reset) can
-    # delegate without each one re-implementing the mutex / pump loop.
+    # startup so route handlers (``/ext``, token reset) can delegate without
+    # each one re-implementing the replace / pump loop.
     from agentcloak.daemon.services.bridge_service import BridgeService
 
     app.state.bridge_service = BridgeService(app.state)
@@ -573,6 +584,7 @@ async def start(
             await context_manager.shutdown()
         _clear_pid(paths)
         _clear_session(paths)
+        _clear_daemon_file(paths)
         raise
 
     actual_port = bound_port
@@ -584,6 +596,7 @@ async def start(
         profile=profile,
         bridge_token=bridge_token,
     )
+    _write_daemon_file(paths, host=actual_host, port=actual_port)
 
     logger.info(
         "daemon_ready",
@@ -659,6 +672,7 @@ async def start(
         resume_writer.clear()
         _clear_pid(paths)
         _clear_session(paths)
+        _clear_daemon_file(paths)
 
 
 async def _idle_watchdog(

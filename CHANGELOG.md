@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1 (2026-06-25)
+
+### Bug Fixes
+
+- Fix installation failure: `httpcloak>=1.6` → `httpcloak>=1.6.0b1` to allow pip to resolve pre-release versions (#1)
+
 ## 0.3.0 (2026-05-22)
 
 Major release: web reverse engineering, multi-session, DX improvements, platform compatibility.

@@ -1,6 +1,6 @@
 [project]
 name = "agentcloak"
-version = "0.3.0"
+version = "0.3.1"
 description = "Browser toolkit for AI agents — stealth browsing, web reverse engineering, CLI and MCP interface"
 requires-python = ">=3.12"
 license = "MIT"
@@ -33,7 +33,7 @@ dependencies = [
     "websockets>=12.0",
     "cloakbrowser>=0.3",
     "httpx>=0.27",
-    "httpcloak>=1.6",
+    "httpcloak>=1.6.0b1",
     "mcp>=1.27.0,<2.0.0",
 ]
 

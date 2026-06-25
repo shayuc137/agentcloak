@@ -5,6 +5,7 @@
 ### Bug Fixes
 
 - Fix installation failure: `httpcloak>=1.6` → `httpcloak>=1.6.0b1` to allow pip to resolve pre-release versions (#1)
+- Fix RemoteBridge operations incorrectly routed to local browser in Claude Code sessions
 
 ## 0.3.0 (2026-05-22)
 

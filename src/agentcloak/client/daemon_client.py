@@ -74,6 +74,7 @@ import os
 import subprocess
 import sys
 import time
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -709,6 +710,48 @@ class DaemonClient:
         )
         return proc.pid
 
+    @staticmethod
+    def _spawn_lock_path() -> Path:
+        return Path.home() / ".agentcloak" / "spawn.lock"
+
+    def _health_probe_sync(self) -> bool:
+        """Single sync health check — True if daemon is reachable."""
+        try:
+            with httpx.Client(
+                base_url=self._base, timeout=_HEALTH_PROBE_TIMEOUT_S
+            ) as client:
+                return client.get("/health").status_code == 200
+        except httpx.HTTPError:
+            return False
+
+    async def _health_probe_async(self) -> bool:
+        """Single async health check — True if daemon is reachable."""
+        try:
+            async with httpx.AsyncClient(
+                base_url=self._base, timeout=_HEALTH_PROBE_TIMEOUT_S
+            ) as client:
+                return (await client.get("/health")).status_code == 200
+        except httpx.HTTPError:
+            return False
+
+    def _poll_health_sync(self, budget: float) -> bool:
+        elapsed = 0.0
+        while elapsed < budget:
+            time.sleep(self._poll_interval_s)
+            elapsed += self._poll_interval_s
+            if self._health_probe_sync():
+                return True
+        return False
+
+    async def _poll_health_async(self, budget: float) -> bool:
+        elapsed = 0.0
+        while elapsed < budget:
+            await asyncio.sleep(self._poll_interval_s)
+            elapsed += self._poll_interval_s
+            if await self._health_probe_async():
+                return True
+        return False
+
     def _ensure_daemon_sync(
         self,
         *,
@@ -717,45 +760,53 @@ class DaemonClient:
         humanize: bool | None = None,
     ) -> bool:
         """Spawn the daemon and poll /health until it answers or we time out."""
+        from agentcloak.core.process import (
+            release_spawn_lock,
+            try_acquire_spawn_lock,
+        )
+
         if self._auto_started:
             return False
+
+        if self._health_probe_sync():
+            self._auto_started = True
+            return True
+
         t0 = time.monotonic()
-        # Auto-start is an expected, normal lifecycle event (the daemon
-        # auto-starts on the first command) — emitted at ``info`` so it
-        # doesn't bubble up under the default ``warning`` log level. Only
-        # the failure path stays at ``warning`` since that one demands the
-        # user's attention.
-        logger.info("daemon_auto_starting", host=self._host, port=self._port)
-        self._spawn_daemon(headless=headless, profile=profile, humanize=humanize)
-        self._auto_started = True
+        lock_path = self._spawn_lock_path()
+        acquired = try_acquire_spawn_lock(lock_path)
 
-        elapsed = 0.0
-        while elapsed < self._startup_budget_s:
-            time.sleep(self._poll_interval_s)
-            elapsed += self._poll_interval_s
-            try:
-                with httpx.Client(
-                    base_url=self._base, timeout=_HEALTH_PROBE_TIMEOUT_S
-                ) as client:
-                    resp = client.get("/health")
-                    if resp.status_code == 200:
-                        logger.info(
-                            "daemon_auto_started",
-                            elapsed_s=round(time.monotonic() - t0, 1),
-                            outcome="success",
-                        )
-                        return True
-            except httpx.ConnectError:
-                continue
-            except httpx.HTTPError:
-                continue
+        if not acquired:
+            logger.info(
+                "daemon_auto_start_waiting", reason="another process is spawning"
+            )
+            ok = self._poll_health_sync(self._startup_budget_s)
+            self._auto_started = ok
+            return ok
 
-        logger.warning(
-            "daemon_auto_start_failed",
-            elapsed_s=round(time.monotonic() - t0, 1),
-            outcome="timeout",
-        )
-        return False
+        try:
+            if self._health_probe_sync():
+                self._auto_started = True
+                return True
+
+            logger.info("daemon_auto_starting", host=self._host, port=self._port)
+            self._spawn_daemon(headless=headless, profile=profile, humanize=humanize)
+            self._auto_started = True
+
+            ok = self._poll_health_sync(self._startup_budget_s)
+            if ok:
+                logger.info(
+                    "daemon_auto_started",
+                    elapsed_s=round(time.monotonic() - t0, 1),
+                )
+            else:
+                logger.warning(
+                    "daemon_auto_start_failed",
+                    elapsed_s=round(time.monotonic() - t0, 1),
+                )
+            return ok
+        finally:
+            release_spawn_lock(lock_path)
 
     async def _ensure_daemon_async(
         self,
@@ -765,41 +816,54 @@ class DaemonClient:
         humanize: bool | None = None,
     ) -> bool:
         """Async variant of :meth:`_ensure_daemon_sync`."""
+        from agentcloak.core.process import (
+            release_spawn_lock,
+            try_acquire_spawn_lock,
+        )
+
         if self._auto_started:
             return False
+
+        if await self._health_probe_async():
+            self._auto_started = True
+            return True
+
         t0 = time.monotonic()
-        # See the sync variant for the warning→info rationale.
-        logger.info("daemon_auto_starting", host=self._host, port=self._port)
-        self._spawn_daemon(headless=headless, profile=profile, humanize=humanize)
-        self._auto_started = True
+        lock_path = self._spawn_lock_path()
+        acquired = try_acquire_spawn_lock(lock_path)
 
-        elapsed = 0.0
-        while elapsed < self._startup_budget_s:
-            await asyncio.sleep(self._poll_interval_s)
-            elapsed += self._poll_interval_s
-            try:
-                async with httpx.AsyncClient(
-                    base_url=self._base, timeout=_HEALTH_PROBE_TIMEOUT_S
-                ) as client:
-                    resp = await client.get("/health")
-                    if resp.status_code == 200:
-                        logger.info(
-                            "daemon_auto_started",
-                            elapsed_s=round(time.monotonic() - t0, 1),
-                            outcome="success",
-                        )
-                        return True
-            except httpx.ConnectError:
-                continue
-            except httpx.HTTPError:
-                continue
+        if not acquired:
+            logger.info(
+                "daemon_auto_start_waiting",
+                reason="another process is spawning",
+            )
+            ok = await self._poll_health_async(self._startup_budget_s)
+            self._auto_started = ok
+            return ok
 
-        logger.warning(
-            "daemon_auto_start_failed",
-            elapsed_s=round(time.monotonic() - t0, 1),
-            outcome="timeout",
-        )
-        return False
+        try:
+            if await self._health_probe_async():
+                self._auto_started = True
+                return True
+
+            logger.info("daemon_auto_starting", host=self._host, port=self._port)
+            self._spawn_daemon(headless=headless, profile=profile, humanize=humanize)
+            self._auto_started = True
+
+            ok = await self._poll_health_async(self._startup_budget_s)
+            if ok:
+                logger.info(
+                    "daemon_auto_started",
+                    elapsed_s=round(time.monotonic() - t0, 1),
+                )
+            else:
+                logger.warning(
+                    "daemon_auto_start_failed",
+                    elapsed_s=round(time.monotonic() - t0, 1),
+                )
+            return ok
+        finally:
+            release_spawn_lock(lock_path)
 
     # ------------------------------------------------------------------
     # Public lifecycle helpers

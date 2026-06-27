@@ -143,21 +143,23 @@ class TestValidateDownloadUrlBackCompat:
 class TestSsrfRequestHook:
     """httpx event hook for redirect-hop validation."""
 
-    def test_blocks_private_redirect_target(self) -> None:
+    @pytest.mark.asyncio
+    async def test_blocks_private_redirect_target(self) -> None:
         request = MagicMock()
         request.url = "http://127.0.0.1:18765/health"
         with patch("socket.getaddrinfo") as mock_dns:
             mock_dns.return_value = [(2, 1, 6, "", ("127.0.0.1", 18765))]
             with pytest.raises(SecurityError) as exc_info:
-                ssrf_request_hook(request)
+                await ssrf_request_hook(request)
             assert exc_info.value.error == "outbound_target_blocked"
 
-    def test_allows_public_target(self) -> None:
+    @pytest.mark.asyncio
+    async def test_allows_public_target(self) -> None:
         request = MagicMock()
         request.url = "https://api.example.com/data"
         with patch("socket.getaddrinfo") as mock_dns:
             mock_dns.return_value = [(2, 1, 6, "", ("93.184.216.34", 443))]
-            ssrf_request_hook(request)
+            await ssrf_request_hook(request)
 
 
 class TestFetchIntegration:

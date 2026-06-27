@@ -147,7 +147,7 @@ def validate_download_url(url: str) -> None:
     _validate_url(url, label="download")
 
 
-def ssrf_request_hook(request: Any) -> None:
+async def ssrf_request_hook(request: Any) -> None:
     """httpx event hook that validates each request URL including redirects.
 
     Usage::
@@ -156,6 +156,10 @@ def ssrf_request_hook(request: Any) -> None:
             event_hooks={"request": [ssrf_request_hook]},
         ) as client:
             ...
+
+    Must be async for httpx AsyncClient compatibility. The validation
+    itself is synchronous (DNS resolve + IP check) but the hook signature
+    must be a coroutine.
 
     Fires before every outbound request. On a redirect chain
     ``A → 302 → B → 302 → C``, this validates A, B, and C individually,

@@ -40,6 +40,7 @@ from agentcloak.browser.state import (
 from agentcloak.core.capture import CaptureStore
 from agentcloak.core.config import BrowserConfig
 from agentcloak.core.errors import (
+    AgentBrowserError,
     BackendError,
     BrowserTimeoutError,
     DebuggerPausedError,
@@ -1992,8 +1993,19 @@ class BrowserContextBase(ABC):
                         timeout=int(extra.get("timeout", _default_wait_timeout)),
                         state=str(extra.get("state", "visible")),
                     )
+                except AgentBrowserError as exc:
+                    result = exc.to_dict()
+                    result["step_index"] = i
+                    result["kind"] = "wait"
                 except Exception as exc:
-                    result = {"ok": False, "error": str(exc), "action": "wait"}
+                    result = {
+                        "ok": False,
+                        "error": "batch_step_failed",
+                        "hint": str(exc),
+                        "action": "check the wait condition and retry",
+                        "step_index": i,
+                        "kind": "wait",
+                    }
                 results.append(result)
                 continue
 

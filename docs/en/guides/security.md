@@ -62,6 +62,25 @@ Blocked navigation:
 
 The block applies to `navigate`, `fetch`, and `tab_new` (when a URL is supplied) — every entry point an agent can use to load remote content.
 
+## Layer 1c — SSRF guard for daemon-side HTTP (default ON)
+
+When the daemon makes HTTP requests on behalf of the agent (`fetch`, `download url`, GraphQL queries, source map loading), it validates that the target host resolves to a public IP address. This blocks SSRF attacks where a prompt-injected agent is steered into fetching cloud metadata, local services, or internal network hosts.
+
+Blocked address ranges: loopback (127/8), RFC 1918 private (10/8, 172.16/12, 192.168/16), CGNAT (100.64/10), link-local (169.254/16, including the cloud metadata endpoint 169.254.169.254), multicast, and reserved ranges. IPv6 equivalents (::1, fc00::/7, fe80::/10, ff00::/8) are also blocked. 198.18.0.0/15 is intentionally allowed (fake-IP DNS proxies like clash/surge use this range).
+
+The guard runs at two levels:
+
+1. **Entry-point validation** — the initial URL is checked before any request is made
+2. **Per-hop redirect validation** — an httpx event hook checks every redirect target, so a public URL that 302s to a private host is still blocked
+
+```json
+{"ok": false, "error": "outbound_target_blocked",
+ "hint": "Host 'internal.corp' resolves to a non-public address (10.0.0.5)",
+ "action": "requests to private/loopback/link-local hosts are blocked"}
+```
+
+This guard is always on and cannot be disabled. It applies to all daemon-side HTTP outbound paths uniformly.
+
 ## Layer 2 — Content scanning (opt-in, flag-only)
 
 The second layer scans page text and fetched body content against regex patterns and **surfaces matches** as warnings in the snapshot response. Unlike Layer 1b, this does not block — it flags. The agent decides what to do with the warning. False positives shouldn't break workflows, and the agent has the context to triage.
@@ -121,6 +140,10 @@ When the whitelist is empty (unconfigured), agentcloak has no notion of "trusted
 navigate("https://evil.com")
     ├── Layer 1a: scheme check (always)            → block file/data/javascript
     └── Layer 1b: domain check (if list set)       → block domain_whitelist miss
+
+fetch/download/graphql (daemon-side HTTP)
+    └── Layer 1c: SSRF guard (always)              → block private/loopback/link-local targets
+                                                      (initial URL + every redirect hop)
 
 snapshot()
     ├── Layer 2: content scan (if enabled)         → flag matches in security_warnings

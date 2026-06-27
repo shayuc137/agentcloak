@@ -28,6 +28,9 @@ Error: Element [99] not in selector_map (4 entries)
 | `xvfb_not_found` | Headed mode on a headless Linux box without Xvfb | Install Xvfb (doctor prints the per-distro command) or set `headless = true` |
 | `spell_no_browser` | Spell needs browser but none launched | Navigate to a page first, then run the spell |
 | `spell_no_handler` | Spell definition is broken | Check the spell code |
+| `outbound_target_blocked` | fetch/download URL resolves to a private/loopback/link-local IP (SSRF guard) | Use a public URL; this guard protects against prompt-injection SSRF |
+| `outbound_scheme_blocked` | fetch/download URL uses a non-http(s) scheme | Use http:// or https:// |
+| `batch_step_failed` | A step within `action_batch` threw an unexpected error | Check the `hint` field for details; `step_index` and `kind` identify the failing step |
 
 ## Dialog Handling
 

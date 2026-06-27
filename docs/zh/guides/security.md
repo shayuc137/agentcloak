@@ -62,6 +62,25 @@ domain_blacklist = ["evil.com", "tracker.*.net"]
 
 拦截作用于 `navigate`、`fetch` 和 `tab_new`（传入 URL 时）——每一个 agent 用来加载远程内容的入口。
 
+## 第 1c 层 —— SSRF 防护（默认开启）
+
+当 daemon 代理 agent 发起 HTTP 请求（`fetch`、`download url`、GraphQL 查询、source map 加载）时，会验证目标主机是否解析到公网 IP。这可以阻止 prompt injection 驱使 agent 请求云 metadata、本地服务或内网主机的 SSRF 攻击。
+
+拦截的地址范围：环回地址（127/8）、RFC 1918 私网（10/8、172.16/12、192.168/16）、CGNAT（100.64/10）、链路本地（169.254/16，含云 metadata 端点 169.254.169.254）、组播和保留地址。IPv6 等效范围（::1、fc00::/7、fe80::/10、ff00::/8）也被拦截。198.18.0.0/15 故意放行（clash/surge 等 fake-IP DNS 代理使用此范围）。
+
+防护分两层运行：
+
+1. **入口验证** —— 请求发出前检查初始 URL
+2. **逐跳重定向验证** —— httpx event hook 检查每个重定向目标，公网 URL 302 到私网主机同样被拦截
+
+```json
+{"ok": false, "error": "outbound_target_blocked",
+ "hint": "Host 'internal.corp' resolves to a non-public address (10.0.0.5)",
+ "action": "requests to private/loopback/link-local hosts are blocked"}
+```
+
+此防护始终开启，无法禁用。统一覆盖所有 daemon 侧 HTTP 出口。
+
 ## 第 2 层 —— 内容扫描（可选启用，仅标记）
 
 第二层根据正则模式扫描页面文本和 fetch 响应体，在 snapshot 响应里**报告匹配**。与第 1b 层不同，这层不拦截——只标记。agent 自己决定怎么处理告警。误报不应该破坏工作流，并且 agent 有上下文做分流判断。
@@ -121,6 +140,10 @@ content_scan_patterns = [
 navigate("https://evil.com")
     ├── 第 1a 层：scheme 检查（始终）        → 拦截 file/data/javascript
     └── 第 1b 层：域名检查（设了白名单时）   → 拦截不在白名单的 domain
+
+fetch/download/graphql（daemon 侧 HTTP）
+    └── 第 1c 层：SSRF 防护（始终）          → 拦截私网/环回/链路本地目标
+                                               （初始 URL + 每个重定向跳转）
 
 snapshot()
     ├── 第 2 层：内容扫描（启用时）          → 在 security_warnings 中标记

@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Security
+
+- **SSRF guard for all daemon-side HTTP outbound** — `fetch`, `download url`, GraphQL, source map loading now validate target IPs against a blocklist (loopback, RFC1918, link-local, cloud metadata). Redirect hops are also validated via httpx event hooks, blocking public→private 302 bypass. Previously only `download url` had this protection.
+
+### Bug Fixes
+
+- **Batch error envelope** — `action_batch` wait step errors now use the standard `{ok, error, hint, action}` envelope instead of bare string. Includes `step_index` and `kind` metadata for agent recovery.
+- **Cross-process daemon spawn lock** — auto-start uses an atomic lockfile (`~/.agentcloak/spawn.lock`) to prevent multiple concurrent CLI/MCP processes from spawning duplicate daemons. Stale locks are auto-cleaned.
+- **RemoteBridge close cleanup** — `_close_impl` now cancels route/capture tasks, fails pending futures with structured error, and clears pending captures before closing the WebSocket.
+- **Snapshot max_chars truncation** — character-level truncation replaced with line-level truncation to preserve complete `[N]` element references. Continuation hint now mentions `--offset` / `--focus`.
+
+### Features
+
+- **Proactive new_tab feedback** — PlaywrightContext listens for popup/`window.open()` events and populates `new_tab` in action results. RemoteBridge accepts `tab_event created` messages (extension-side listener is a follow-up).
+
 ## 0.3.1 (2026-06-25)
 
 ### Bug Fixes

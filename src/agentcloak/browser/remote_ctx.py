@@ -1782,5 +1782,28 @@ class RemoteBridgeContext(BrowserContextBase):
         return result
 
     async def _close_impl(self) -> None:
+        tasks_to_cancel: list[asyncio.Task[None]] = [
+            *self._route_tasks,
+            *self._capture_tasks,
+        ]
+        for t in tasks_to_cancel:
+            t.cancel()
+        if tasks_to_cancel:
+            await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
+        self._route_tasks.clear()
+        self._capture_tasks.clear()
+        self._pending_captures.clear()
+
+        for fut in self._pending.values():
+            if not fut.done():
+                fut.set_exception(
+                    BackendError(
+                        error="bridge_disconnected",
+                        hint="Bridge closed during pending request",
+                        action="reconnect the bridge",
+                    )
+                )
+        self._pending.clear()
+
         if not self._ws.closed:
             await self._ws.close()

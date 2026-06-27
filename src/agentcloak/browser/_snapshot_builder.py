@@ -723,7 +723,9 @@ def build_snapshot(
     tree_text = "\n".join(rendered)
 
     if max_chars and max_chars > 0 and len(tree_text) > max_chars:
-        tree_text = tree_text[:max_chars] + "\n[...truncated...]"
+        cut = tree_text.rfind("\n", 0, max_chars)
+        tree_text = tree_text[:cut] if cut > 0 else tree_text[:max_chars]
+        tree_text += "\n[...truncated, use --offset or --focus to continue]"
 
     snapshot = PageSnapshot(
         seq=seq,

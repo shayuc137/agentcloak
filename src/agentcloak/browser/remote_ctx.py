@@ -262,14 +262,13 @@ class RemoteBridgeContext(BrowserContextBase):
             return
 
         if msg.get("type") == "tab_event":
-            # The extension fires these so we don't have to poll. Right now
-            # the only state we care about is informational logging — the
-            # extension already owns activeTabId tracking; the daemon side
-            # mostly needs to know "the user reclaimed control" eventually,
-            # which is out of scope for this phase.
             event = msg.get("event")
             tab_id = msg.get("tabId")
-            if event == "removed":
+            if event == "created":
+                url = msg.get("url", "")
+                self._last_new_tab_event = {"tab_id": tab_id, "url": url}
+                logger.debug("ext_tab_created", tab_id=tab_id, url=url)
+            elif event == "removed":
                 logger.debug("ext_tab_removed", tab_id=tab_id)
             elif event == "updated":
                 logger.debug(

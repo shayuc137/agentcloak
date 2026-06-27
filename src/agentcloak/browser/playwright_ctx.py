@@ -176,6 +176,7 @@ class PlaywrightContext(BrowserContextBase):
 
         self._setup_network_listeners(page)
         self._setup_feedback_listeners(page)
+        self._get_browser_context().on("page", self._on_popup_page)
 
     # ------------------------------------------------------------------
     # Active page / target frame
@@ -310,6 +311,17 @@ class PlaywrightContext(BrowserContextBase):
         # Hand the Download object to a parked ``download_wait`` caller, if any.
         with contextlib.suppress(Exception):
             self._resolve_download_waiter(download)
+
+    def _on_popup_page(self, page: Any) -> None:
+        if page in self._tabs.values():
+            return
+        new_id = self._next_tab_id
+        self._next_tab_id += 1
+        self._tabs[new_id] = page
+        self._setup_network_listeners(page)
+        self._setup_feedback_listeners(page)
+        with contextlib.suppress(Exception):
+            self._last_new_tab_event = {"tab_id": new_id, "url": page.url}
 
     # Playwright console types use "warning"; agents/CLI filter on "warn".
     _CONSOLE_LEVEL_MAP: ClassVar[dict[str, str]] = {"warning": "warn"}

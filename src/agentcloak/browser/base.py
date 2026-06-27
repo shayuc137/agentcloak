@@ -1420,8 +1420,11 @@ class BrowserContextBase(ABC):
         headers: dict[str, str] | None = None,
         timeout: float | None = None,
     ) -> dict[str, Any]:
+        from agentcloak.core.ssrf_guard import validate_outbound_url
+
         self._check_debugger_paused()
         self._check_browser_alive()
+        validate_outbound_url(url)
         if timeout is None:
             timeout = float(self._browser_config.navigation_timeout)
         result = await self._fetch_impl(

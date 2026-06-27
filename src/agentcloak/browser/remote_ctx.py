@@ -1059,13 +1059,17 @@ class RemoteBridgeContext(BrowserContextBase):
         from agentcloak.browser.playwright_ctx import (
             _download_filename,  # pyright: ignore[reportPrivateUsage]
         )
+        from agentcloak.core.ssrf_guard import ssrf_request_hook
 
         jar = await self._bridge_cookie_jar()
         out_dir = Path(output_dir).expanduser()
         out_dir.mkdir(parents=True, exist_ok=True)
         try:
             async with httpx.AsyncClient(
-                cookies=jar, timeout=httpx.Timeout(60.0), follow_redirects=True
+                cookies=jar,
+                timeout=httpx.Timeout(60.0),
+                follow_redirects=True,
+                event_hooks={"request": [ssrf_request_hook]},
             ) as client:
                 async with client.stream("GET", url) as resp:
                     resp.raise_for_status()

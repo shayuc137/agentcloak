@@ -1014,11 +1014,14 @@ class PlaywrightContext(BrowserContextBase):
         return jar, ua
 
     async def _download_url_impl(self, url: str, output_dir: str) -> DownloadEntry:
+        from agentcloak.core.ssrf_guard import ssrf_request_hook
+
         jar, ua = await self._browser_cookie_jar()
         client_kwargs: dict[str, Any] = {
             "cookies": jar,
             "timeout": httpx.Timeout(60.0),
             "follow_redirects": True,
+            "event_hooks": {"request": [ssrf_request_hook]},
         }
         if self._proxy_url:
             client_kwargs["proxy"] = self._proxy_url
@@ -1357,10 +1360,13 @@ class PlaywrightContext(BrowserContextBase):
         if headers:
             req_headers.update(headers)
 
+        from agentcloak.core.ssrf_guard import ssrf_request_hook
+
         client_kwargs: dict[str, Any] = {
             "cookies": cookie_jar,
             "timeout": httpx.Timeout(timeout),
             "follow_redirects": True,
+            "event_hooks": {"request": [ssrf_request_hook]},
         }
         if self._proxy_url:
             client_kwargs["proxy"] = self._proxy_url

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -1150,12 +1150,11 @@ class TestPageValid:
         assert isinstance(result, bytes)
 
     @pytest.mark.asyncio
-    async def test_fetch_unaffected_by_invalid_page(self) -> None:
+    @patch("agentcloak.core.ssrf_guard.validate_outbound_url")
+    async def test_fetch_unaffected_by_invalid_page(self, _ssrf: Any) -> None:
         """fetch() is HTTP — page_valid flag must not block it."""
         ctx = _make_ctx()
         ctx._page_valid = False
-        # The default _fetch_impl on PlaywrightContext uses APIRequestContext
-        # — patch it out to verify the flag itself doesn't gate the call.
         ctx._fetch_impl = AsyncMock(  # type: ignore[method-assign]
             return_value={"status": 200, "body": "ok", "headers": {}}
         )

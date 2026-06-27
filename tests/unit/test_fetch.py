@@ -15,6 +15,7 @@ from agentcloak.core.seq import RingBuffer, SeqCounter
 from agentcloak.daemon.app import create_app
 
 _HTTPX_CLIENT = "agentcloak.browser.playwright_ctx.httpx.AsyncClient"
+_SSRF_GUARD = "agentcloak.core.ssrf_guard.validate_outbound_url"
 
 
 def _mock_cdp() -> MagicMock:
@@ -106,6 +107,11 @@ def _cookie(name: str, value: str, domain: str) -> dict[str, str]:
 
 class TestPlaywrightFetch:
     """Tests for PlaywrightContext.fetch() method."""
+
+    @pytest.fixture(autouse=True)
+    def _no_ssrf(self) -> Any:
+        with patch(_SSRF_GUARD):
+            yield
 
     @pytest.mark.asyncio
     async def test_fetch_basic_get(self) -> None:
@@ -245,6 +251,11 @@ class TestPlaywrightFetch:
 
 class TestFetchRoute:
     """Tests for the POST /fetch daemon route."""
+
+    @pytest.fixture(autouse=True)
+    def _no_ssrf(self) -> Any:
+        with patch(_SSRF_GUARD):
+            yield
 
     @pytest.fixture
     def client(self) -> Any:

@@ -94,14 +94,20 @@ def discover_daemon(timeout: float = 3.0) -> str | None:
         return None
 
     try:
-        import time  # noqa: I001
+        import time
 
-        from zeroconf import ServiceBrowser, Zeroconf  # pyright: ignore[reportMissingImports]
+        from zeroconf import (  # pyright: ignore[reportMissingImports]
+            ServiceBrowser,
+            ServiceListener,
+            Zeroconf,
+        )
 
         zc = Zeroconf()
         found: list[dict[str, Any]] = []
 
-        class Listener:
+        # zeroconf >= 0.150 requires listeners to subclass ServiceListener;
+        # duck-typed classes are rejected at ServiceBrowser construction.
+        class Listener(ServiceListener):
             def add_service(self, zc: Zeroconf, type_: str, name: str) -> None:
                 info = zc.get_service_info(type_, name)
                 if info and info.port:
@@ -110,6 +116,7 @@ def discover_daemon(timeout: float = 3.0) -> str | None:
                     props = {
                         k.decode(): v.decode()
                         for k, v in (info.properties or {}).items()
+                        if v is not None
                     }
                     found.append(
                         {

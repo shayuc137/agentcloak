@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.3 (2026-07-11)
+
+Driven by real-world agent feedback from a frontend-acceptance project (DOS): overlay hiding, richer JS error diagnostics, login-state restore, and a batch of observe-act ergonomics.
+
+### Features
+
+- **Three-tier overlay hiding** — `cloak hide add/remove/list` manages persistent CSS hiding that removes elements from the a11y snapshot, screenshots, and click hit-testing in one mechanism. Sources compose: one-shot `--hide CSS` on snapshot/screenshot, profile-persisted `hide.json` (survives relaunch, inherited by per-session browsers), and the page-side `[data-cloak-hide]` opt-in attribute. `--keep-overlays` reveals everything for one observation. Solves dev-mode toolbars eating `[N]` refs, polluting screenshots, and intercepting clicks
+- **JS evaluate diagnostics** — errors now return the exception message and source location (`TypeError: Cannot read properties of null ... at <anonymous>:1:54`) instead of a bare `Uncaught`; `js evaluate --file script.js` reads code from a file
+- **`screenshot --wait-for CSS`** — wait for an element before capturing; times out with a structured error and produces no file
+- **`cookies restore`** — `cookies export` drops a client-side snapshot beside the active profile (0600); `restore` imports it back in one command. Import now normalizes chrome.cookies / CDP / Playwright cookie shapes, fixing the bridge-export → local-import round trip (verified with a real 2773-cookie session)
+- **Hash anchor navigation** — `navigate "url#id"` waits for late-rendered anchor targets in SPAs and scrolls to them; anchor misses are reported in text output. Param-style (`#token=...`) and hashbang fragments are skipped
+- **Selector-scoped snapshots** — `snapshot --within CSS` scopes the tree and `[N]` refs to a subtree
+- **Screenshot pixel diff** — `cloak diff screenshot BASELINE [--current FILE]` for visual-regression checks
+- **Screenshot format config** — `browser.screenshot_format` config key, hot-reloaded, with extension-based inference on `--output`
+
+### Bug Fixes
+
+- **Silent force-click degradation** — `click --force` with a non-default `--button`/`--count` now returns a structured `invalid_argument` error instead of silently performing a single left click; RemoteBridge force-click returns `index`/`element` like the local backend
+- **Controlled-input fill over RemoteBridge** — value setting goes through the native prototype setter so React/Vue controlled components register the change
+- **Launch-path drift** — a `--headless` daemon on a display-less host no longer crashes launching per-session browsers: CLI overrides are written back into the shared config so all three launch paths agree
+- **zeroconf 0.150 compatibility** — mDNS discovery listener updated for the stricter `ServiceListener` API
+
 ## 0.3.2 (2026-06-27)
 
 ### Security

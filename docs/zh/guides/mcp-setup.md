@@ -1,6 +1,6 @@
 # MCP 配置
 
-agentcloak 提供了一个 MCP（Model Context Protocol）server，包含 38 个工具，供支持原生工具发现的 AI 客户端使用。
+agentcloak 提供了一个 MCP（Model Context Protocol）server，包含 39 个工具，供支持原生工具发现的 AI 客户端使用。
 
 ## Skill + CLI 与 MCP 对比
 
@@ -96,7 +96,7 @@ claude mcp add agentcloak -- agentcloak-mcp
 
 ## 可用 MCP 工具
 
-MCP server 暴露 38 个工具。完整参数列表参见 [MCP 参考](../reference/mcp.md)。
+MCP server 暴露 39 个工具。完整参数列表参见 [MCP 参考](../reference/mcp.md)。
 
 | 分类 | 工具 |
 |------|------|
@@ -111,6 +111,7 @@ MCP server 暴露 38 个工具。完整参数列表参见 [MCP 参考](../refere
 | Frame | `agentcloak_frame` |
 | 管理 | `agentcloak_status`、`agentcloak_launch`、`agentcloak_tab`、`agentcloak_profile`、`agentcloak_doctor`、`agentcloak_resume` |
 | Cookie | `agentcloak_cookies` |
+| 页面隐藏 | `agentcloak_hide` |
 | Spell | `agentcloak_spell_run`、`agentcloak_spell_list` |
 | Bridge | `agentcloak_bridge` |
 | 网页逆向 | `agentcloak_script`、`agentcloak_route`、`agentcloak_headers`、`agentcloak_graphql`、`agentcloak_streaming`、`agentcloak_debugger`、`agentcloak_sourcemap` |

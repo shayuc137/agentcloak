@@ -12,8 +12,9 @@ agentcloak 在本机使用两个目录存储数据。本文档说明每个文件
 | `daemon.pid` | 运行中的 daemon 进程 ID | < 1 KB | daemon 启动时创建，下次启动时清理残留 |
 | `active-session.json` | 当前 daemon session 信息（端口、隐身层级、bridge token） | ~130 字节 | daemon 启动时覆盖 |
 | `resume.json` | 上次操作摘要，用于 session 恢复 | < 1 KB | 每次操作覆盖，daemon 停止后保留 |
+| `cookies-snapshot.json` | 无活动 profile 时的 cookie 恢复 fallback | 通常 < 100 KB | `cloak cookies export` 不带 `--output` 时覆盖 |
 | `logs/` | 预留的日志文件目录 | 空 | daemon 日志输出到 stderr，不写文件 |
-| `profiles/` | 保存的浏览器登录态（cookies、localStorage、IndexedDB） | 每个 1-50 MB | 永久保留，`cloak profile delete` 删除 |
+| `profiles/` | 保存的浏览器 session，以及 `hide.json` 和 cookie 恢复快照 | 每个 1-50 MB | 永久保留，`cloak profile delete` 删除 |
 
 ### Profile
 

@@ -65,12 +65,14 @@ cloak navigate URL [--timeout SECONDS] [--snap] [--snapshot-mode MODE]
 | `--snap` (alias `--snapshot`) | off | Attach a compact snapshot to the result (saves a round-trip) |
 | `--snapshot-mode` | `compact` | Snapshot mode when `--snap` is set (`compact` or `accessible`) |
 
+A simple `#fragment` waits up to 3 seconds for an element with that id and scrolls it into view, covering late-rendered SPA anchors. A miss keeps navigation successful and prints `[anchor] not found`. Hashbang routes and parameter-like fragments containing `=`, `&`, or `/` are left to the application.
+
 ### snapshot
 
 Get the page as an accessibility tree with `[N]` element references.
 
 ```bash
-cloak snapshot [--mode MODE] [--selector CSS] [--limit N] [--focus N] [--offset N] [--frames] [--diff] [--selector-map]
+cloak snapshot [--mode MODE] [--selector CSS] [--limit N] [--focus N] [--offset N] [--frames] [--diff] [--hide CSS] [--keep-overlays]
 ```
 
 | Flag | Default | Description |
@@ -83,6 +85,8 @@ cloak snapshot [--mode MODE] [--selector CSS] [--limit N] [--focus N] [--offset 
 | `--frames` | off | Include iframe content |
 | `--diff` | off | Mark changes since previous snapshot |
 | `--selector-map` | off | Include the raw selector_map (debug / scripting) |
+| `--hide` | none | Comma-separated CSS selectors to hide for this snapshot |
+| `--keep-overlays` | off | Reveal persistent, one-time, and `[data-cloak-hide]` overlays for this snapshot |
 
 `--selector` scopes the tree before `[N]` refs are assigned, keeping refs and output limited to the selected subtree. It cannot be combined with `--frames` or `--mode dom`.
 
@@ -97,7 +101,7 @@ Output starts with a header line:
 Take a screenshot of the current page.
 
 ```bash
-cloak screenshot [--output FILE] [--full-page] [--format FORMAT] [--quality N] [--wait-selector CSS] [--wait-timeout MS]
+cloak screenshot [--output FILE] [--full-page] [--format FORMAT] [--quality N] [--wait-for CSS] [--hide CSS] [--keep-overlays]
 ```
 
 | Flag | Default | Description |
@@ -107,7 +111,10 @@ cloak screenshot [--output FILE] [--full-page] [--format FORMAT] [--quality N] [
 | `--format` | output suffix, then `browser.screenshot_format` (`jpeg`) | Explicit `jpeg` or `png` override; must agree with a recognized suffix |
 | `--quality` | `80` | JPEG quality 0-100 (ignored for PNG) |
 | `--wait-selector` | none | Wait for a CSS selector to be visible before capture |
+| `--wait-for` | none | Run the regular visible-selector wait before capture; timeout short-circuits without writing a file |
 | `--wait-timeout` | `browser.action_timeout` | Selector wait timeout in milliseconds |
+| `--hide` | none | Comma-separated CSS selectors to hide for this capture |
+| `--keep-overlays` | off | Reveal persistent, one-time, and `[data-cloak-hide]` overlays for this capture |
 
 > [!TIP]
 > **When to use PNG vs JPEG:**
@@ -170,10 +177,10 @@ Click an element by `[N]` reference.
 cloak click N [--snap]
 cloak click --index N [--snap]
 cloak click --x X --y Y           # coordinate fallback
-cloak click N --force             # skip the pointer-intercept check (covering overlay)
+cloak click N --force             # one-off single-left-click DOM fallback
 ```
 
-When an element is hidden behind an overlay, retry with `--force`: every backend invokes the resolved DOM element's `click()` instead of coordinate hit testing. Fall back to `js evaluate "document.querySelector('...')?.click()"` when a page requires a custom event path.
+For a known overlay, add its selector with `cloak hide add CSS`, re-snapshot, and use a normal click; hiding also cleans screenshots and snapshot output. `--force` is the fallback for an unknown one-off obstruction and invokes the resolved DOM element's `click()` instead of coordinate hit testing. It only supports a single left click: combining it with a non-default `--button` or `--click-count` returns `invalid_argument`.
 
 ### fill
 
@@ -329,11 +336,9 @@ cloak wait --load networkidle
 # Wait for a specific API response before extracting data
 cloak wait --js "window.__DATA_LOADED === true"
 
-# SPA hash target rendered after native fragment scrolling finished
+# Simple SPA anchors are polled for up to 3 seconds and scrolled into view
 cloak navigate "https://example.com/settings#billing"
-cloak wait --selector "#billing" --timeout 15000
-cloak js evaluate "document.getElementById('billing')?.scrollIntoView({block:'start'})"
-cloak screenshot --wait-selector "#billing"
+cloak screenshot --wait-for "#billing"
 
 # Combine: navigate, wait for fonts + network idle, then screenshot
 cloak navigate "https://example.com"
@@ -342,9 +347,7 @@ cloak wait --js "document.fonts.ready.then(() => true)"
 cloak screenshot --format png --full-page
 ```
 
-Navigation keeps browser-native fragment behavior and does not poll for late SPA
-targets. Use the explicit selector wait and scroll recipe when the target renders
-after navigation.
+Missing anchors do not fail navigation and print `[anchor] not found`. Hashbang routes and parameter-like fragments containing `=`, `&`, or `/` skip anchor handling.
 
 > [!TIP]
 > `--js` expressions must return a truthy value. For Promises like
@@ -549,14 +552,37 @@ cloak bridge token --reset                # rotate the token
 cloak cookies export                              # every cookie in the active browser
 cloak cookies export --url https://example.com    # only cookies that match the URL
 cloak cookies import -c '[{"name":"token","value":"abc","domain":".example.com","path":"/"}]'
+cloak cookies restore                             # restore the active profile snapshot
+cloak cookies restore --file /tmp/cookies.json    # restore an explicit snapshot
 ```
 
 `cookies export` prints `domain | name=value` lines (one cookie per line) so an
 agent grepping the output can tell which site each cookie came from. Pass
 `--url` to scope the export to a single site — recommended whenever the agent
 only needs credentials for one domain, since the unfiltered output includes
-sessions for every site loaded in the active browser. `cookies import` accepts
-the structured JSON form so httpOnly cookies survive.
+sessions for every site loaded in the active browser. Without `--output`, export
+also refreshes `<profile>/cookies-snapshot.json`, or
+`~/.agentcloak/cookies-snapshot.json` when no profile is active. `restore` imports
+that file, then `cloak press Control+r` reloads the page with the recovered login state.
+
+`cookies import` and `restore` normalize Chrome cookies API, CDP, and Playwright
+cookie shapes. Unknown fields are discarded, `sameSite` and expiry fields are
+normalized, and malformed entries are skipped with a reported count instead of
+aborting the entire import.
+
+## Page hiding
+
+```bash
+cloak hide add ".feedback-toolbar"       # profile-persistent, or session-only without a profile
+cloak hide list                           # stable id + selector + scope
+cloak hide remove ID_OR_EXACT_SELECTOR
+```
+
+Persistent selectors, one-time `--hide` selectors, and the page-owned
+`[data-cloak-hide]` attribute all remove matching elements from snapshots,
+screenshots, and click hit-testing. `--keep-overlays` reveals all three layers
+for one snapshot or screenshot. Profile selectors are stored in `hide.json`;
+the builtin `[data-cloak-hide]` rule cannot be removed.
 
 ## Daemon management
 

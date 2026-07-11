@@ -41,7 +41,7 @@ for non-interactive setup (see [Install the Skill bundle](#install-the-skill-bun
 Everything the installer command above pulls in:
 
 - `agentcloak` and `cloak` CLI commands
-- `agentcloak-mcp` MCP server (38 tools)
+- `agentcloak-mcp` MCP server (39 tools)
 - CloakBrowser stealth browser backend (default)
 - httpcloak TLS fingerprint proxy for `cloak fetch`
 - The background daemon (FastAPI + uvicorn, OpenAPI at `http://127.0.0.1:18765/openapi.json`)

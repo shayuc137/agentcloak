@@ -1,6 +1,6 @@
 # MCP 工具参考
 
-agentcloak 的 MCP server 通过 stdio 传输暴露 38 个工具。已包含在基础安装中（`pip install agentcloak`），运行命令：`agentcloak-mcp`。
+agentcloak 的 MCP server 通过 stdio 传输暴露 39 个工具。已包含在基础安装中（`pip install agentcloak`），运行命令：`agentcloak-mcp`。
 
 配置说明参见 [MCP 配置指南](../guides/mcp-setup.md)。
 
@@ -29,6 +29,8 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 38 个工具。已包含在�
 | `include_snapshot` | `bool` | `false` | 在响应中包含无障碍树 snapshot |
 | `snapshot_mode` | `str` | `compact` | `include_snapshot` 为 true 时的 snapshot 模式 |
 
+简单的 `#id` fragment 会等待最多 3 秒，让延迟渲染的 SPA 锚点出现并滚动到目标。未命中仍成功并报告 `[anchor] not found`；hashbang 和参数型 fragment 会跳过。
+
 ### agentcloak_snapshot
 
 获取带有 `[N]` 元素引用的无障碍树。
@@ -43,6 +45,8 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 38 个工具。已包含在�
 | `offset` | `int` | `0` | 从第 N 个元素开始（分页） |
 | `frames` | `bool` | `false` | 包含 iframe 内容 |
 | `diff` | `bool` | `false` | 标记与上一次 snapshot 相比的变更 |
+| `hide` | `str \| null` | `null` | 本次 snapshot 隐藏的逗号分隔 CSS 选择器 |
+| `keep_overlays` | `bool` | `false` | 本次显示持久、一次性和 `[data-cloak-hide]` overlay |
 
 `selector` 不能与 `frames=true` 或 `mode="dom"` 组合使用。仅当模式、选择器和 frame 设置一致时，才会复用 diff 基线。
 
@@ -57,6 +61,9 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 38 个工具。已包含在�
 | `quality` | `int` | `config.mcp_screenshot_quality` | JPEG 质量 0-100（默认比 CLI 小，匹配 MCP token 预算） |
 | `wait_selector` | `str` | `""` | 截图前等待此 CSS 选择器可见 |
 | `wait_timeout` | `int \| null` | `null` | 选择器等待超时（毫秒）；省略时使用 `browser.action_timeout` |
+| `wait_for` | `str` | `""` | 截图前执行标准的可见选择器等待；超时返回错误且不返回图像 |
+| `hide` | `str \| null` | `null` | 本次截图隐藏的逗号分隔 CSS 选择器 |
+| `keep_overlays` | `bool` | `false` | 本次显示持久、一次性和 `[data-cloak-hide]` overlay |
 
 返回的 `format` 同时决定 `ImageContent` MIME 类型和元数据。
 
@@ -248,9 +255,26 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 38 个工具。已包含在�
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|-------|------|
-| `action` | `str` | `export` | `export` 或 `import` |
+| `action` | `str` | `export` | `export`、`import`、`restore`、`set`、`clear` 或 `delete` |
 | `url` | `str` | `""` | 按 URL 过滤（仅 export） |
 | `cookies_json` | `str` | `""` | cookie 对象的 JSON 数组（仅 import） |
+| `file` | `str` | `""` | 快照路径覆盖（仅 restore） |
+
+每次 export 都会刷新活动 profile 的 `cookies-snapshot.json`；无 profile 时写入 `~/.agentcloak/cookies-snapshot.json`。`restore` 导入该快照。Import 接受 Chrome cookies API、CDP 和 Playwright 结构，坏条目会跳过并报告数量。
+
+## 页面隐藏
+
+### agentcloak_hide
+
+管理在 snapshot、截图和点击命中测试中隐藏的选择器。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|-------|------|
+| `action` | `str` | `list` | `add`、`remove` 或 `list` |
+| `selector` | `str` | `""` | 要添加的 CSS 选择器 |
+| `identifier_or_selector` | `str` | `""` | 要删除的稳定 id 或精确选择器 |
+
+选择器保存在活动 profile 的 `hide.json`；无 profile 的 session 会报告 `session-only`。`[data-cloak-hide]` 是不可删除的内置规则。在 snapshot 或 screenshot 上设置 `keep_overlays=true` 可临时显示全部层。
 
 ## Spell
 

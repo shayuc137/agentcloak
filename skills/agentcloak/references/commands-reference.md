@@ -50,6 +50,8 @@ Read this file when you need full parameter detail. For the common path, the qui
   - `frames` (boolean, default: false) — Merge child iframe accessibility trees into the snapshot.
   - `selector` (string, default: "") — Scope the AX snapshot to a main-document CSS selector.
   - `diff` (boolean, default: false) — Mark [+] added / [~] changed nodes versus the previous snapshot.
+  - `hide` (string | null, default: —) — Comma-separated CSS selectors to hide for this snapshot.
+  - `keep_overlays` (boolean, default: false) — Disable all persistent and builtin hiding for this snapshot.
 
 ### `GET /screenshot`
 
@@ -62,6 +64,8 @@ Read this file when you need full parameter detail. For the common path, the qui
   - `output_path` (string, default: "") — Write the image to this path on the daemon host (7a R8) and return path+size instead of base64. Omit to return base64 inline.
   - `wait_selector` (string, default: "") — Wait for this selector to be visible before capture.
   - `wait_timeout` (integer | null, default: —) — Selector wait timeout in ms; unset uses browser.action_timeout.
+  - `hide` (string | null, default: —) — Comma-separated CSS selectors to hide for this capture.
+  - `keep_overlays` (boolean, default: false) — Disable all persistent and builtin hiding for this capture.
 
 ### `GET /network`
 
@@ -431,6 +435,27 @@ Read this file when you need full parameter detail. For the common path, the qui
 
 - CLI: `cloak script list`
 - MCP: `agentcloak_script (action=list)`
+
+## Page Hiding
+
+### `POST /hide/add`
+
+- CLI: `cloak hide add SELECTOR`
+- MCP: `agentcloak_hide (action=add)`
+- Body:
+  - `selector` (string, default: *required*) — CSS selector to hide.
+
+### `POST /hide/remove`
+
+- CLI: `cloak hide remove ID_OR_SELECTOR`
+- MCP: `agentcloak_hide (action=remove)`
+- Body:
+  - `identifier_or_selector` (string, default: *required*) — Selector identifier or exact CSS selector to remove.
+
+### `GET /hide/list`
+
+- CLI: `cloak hide list`
+- MCP: `agentcloak_hide (action=list)`
 
 ## Route Interception
 

@@ -53,10 +53,12 @@ cloak snapshot                                   # sees the real page
 cloak click 5                                    # clicks in real Chrome
 ```
 
-RemoteBridge normally sends physical coordinate mouse events. Use
-`cloak click N --force` when an overlay intercepts the target; force resolves the
-ref and invokes its DOM `click()` directly. `fill` uses native value setters plus
-bubbling `input`/`change` events for React/Vue controlled fields.
+RemoteBridge normally sends physical coordinate mouse events. For a known overlay,
+run `cloak hide add CSS`, re-snapshot, and click normally; hiding also cleans
+screenshots and hit-testing. Use `cloak click N --force` as a one-off fallback:
+it resolves the ref and invokes its DOM `click()` directly, and supports only a
+single left click. `fill` uses native value setters plus bubbling
+`input`/`change` events for React/Vue controlled fields.
 
 Make the bridge the default for the daemon:
 
@@ -134,12 +136,11 @@ The auth token is **never** broadcast over mDNS — clients still need to obtain
 Pull cookies from the real browser for use in scripts or to seed a profile:
 
 ```bash
-cloak cookies export                   # all domains, JSON to stdout
-cloak cookies export --url github.com  # just one domain
-cloak cookies import < cookies.json    # load into the active context
+cloak cookies export --output cookies.json
+cloak cookies import -c "$(command cat cookies.json)"
 ```
 
-This is the easiest way to graduate a manual login into a reusable profile — log in via your real Chrome, export, then import into a new agentcloak profile.
+This is the easiest way to graduate a manual login into a reusable profile — log in via your real Chrome, export, then import into a new agentcloak profile. An export without `--output` also refreshes the active profile recovery snapshot; after login state disappears, run `cloak cookies restore` and `cloak press Control+r`.
 
 ## Troubleshooting
 

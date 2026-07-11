@@ -65,12 +65,14 @@ cloak navigate URL [--timeout SECONDS] [--snap] [--snapshot-mode MODE]
 | `--snap`（别名 `--snapshot`） | 关闭 | 附带 compact snapshot（省一次往返） |
 | `--snapshot-mode` | `compact` | `--snap` 启用时的 snapshot 模式（`compact` 或 `accessible`） |
 
+简单的 `#fragment` 会等待最多 3 秒，直到同 id 元素出现，再滚动到该元素，覆盖 SPA 延迟渲染锚点的场景。未命中时导航仍成功，并输出 `[anchor] not found`。Hashbang 路由和包含 `=`、`&` 或 `/` 的参数型 fragment 交给应用处理。
+
 ### snapshot
 
 获取带有 `[N]` 元素引用的无障碍树。
 
 ```bash
-cloak snapshot [--mode MODE] [--selector CSS] [--limit N] [--focus N] [--offset N] [--frames] [--diff] [--selector-map]
+cloak snapshot [--mode MODE] [--selector CSS] [--limit N] [--focus N] [--offset N] [--frames] [--diff] [--hide CSS] [--keep-overlays]
 ```
 
 | 参数 | 默认值 | 说明 |
@@ -83,6 +85,8 @@ cloak snapshot [--mode MODE] [--selector CSS] [--limit N] [--focus N] [--offset 
 | `--frames` | 关闭 | 包含 iframe 内容 |
 | `--diff` | 关闭 | 标记与上一次 snapshot 相比的变更 |
 | `--selector-map` | 关闭 | 输出原始 selector_map（调试/脚本场景） |
+| `--hide` | 无 | 本次 snapshot 隐藏的逗号分隔 CSS 选择器 |
+| `--keep-overlays` | 关闭 | 本次 snapshot 显示持久、一次性和 `[data-cloak-hide]` overlay |
 
 `--selector` 会先裁剪树，再分配 `[N]` 引用，因此引用和输出都只覆盖选中的子树。它不能与 `--frames` 或 `--mode dom` 组合使用。
 
@@ -97,7 +101,7 @@ cloak snapshot [--mode MODE] [--selector CSS] [--limit N] [--focus N] [--offset 
 截取当前页面的屏幕截图。
 
 ```bash
-cloak screenshot [--output FILE] [--full-page] [--format FORMAT] [--quality N] [--wait-selector CSS] [--wait-timeout MS]
+cloak screenshot [--output FILE] [--full-page] [--format FORMAT] [--quality N] [--wait-for CSS] [--hide CSS] [--keep-overlays]
 ```
 
 | 参数 | 默认值 | 说明 |
@@ -107,7 +111,10 @@ cloak screenshot [--output FILE] [--full-page] [--format FORMAT] [--quality N] [
 | `--format` | 输出后缀，其次为 `browser.screenshot_format`（`jpeg`） | 显式覆盖为 `jpeg` 或 `png`；必须与已识别后缀一致 |
 | `--quality` | `80` | JPEG 质量 0-100（PNG 时忽略） |
 | `--wait-selector` | 无 | 截图前等待 CSS 选择器可见 |
+| `--wait-for` | 无 | 截图前执行标准的可见选择器等待；超时会短路且不写文件 |
 | `--wait-timeout` | `browser.action_timeout` | 选择器等待超时（毫秒） |
+| `--hide` | 无 | 本次截图隐藏的逗号分隔 CSS 选择器 |
+| `--keep-overlays` | 关闭 | 本次截图显示持久、一次性和 `[data-cloak-hide]` overlay |
 
 > [!TIP]
 > **PNG 和 JPEG 的选择：**
@@ -165,10 +172,10 @@ cloak resume
 cloak click N [--snap]
 cloak click --index N [--snap]
 cloak click --x X --y Y           # 坐标 fallback
-cloak click N --force             # 跳过 pointer 遮挡检查（被 overlay 盖住时）
+cloak click N --force             # 一次性的单左击 DOM fallback
 ```
 
-元素被 overlay 遮挡时加 `--force`：所有后端都会对解析出的 DOM 元素调用 `click()`，绕过坐标命中测试。页面需要自定义事件路径时，退回用 `js evaluate "document.querySelector('...')?.click()"`。
+已知 overlay 优先用 `cloak hide add CSS` 加入隐藏规则，重新 snapshot 后正常点击；隐藏也会清理截图和 snapshot 输出。`--force` 用于未知的一次性遮挡，会对解析出的 DOM 元素调用 `click()`，绕过坐标命中测试。它仅支持单左击；与非默认 `--button` 或 `--click-count` 组合会返回 `invalid_argument`。
 
 ### fill
 
@@ -322,11 +329,9 @@ cloak wait --load networkidle
 # 等待特定 API 数据就绪后提取
 cloak wait --js "window.__DATA_LOADED === true"
 
-# SPA 在浏览器原生锚点滚动结束后才渲染目标
+# 简单 SPA 锚点会轮询最多 3 秒并滚动到目标
 cloak navigate "https://example.com/settings#billing"
-cloak wait --selector "#billing" --timeout 15000
-cloak js evaluate "document.getElementById('billing')?.scrollIntoView({block:'start'})"
-cloak screenshot --wait-selector "#billing"
+cloak screenshot --wait-for "#billing"
 
 # 组合：导航 → 等待网络空闲 + 字体加载 → 全页截图
 cloak navigate "https://example.com"
@@ -335,7 +340,7 @@ cloak wait --js "document.fonts.ready.then(() => true)"
 cloak screenshot --format png --full-page
 ```
 
-导航保留浏览器原生锚点行为，不会轮询延迟渲染的 SPA 目标。目标在导航后才出现时，使用显式选择器等待和滚动流程。
+锚点未命中不会让导航失败，并输出 `[anchor] not found`。Hashbang 路由和包含 `=`、`&` 或 `/` 的参数型 fragment 会跳过锚点处理。
 
 > [!TIP]
 > `--js` 表达式必须返回真值。对于 Promise（如 `document.fonts.ready`），
@@ -537,12 +542,34 @@ cloak bridge token --reset                # 轮换 token
 cloak cookies export                              # 当前浏览器所有 cookie
 cloak cookies export --url https://example.com    # 只导出匹配该 URL 的 cookie
 cloak cookies import -c '[{"name":"token","value":"abc","domain":".example.com","path":"/"}]'
+cloak cookies restore                             # 恢复当前 profile 快照
+cloak cookies restore --file /tmp/cookies.json    # 恢复指定快照
 ```
 
 `cookies export` 输出 `domain | name=value` 行（每个 cookie 一行）——加上 domain
 列让 agent grep 时能分辨每个 cookie 属于哪个站点。建议用 `--url` 把导出范围限定
 到单个 domain；不加过滤会把当前浏览器里**所有**站点的会话一并吐出来，包括
-agent 任务无关的个人账号。`cookies import` 接受结构化 JSON，保留 httpOnly cookie。
+agent 任务无关的个人账号。不带 `--output` 时，export 还会刷新
+`<profile>/cookies-snapshot.json`；无活动 profile 时写入
+`~/.agentcloak/cookies-snapshot.json`。`restore` 导入该文件，再运行
+`cloak press Control+r` 刷新页面，让页面使用恢复后的登录态。
+
+`cookies import` 和 `restore` 会归一化 Chrome cookies API、CDP 与 Playwright
+cookie 结构，丢弃未知字段，转换 `sameSite` 和过期时间。坏条目会跳过并报告数量，
+不会中止整批导入。
+
+## 页面隐藏
+
+```bash
+cloak hide add ".feedback-toolbar"       # 有 profile 时持久保存，否则仅当前 session
+cloak hide list                           # 稳定 id + 选择器 + scope
+cloak hide remove ID_OR_EXACT_SELECTOR
+```
+
+持久选择器、一次性 `--hide` 选择器和页面声明的 `[data-cloak-hide]` 属性都会让
+匹配元素退出 snapshot、截图和点击命中测试。`--keep-overlays` 可在一次 snapshot
+或截图中显示全部三层。Profile 选择器保存在 `hide.json`；内置的
+`[data-cloak-hide]` 规则无法删除。
 
 ## Daemon 管理
 

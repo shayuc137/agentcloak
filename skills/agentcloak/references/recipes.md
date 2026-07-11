@@ -46,6 +46,20 @@ cloak snapshot           # results are loaded
 
 Wait options: `--selector`, `--url "**/path"`, `--load networkidle`, `--js "window.ready"`, `--ms 3000`. Add `--state hidden` to wait for disappearance.
 
+## Hide an Overlay
+
+Use persistent hiding for a toolbar or modal backdrop that pollutes observations and intercepts clicks:
+
+```bash
+cloak hide add ".feedback-toolbar"
+cloak hide list
+cloak snapshot
+cloak click N
+cloak screenshot --format png
+```
+
+With an active profile, the selector is saved in that profile's `hide.json`; without one it lasts for the browser session. Use `--hide ".toolbar,.toast"` on one snapshot or screenshot, `[data-cloak-hide]` for page-owned automation UI, and `--keep-overlays` to reveal every layer for one observation.
+
 ## Upload a File
 
 ```bash
@@ -104,8 +118,8 @@ cloak screenshot --format png --full-page               # pixel-perfect capture
 Other useful wait-then-screenshot patterns:
 
 ```bash
-# Wait for a specific element to render before capturing
-cloak screenshot --wait-selector ".chart-rendered" --wait-timeout 15000
+# Wait for a specific element to render before capturing; timeout writes no file
+cloak screenshot --wait-for ".chart-rendered" --wait-timeout 15000
 
 # Wait for client-side routing to complete
 cloak click 5                              # navigation link
@@ -132,17 +146,27 @@ default to JPEG quality 50 (configurable via `browser.mcp_screenshot_quality`).
 
 ## SPA Hash Targets
 
-SPA routers may render a fragment target after browser-native hash scrolling has
-already finished. Keep navigation timing explicit:
+For simple anchors, navigation waits up to 3 seconds for late SPA rendering and scrolls the matching id into view:
 
 ```bash
 cloak navigate "https://example.com/settings#billing"
-cloak wait --selector "#billing" --timeout 15000
-cloak js evaluate "document.getElementById('billing')?.scrollIntoView({block:'start'})"
-cloak screenshot --wait-selector "#billing"
+cloak screenshot --wait-for "#billing"
 ```
 
-Do not assume navigation will poll for or re-scroll a late-rendered hash target.
+Missing anchors do not fail navigation; text output reports `[anchor] not found`. Hashbang routes and parameter-like fragments containing `=`, `&`, or `/` are left to the application.
+
+## Restore Login State
+
+Refresh a snapshot while the session is healthy, then restore it after a logout or expired browser context:
+
+```bash
+cloak cookies export
+# later, after login state disappears
+cloak cookies restore
+cloak press Control+r
+```
+
+The default snapshot lives beside the active profile, or at `~/.agentcloak/cookies-snapshot.json` without a profile. Pass `--file` to restore another snapshot.
 
 ## Action with Snapshot (save a round trip)
 

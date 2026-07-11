@@ -1,6 +1,6 @@
 # MCP tools reference
 
-agentcloak's MCP server exposes 38 tools via stdio transport. It is included in the base install (`pip install agentcloak`) and run with `agentcloak-mcp`.
+agentcloak's MCP server exposes 39 tools via stdio transport. It is included in the base install (`pip install agentcloak`) and run with `agentcloak-mcp`.
 
 For setup instructions, see the [MCP setup guide](../guides/mcp-setup.md).
 
@@ -30,6 +30,8 @@ Navigate the browser to a URL.
 | `include_snapshot` | `bool` | `false` | Include accessibility tree snapshot in response |
 | `snapshot_mode` | `str` | `compact` | Snapshot mode when `include_snapshot` is true |
 
+Simple `#id` fragments wait up to 3 seconds for late SPA rendering and scroll into view. A miss remains successful and reports `[anchor] not found`; hashbang and parameter-like fragments are skipped.
+
 ### agentcloak_snapshot
 
 Get page content as an accessibility tree with `[N]` element references.
@@ -44,6 +46,8 @@ Get page content as an accessibility tree with `[N]` element references.
 | `offset` | `int` | `0` | Start from Nth element (pagination) |
 | `frames` | `bool` | `false` | Include iframe content |
 | `diff` | `bool` | `false` | Mark changes since previous snapshot |
+| `hide` | `str \| null` | `null` | Comma-separated CSS selectors to hide for this snapshot |
+| `keep_overlays` | `bool` | `false` | Reveal persistent, one-time, and `[data-cloak-hide]` overlays once |
 
 `selector` cannot be combined with `frames=true` or `mode="dom"`. Diff baselines are reused only when mode, selector, and frame settings match.
 
@@ -58,6 +62,9 @@ Take a screenshot of the current page. Returns an `ImageContent` (the image byte
 | `quality` | `int` | `config.mcp_screenshot_quality` | JPEG quality 0-100 (defaults lower than the CLI to fit MCP token budgets) |
 | `wait_selector` | `str` | `""` | Wait for this CSS selector to be visible before capture |
 | `wait_timeout` | `int \| null` | `null` | Selector wait timeout in ms; omitted uses `browser.action_timeout` |
+| `wait_for` | `str` | `""` | Run the regular visible-selector wait before capture; timeout returns an error without an image |
+| `hide` | `str \| null` | `null` | Comma-separated CSS selectors to hide for this capture |
+| `keep_overlays` | `bool` | `false` | Reveal persistent, one-time, and `[data-cloak-hide]` overlays once |
 
 The returned `format` determines both the `ImageContent` MIME type and metadata.
 
@@ -249,9 +256,26 @@ Manage browser cookies.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `action` | `str` | `export` | `export` or `import` |
+| `action` | `str` | `export` | `export`, `import`, `restore`, `set`, `clear`, or `delete` |
 | `url` | `str` | `""` | Filter by URL (export only) |
 | `cookies_json` | `str` | `""` | JSON array of cookie objects (import only) |
+| `file` | `str` | `""` | Snapshot path override (restore only) |
+
+Every export refreshes the active profile's `cookies-snapshot.json`, or `~/.agentcloak/cookies-snapshot.json` without a profile. `restore` imports that snapshot. Import accepts Chrome cookies API, CDP, and Playwright shapes, skipping malformed entries with a reported count.
+
+## Page hiding
+
+### agentcloak_hide
+
+Manage selectors hidden across snapshots, screenshots, and click hit-testing.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `action` | `str` | `list` | `add`, `remove`, or `list` |
+| `selector` | `str` | `""` | CSS selector to add |
+| `identifier_or_selector` | `str` | `""` | Stable id or exact selector to remove |
+
+Selectors persist in the active profile's `hide.json`; sessions without a profile report `session-only`. `[data-cloak-hide]` is builtin and cannot be removed. Set `keep_overlays=true` on snapshot or screenshot to reveal all layers once.
 
 ## Spells
 

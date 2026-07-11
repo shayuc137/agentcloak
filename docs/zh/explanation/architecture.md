@@ -46,7 +46,7 @@ graph TD
 
 **CLI**（`src/agentcloak/cli/`）：基于 [typer](https://github.com/fastapi/typer) 构建。每个命令通过共享的 `httpx` 客户端 `DaemonClient` 向 daemon 发送 HTTP 请求，以文本优先的方式输出到 stdout（`--json` 可切回 JSON envelope）。CLI 不接触 browser 内部实现。
 
-**MCP Server**（`src/agentcloak/mcp/`）：基于 [FastMCP](https://github.com/modelcontextprotocol/python-sdk) 构建。作为 stdio MCP server 运行，暴露 38 个映射到 daemon HTTP 端点的工具。MCP server 在首次请求时自动启动 daemon，复用同一个 `DaemonClient`（异步模式，CLI 是同步模式）。Tool 响应通过 `core/text_renderers` 渲染 —— 和 CLI 用的是同一份渲染器 —— 所以 MCP 返回 agent 友好的文本而非 JSON 字符串。`agentcloak_screenshot` 返回 MCP `ImageContent`，多模态 LLM 直接读像素。
+**MCP Server**（`src/agentcloak/mcp/`）：基于 [FastMCP](https://github.com/modelcontextprotocol/python-sdk) 构建。作为 stdio MCP server 运行，暴露 39 个映射到 daemon HTTP 端点的工具。MCP server 在首次请求时自动启动 daemon，复用同一个 `DaemonClient`（异步模式，CLI 是同步模式）。Tool 响应通过 `core/text_renderers` 渲染 —— 和 CLI 用的是同一份渲染器 —— 所以 MCP 返回 agent 友好的文本而非 JSON 字符串。`agentcloak_screenshot` 返回 MCP `ImageContent`，多模态 LLM 直接读像素。
 
 两种表面共享同一个 daemon 后端。新增一项能力只需添加一个 daemon 路由 —— CLI/MCP 适配层和 Skill 的 `commands-reference.md` 都从 daemon 在 `/openapi.json` 暴露的 OpenAPI 规范自动生成或校验。
 

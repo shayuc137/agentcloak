@@ -1,6 +1,6 @@
 # 浏览器 profile
 
-Profile 让你跨 daemon 重启保留登录状态、cookie、localStorage 和扩展。每个 profile 是 `~/.agentcloak/profiles/<name>/` 下的一个真实 Chromium 用户数据目录。适用于长期会话（登录态 dashboard、多账号工作流、需要时间积累信任的站点）。
+Profile 让你跨 daemon 重启保留登录状态、cookie、localStorage、扩展和页面隐藏选择器。每个 profile 是 `~/.agentcloak/profiles/<name>/` 下的一个真实 Chromium 用户数据目录。适用于长期会话（登录态 dashboard、多账号工作流、需要时间积累信任的站点）。
 
 ## 快速开始
 
@@ -95,6 +95,8 @@ cloak navigate "https://github.com/orgs/acme/projects"
 ├── work/                     # Chromium user-data-dir
 │   ├── Default/              # 标准 Chromium profile 结构
 │   ├── First Run
+│   ├── hide.json             # cloak hide 管理的选择器
+│   ├── cookies-snapshot.json # cookies export 刷新的恢复快照
 │   └── ...
 ├── github-personal/
 └── github-work/
@@ -109,6 +111,17 @@ cloak profile delete work
 ```
 
 这会删除整个 `~/.agentcloak/profiles/work/` 目录。daemon 不需要先停——但如果你当前正在运行该 profile，删除会失败，直到你切到别的 profile。
+
+## 恢复 cookie
+
+`cloak cookies export` 不带 `--output` 时会刷新 `cookies-snapshot.json`，同时继续打印 cookie。页面后来丢失登录态时，恢复快照并 reload：
+
+```bash
+cloak cookies restore
+cloak press Control+r
+```
+
+使用 `--file` 可恢复其他快照。无活动 profile 时，默认路径改为 `~/.agentcloak/cookies-snapshot.json`。
 
 ## Profile vs cookie 导出
 

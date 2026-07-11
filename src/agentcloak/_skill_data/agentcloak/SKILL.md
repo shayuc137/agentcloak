@@ -70,8 +70,8 @@ Snapshot modes: `compact` (default, interactive + containers only, capped at 80 
 
 | Command | Purpose |
 |---------|---------|
-| `cloak navigate URL` | Navigate to URL (add `--snap` to get a11y tree in one step) |
-| `cloak snapshot` | Get a11y tree with `[N]` refs (default mode: compact) |
+| `cloak navigate URL` | Navigate to URL (add `--snap` to get a11y tree; simple `#id` fragments wait up to 3s and scroll into view) |
+| `cloak snapshot` | Get a11y tree with `[N]` refs (default mode: compact; `--hide CSS` hides overlays once, `--keep-overlays` reveals all) |
 | `cloak snapshot --within main` | Scope tree and refs to a main-document CSS subtree |
 | `cloak snapshot --mode accessible` | Full a11y tree (heavier, all containers) |
 | `cloak snapshot --mode content` | Text extraction |
@@ -80,7 +80,7 @@ Snapshot modes: `compact` (default, interactive + containers only, capped at 80 
 | `cloak snapshot --offset 50` | Paginate from 50th element |
 | `cloak snapshot --frames` | Include iframe content |
 | `cloak snapshot --diff` | Mark `[+]` added, `[~]` changed vs previous |
-| `cloak screenshot [--output FILE]` | Screenshot to file, stdout = path (`.png`/`.jpg` infer format; also `--full-page`, `--format`, `--quality`, `--wait-selector`) |
+| `cloak screenshot [--output FILE]` | Screenshot to file, stdout = path (`--wait-for CSS` waits first; `--hide CSS` hides overlays once; `--keep-overlays` reveals all) |
 | `cloak diff screenshot BASELINE [--current FILE]` | Exact RGBA pixel comparison; omit current for a live PNG, add `--output diff.png` for red highlights |
 | `cloak resume` | Session state: URL, tabs, recent actions |
 
@@ -90,7 +90,7 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 
 | Command | Purpose |
 |---------|---------|
-| `cloak click N [--force]` | Click element (`--force` bypasses covering overlays; `--x/--y` coordinate fallback; `--button right`; `--click-count 2` for double-click) |
+| `cloak click N [--force]` | Click element (`--force` is single left-click only; use persistent hide for known overlays; `--x/--y` coordinate fallback) |
 | `cloak fill N "value"` | Clear and set input value — fast path, but slow under humanize (see Gotchas) |
 | `cloak type N "value"` | Type character by character; pick this when you want the anti-detection typing cadence |
 | `cloak press Enter` | Press key (Enter, Tab, Escape, Backspace, ArrowDown, Space...; `--target N` focuses element [N] first) |
@@ -161,8 +161,10 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak profile list` / `create` / `launch` / `delete` | Browser profile management (`create --from-current` snapshots the live session's cookies) |
 | `cloak tab list` / `new` / `close` / `switch` | Tab management |
 | `cloak spell list` / `info` / `run NAME` / `scaffold` | Spells (PUBLIC runs locally; browser strategies use daemon + caller session) |
-| `cloak cookies export [--url URL]` / `import -c '[...]'` | Export/import cookies (text output is `domain \| name=value`; pass `--url` to scope to one site — without it every site's cookies are returned, with import preserving httpOnly) |
+| `cloak cookies export [--url URL]` / `restore [--file PATH]` | Export prints cookies and refreshes the active profile snapshot; restore imports that snapshot (or the global fallback) |
+| `cloak cookies import -c '[...]'` | Import Chrome cookies API, CDP, or Playwright JSON; malformed entries are skipped and counted |
 | `cloak cookies set NAME VAL [--domain D]` / `set --curl '<copy-as-curl>'` / `clear` / `delete NAME` | Cookie CRUD; `--curl` seeds cookies from a DevTools Copy-as-cURL string |
+| `cloak hide add CSS` / `remove ID_OR_CSS` / `list` | Hide overlays across snapshot, screenshot, and click hit-testing; profile sessions persist selectors, other sessions are session-only |
 | `cloak pdf [-o file] [--format A4] [--landscape]` | Export the current page to PDF (headless only) |
 | `cloak serve start DIR [--port P]` / `stop` / `status` | Local http server for previewing local files (`file://` is blocked); navigate to the printed URL |
 | `cloak session list` / `close SESSION_ID` | Multi-session management: list named sessions, close a specific session to free its browser |
@@ -196,6 +198,8 @@ For `jq` scripting, `--json` (or `AGENTCLOAK_OUTPUT=json`) restores the legacy e
 
 These work automatically:
 - **Stale ref auto-retry**: `element_not_found` triggers one automatic re-snapshot + retry
+- **Hash anchors**: a simple `#id` on `navigate` waits up to 3s for late SPA rendering and scrolls into view; `[anchor] not found` is informational
+- **Page-owned hiding**: elements marked `[data-cloak-hide]` stay hidden from snapshots, screenshots, and hit-testing unless `--keep-overlays` is used
 - **`--snap`**: add to `navigate` or any action to get a compact snapshot back in the same call (output starts with `# Title | url | N nodes`), saving a round trip
 - **`$N.path` batch refs**: in `--calls-file` batch mode, reference prior results (e.g. `"$0.url"`)
 - **Tab group**: RemoteBridge auto-groups agent tabs under blue "agentcloak" Chrome tab group
@@ -210,7 +214,7 @@ cloak wait --js "document.fonts.ready.then(() => true)"
 cloak screenshot -o page.png
 ```
 
-For one selector readiness condition, combine it with capture: `cloak screenshot --wait-selector "#ready" --wait-timeout 15000`.
+For one selector readiness condition, combine it with capture: `cloak screenshot --wait-for "#ready" --wait-timeout 15000`. A timeout stops before any file is written.
 
 **Screenshot format**: `.png` / `.jpg` / `.jpeg` output suffixes select encoding without `--format`; unknown suffixes warn and use the live `browser.screenshot_format` (`jpeg` by default). JPEG is ~4-10x smaller for observe-act loops; PNG is lossless for UI design, OCR, and visual comparison. MCP defaults to JPEG quality 50.
 

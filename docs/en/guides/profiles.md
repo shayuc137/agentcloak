@@ -1,6 +1,6 @@
 # Browser profiles
 
-Profiles let you persist login state, cookies, localStorage, and extensions across daemon restarts. Each profile is a real Chromium user-data directory under `~/.agentcloak/profiles/<name>/`. Use them for long-lived sessions (logged-in dashboards, multi-account workflows, sites that build trust over time).
+Profiles let you persist login state, cookies, localStorage, extensions, and page-hide selectors across daemon restarts. Each profile is a real Chromium user-data directory under `~/.agentcloak/profiles/<name>/`. Use them for long-lived sessions (logged-in dashboards, multi-account workflows, sites that build trust over time).
 
 ## Quick start
 
@@ -95,6 +95,8 @@ Because each `launch` restarts the daemon, the profiles don't see each other's s
 ├── work/                     # Chromium user-data-dir
 │   ├── Default/              # standard Chromium profile structure
 │   ├── First Run
+│   ├── hide.json             # selectors managed by cloak hide
+│   ├── cookies-snapshot.json # latest recovery snapshot from cookies export
 │   └── ...
 ├── github-personal/
 └── github-work/
@@ -109,6 +111,17 @@ cloak profile delete work
 ```
 
 This removes the entire `~/.agentcloak/profiles/work/` directory. The daemon does not need to be stopped — but if you're currently running that profile, the deletion will fail until you launch a different one.
+
+## Recovering cookies
+
+`cloak cookies export` without `--output` refreshes `cookies-snapshot.json` while still printing the cookies. If a later page loses its login state, restore the snapshot and reload:
+
+```bash
+cloak cookies restore
+cloak press Control+r
+```
+
+Use `--file` to restore another snapshot. Without an active profile, the default moves to `~/.agentcloak/cookies-snapshot.json`.
 
 ## Profiles vs cookies export
 

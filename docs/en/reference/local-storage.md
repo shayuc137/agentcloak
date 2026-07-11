@@ -12,8 +12,9 @@ The main data directory. Created on first run. Typical size: **< 1 MB** (excludi
 | `daemon.pid` | Running daemon process ID | < 1 KB | Created on daemon start, stale file removed on next start |
 | `active-session.json` | Current daemon session info (port, stealth tier, bridge token) | ~130 bytes | Overwritten on daemon start |
 | `resume.json` | Last action summary for session resume | < 1 KB | Overwritten on each action, persists after daemon stop |
+| `cookies-snapshot.json` | Cookie recovery fallback when no profile is active | Usually < 100 KB | Overwritten by `cloak cookies export` without `--output` |
 | `logs/` | Reserved for future log file output | Empty | Daemon logs go to stderr, not to files |
-| `profiles/` | Saved browser login sessions (cookies, localStorage, IndexedDB) | 1-50 MB each | Permanent until `cloak profile delete` |
+| `profiles/` | Saved browser sessions plus `hide.json` and cookie recovery snapshots | 1-50 MB each | Permanent until `cloak profile delete` |
 
 ### Profiles
 

@@ -15,12 +15,12 @@ Error: Element [99] not in selector_map (4 entries)
 | Error text on stderr | Cause | Recovery |
 |----------------------|-------|----------|
 | `element_not_found` / `[N] not in selector_map` | `[N]` ref is stale (page changed) | Auto-retried once; if still fails, re-snapshot and use the new ref |
-| `element_covered` / visible ref does not react | Overlay intercepted coordinate click | Retry `cloak click N --force`; use `js evaluate "el.click()"` only for a custom event path |
+| `element_covered` / visible ref does not react | Overlay intercepted coordinate click | Hide the overlay with `cloak hide add CSS`, then re-snapshot; use `--force` only as a one-off single-left-click fallback |
 | `navigation_timeout` | Page took too long to load | Retry with `--timeout 60`, or check the URL is correct |
 | `no_valid_page` | Last `navigate` failed — page is still the previous URL | `cloak navigate <url>` again before screenshot/snapshot/click/evaluate. `fetch` and `network` are unaffected |
 | `blocked_by_dialog` | A dialog is blocking operations | `cloak dialog accept` or `dismiss`, then retry the action |
 | `debugger_paused` | Execution is paused at a breakpoint — page actions can't run | `cloak debugger resume` or `debugger step`, then retry. `debugger`/`console`/`tab` commands stay available while paused |
-| `wait_timeout` | Wait condition not met in time | Increase `--timeout` (`screenshot`: `--wait-timeout`), or verify selector/condition |
+| `wait_timeout` | Wait condition not met in time | Increase `--timeout` (`screenshot --wait-for`: `--wait-timeout`), or verify selector/condition; screenshot does not write a file after this failure |
 | `evaluate_failed` | JavaScript syntax/runtime failure | Read the bounded exception message and first source location; fix the script or probe nullable elements with optional chaining |
 | `frame_not_found` | Frame name/URL doesn't match | `cloak frame list` to see available frames |
 | `daemon_not_running` / `daemon_unreachable` | Daemon crashed or wasn't started | Should auto-start; if not, run `cloak daemon start -b` (or `cloak doctor --fix`) |
@@ -75,6 +75,30 @@ cloak daemon status      # tier, browser status, seq, current URL, capture state
 ```
 
 ## Snapshot Issues
+
+### Overlay blocks observation or clicks
+
+Prefer the hide layers because one selector fixes snapshots, screenshots, and click hit-testing together:
+
+```bash
+cloak hide add ".feedback-toolbar"       # persists with an active profile
+cloak hide list                           # shows builtin/profile/session scope
+cloak snapshot                            # overlay is absent and refs are refreshed
+cloak click N                             # normal hit-testing now reaches the target
+```
+
+Use `--hide ".feedback-toolbar,.toast"` for one snapshot or screenshot. A page can mark its own automation-only UI with `[data-cloak-hide]`. Use `--keep-overlays` when the real obstruction must remain visible. `cloak click N --force` is the fallback for an unknown one-off overlay and only supports a single left click; combining it with a non-default button or click count returns `invalid_argument`.
+
+### Login state disappeared
+
+`cookies export` without `--output` refreshes the active profile's `cookies-snapshot.json` (or `~/.agentcloak/cookies-snapshot.json` without a profile). Restore it, then reload the page:
+
+```bash
+cloak cookies restore
+cloak press Control+r
+```
+
+Use `cloak cookies restore --file /path/to/snapshot.json` for an explicit snapshot. Import and restore accept Chrome cookies API, CDP, and Playwright cookie shapes; malformed entries are skipped and reported instead of aborting the whole import.
 
 ### Too much output
 

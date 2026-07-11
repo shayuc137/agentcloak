@@ -64,6 +64,10 @@ local_idle_timeout = 1800
 > [!NOTE]
 > Invalid values (out-of-range port, unknown tier, bad log level) are caught at startup with a clear error message.
 
+## Related state files
+
+Overlay selectors and cookie recovery snapshots are runtime state rather than config keys. An active profile stores them as `~/.agentcloak/profiles/<name>/hide.json` and `cookies-snapshot.json`. Without a profile, hide selectors are session-only and the cookie fallback is `~/.agentcloak/cookies-snapshot.json`. Manage them with `cloak hide add/remove/list` and `cloak cookies export/restore`; do not add them to `config.toml`.
+
 ## Environment variables
 
 All environment variables use the `AGENTCLOAK_` prefix.

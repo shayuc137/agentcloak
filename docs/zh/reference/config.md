@@ -64,6 +64,10 @@ local_idle_timeout = 1800
 > [!NOTE]
 > 无效的配置值（端口越界、未知 tier、错误日志级别等）会在启动时报清晰的错误信息。
 
+## 相关状态文件
+
+Overlay 选择器和 cookie 恢复快照属于运行状态，并非配置项。活动 profile 会把它们分别存为 `~/.agentcloak/profiles/<name>/hide.json` 和 `cookies-snapshot.json`。无 profile 时，隐藏选择器仅在当前 session 生效，cookie fallback 为 `~/.agentcloak/cookies-snapshot.json`。使用 `cloak hide add/remove/list` 与 `cloak cookies export/restore` 管理，不要把它们写进 `config.toml`。
+
 ## 环境变量
 
 所有环境变量使用 `AGENTCLOAK_` 前缀。

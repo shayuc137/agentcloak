@@ -53,9 +53,11 @@ cloak snapshot                                   # 看到真实页面
 cloak click 5                                    # 在真实 Chrome 里点击
 ```
 
-RemoteBridge 默认发送物理坐标鼠标事件。overlay 拦截目标时使用
-`cloak click N --force`，它会解析 ref 并直接调用 DOM `click()`。`fill` 使用原生
-value setter，再冒泡 `input`/`change`，兼容 React/Vue 受控字段。
+RemoteBridge 默认发送物理坐标鼠标事件。已知 overlay 优先运行
+`cloak hide add CSS`，重新 snapshot 后正常点击；隐藏也会清理截图和点击命中测试。
+`cloak click N --force` 用作一次性 fallback：它会解析 ref 并直接调用 DOM
+`click()`，且仅支持单左击。`fill` 使用原生 value setter，再冒泡
+`input`/`change`，兼容 React/Vue 受控字段。
 
 让 bridge 成为 daemon 默认后端：
 
@@ -131,12 +133,11 @@ cloak bridge finalize --mode deliverable   # 重命名分组为 "agentcloak resu
 从真实浏览器拉 cookie 用于脚本或植入 profile：
 
 ```bash
-cloak cookies export                   # 全部 domain，JSON 到 stdout
-cloak cookies export --url github.com  # 只一个 domain
-cloak cookies import < cookies.json    # 注入当前上下文
+cloak cookies export --output cookies.json
+cloak cookies import -c "$(command cat cookies.json)"
 ```
 
-这是把手动登录升级为可复用 profile 的最简单路径——在真实 Chrome 登录、导出、再导入到新的 agentcloak profile。
+这是把手动登录升级为可复用 profile 的最简单路径——在真实 Chrome 登录、导出、再导入到新的 agentcloak profile。不带 `--output` 的 export 还会刷新活动 profile 的恢复快照；登录态丢失后运行 `cloak cookies restore` 和 `cloak press Control+r`。
 
 ## 故障排查
 

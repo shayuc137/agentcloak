@@ -206,10 +206,14 @@ Execute JavaScript in the page context.
 
 ```bash
 cloak js evaluate "expression"
+cloak js evaluate --file probe.js          # multiline UTF-8 script, no shell quoting
 cloak js evaluate --preset vue_inspect    # run a reverse-engineering preset instead of JS
 ```
 
 Scalar results (string/number/boolean) print as raw values. Objects and arrays print as pretty JSON.
+Inline code, `--file`, and `--preset` are mutually exclusive. Evaluation failures
+report the thrown message and first useful source/stack location, bounded to 400
+characters so a page cannot flood agent context with a stack trace.
 
 `--preset` runs a canned reverse-engineering snippet (forced to the main world, so leave the JS argument empty) and returns parsed JSON:
 

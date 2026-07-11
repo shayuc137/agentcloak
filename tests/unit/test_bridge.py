@@ -183,6 +183,24 @@ class TestExtensionFiles:
         assert (ext_dir / "options.html").is_file()
         assert (ext_dir / "options.js").is_file()
 
+    def test_evaluate_prefers_exception_description(self) -> None:
+        """RemoteBridge must not collapse actionable JS errors to bare Uncaught."""
+        ext_dir = (
+            Path(__file__).parent.parent.parent
+            / "src"
+            / "agentcloak"
+            / "bridge"
+            / "agentcloak-chrome-extension"
+        )
+        source = (ext_dir / "background.js").read_text(encoding="utf-8")
+        block_start = source.index("if (result.exceptionDetails)")
+        block_end = source.index("// Runtime.evaluate returns", block_start)
+        block = source[block_start:block_end]
+
+        assert block.index("exc.exception?.description") < block.index("usefulText ||")
+        assert 'const marker = " ... [truncated]"' in block
+        assert "errMsg.length > 400" in block
+
     def test_manifest_valid(self) -> None:
         ext_dir = (
             Path(__file__).parent.parent.parent

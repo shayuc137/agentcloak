@@ -6,7 +6,12 @@
 cloak js evaluate "document.title"
 cloak js evaluate "document.querySelectorAll('a').length"
 cloak js evaluate "JSON.stringify(window.__NEXT_DATA__)" # extract Next.js data
+cloak js evaluate --file probe.js                         # multiline script
 ```
+
+Use exactly one of inline code, `--file`, or `--preset`. Failed evaluations return
+the thrown message plus the first useful source location instead of a bare
+`Uncaught`; diagnostics are capped at 400 characters.
 
 Use `--world isolated` for an isolated context (no page globals pollution). Only `main` (default) and `isolated` are valid.
 

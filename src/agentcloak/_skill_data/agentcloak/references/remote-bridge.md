@@ -102,6 +102,9 @@ cloak cdp endpoint
 # Now: navigation/interaction via agentcloak, JS analysis via jshookmcp
 ```
 
+Remote `js evaluate` failures return the thrown message plus the first useful CDP
+source location, capped at 400 characters instead of a bare `Uncaught`.
+
 ## Cookie Export
 
 Export cookies from the real browser for use in scripts:

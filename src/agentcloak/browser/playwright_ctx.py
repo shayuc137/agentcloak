@@ -1318,7 +1318,9 @@ class PlaywrightContext(BrowserContextBase):
             await cdp.detach()
 
         if "exceptionDetails" in resp:
-            desc = resp["exceptionDetails"].get("text", "JS exception")
+            from agentcloak.browser._cdp_errors import format_cdp_exception
+
+            desc = format_cdp_exception(resp["exceptionDetails"])
             raise BackendError(
                 error="evaluate_failed",
                 hint=desc,

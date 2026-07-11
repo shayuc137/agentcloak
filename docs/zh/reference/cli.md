@@ -204,10 +204,13 @@ cloak select N --value "option" [--snap]
 
 ```bash
 cloak js evaluate "expression"
+cloak js evaluate --file probe.js          # 多行 UTF-8 脚本，无需处理 shell 引号
 cloak js evaluate --preset vue_inspect    # 运行逆向 preset 而非自己写 JS
 ```
 
 scalar 结果（string/number/boolean）直接输出裸值。对象和数组打印为 pretty JSON。
+行内代码、`--file` 和 `--preset` 三选一。执行失败时会返回真实异常消息和
+首个有效源码/栈位置，并限制在 400 字符内，避免页面用超长栈占满 agent 上下文。
 
 `--preset` 运行一段预置的逆向 JS（强制在 main world 执行，所以 JS 参数留空），返回可直接 parse 的 JSON：
 

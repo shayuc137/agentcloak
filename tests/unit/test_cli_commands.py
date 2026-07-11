@@ -28,7 +28,7 @@ patch ``_send_async`` because the CLI is sync-only.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import patch
 
 import pytest
@@ -36,6 +36,9 @@ from typer.testing import CliRunner
 
 from agentcloak.cli import output as cli_output
 from agentcloak.cli.app import app
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 runner = CliRunner()
 
@@ -93,6 +96,74 @@ class TestNavigate:
         assert data["seq"] == 7
         assert data["data"]["url"] == "https://example.com/"
         assert data["data"]["title"] == "Example Domain"
+
+
+# ---------------------------------------------------------------------------
+# B1: evaluate
+# ---------------------------------------------------------------------------
+
+
+class TestEvaluate:
+    """``cloak js evaluate`` — inline, preset, and UTF-8 file sources."""
+
+    def test_evaluate_file_preserves_multiline_code(self, tmp_path: Path) -> None:
+        script = "const label = 'DOS';\nlabel + `-${location.pathname}`;\n"
+        script_path = tmp_path / "probe.js"
+        script_path.write_text(script, encoding="utf-8")
+        payload = _envelope(
+            {"result": "DOS-/ui-lab", "truncated": False, "total_size": 13}
+        )
+
+        with patch(
+            "agentcloak.client.DaemonClient._send_sync", return_value=payload
+        ) as send:
+            result = runner.invoke(app, ["js", "evaluate", "--file", str(script_path)])
+
+        assert result.exit_code == 0, result.output
+        assert "DOS-/ui-lab" in result.stdout
+        assert send.call_args.kwargs["json_body"] == {
+            "world": "main",
+            "js": script,
+        }
+
+    def test_evaluate_rejects_multiple_sources(self, tmp_path: Path) -> None:
+        script_path = tmp_path / "probe.js"
+        script_path.write_text("1 + 1", encoding="utf-8")
+
+        result = runner.invoke(
+            app, ["js", "evaluate", "2 + 2", "--file", str(script_path)]
+        )
+
+        assert result.exit_code == 1
+        assert "multiple JavaScript sources" in result.output
+
+    def test_evaluate_rejects_missing_source(self) -> None:
+        result = runner.invoke(app, ["js", "evaluate"])
+
+        assert result.exit_code == 1
+        assert "no JavaScript source" in result.output
+
+    def test_evaluate_rejects_non_utf8_file(self, tmp_path: Path) -> None:
+        script_path = tmp_path / "probe.js"
+        script_path.write_bytes(b"\xff\xfe")
+
+        result = runner.invoke(app, ["js", "evaluate", "--file", str(script_path)])
+
+        assert result.exit_code == 1
+        assert "cannot read JavaScript file" in result.output
+
+    def test_evaluate_preset_remains_supported(self) -> None:
+        payload = _envelope({"result": {}, "truncated": False, "total_size": 2})
+        with patch(
+            "agentcloak.client.DaemonClient._send_sync", return_value=payload
+        ) as send:
+            result = runner.invoke(app, ["js", "evaluate", "--preset", "react_inspect"])
+
+        assert result.exit_code == 0, result.output
+        assert send.call_args.kwargs["json_body"] == {
+            "world": "main",
+            "preset": "react_inspect",
+        }
 
 
 # ---------------------------------------------------------------------------

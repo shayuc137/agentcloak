@@ -874,11 +874,37 @@ async function cmdEvaluate(msg) {
 
     if (result.exceptionDetails) {
       const exc = result.exceptionDetails;
-      const errMsg =
-        exc.text ||
+      const genericText = new Set([
+        "uncaught",
+        "uncaught (in promise)",
+        "script error",
+      ]);
+      const rawText = String(exc.text || "").trim();
+      const usefulText = genericText.has(rawText.replace(/\.$/, "").toLowerCase())
+        ? ""
+        : rawText;
+      let errMsg = String(
         exc.exception?.description ||
-        exc.exception?.value ||
-        "evaluation error";
+          exc.exception?.value ||
+          usefulText ||
+          "evaluation error"
+      ).trim();
+      const frame = exc.stackTrace?.callFrames?.[0];
+      const url = frame?.url || exc.url || "";
+      const line = frame?.lineNumber ?? exc.lineNumber;
+      const column = frame?.columnNumber ?? exc.columnNumber;
+      if (url || Number.isInteger(line) || Number.isInteger(column)) {
+        let location = url || "<anonymous>";
+        if (Number.isInteger(line)) {
+          location += `:${line + 1}`;
+          if (Number.isInteger(column)) location += `:${column + 1}`;
+        }
+        if (!errMsg.includes(location)) errMsg += `\n  at ${location}`;
+      }
+      const marker = " ... [truncated]";
+      if (errMsg.length > 400) {
+        errMsg = errMsg.slice(0, 400 - marker.length).trimEnd() + marker;
+      }
       return { ok: false, error: errMsg };
     }
 

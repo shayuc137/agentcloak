@@ -136,6 +136,9 @@ cloak cookies import < cookies.json    # 注入当前上下文
 
 ## 故障排查
 
+远程 JavaScript 执行失败时会保留真实异常消息和首个有效 CDP 源码位置，并限制在
+400 字符内；`Uncaught` 不再遮住空值访问或语法错误。
+
 ```bash
 cloak bridge doctor
 ```

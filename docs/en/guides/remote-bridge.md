@@ -138,6 +138,10 @@ This is the easiest way to graduate a manual login into a reusable profile — l
 
 ## Troubleshooting
 
+Remote JavaScript evaluation errors preserve the thrown message and first useful
+CDP source location. Diagnostics are capped at 400 characters; a bare `Uncaught`
+should no longer hide null access or syntax failures.
+
 ```bash
 cloak bridge doctor
 ```

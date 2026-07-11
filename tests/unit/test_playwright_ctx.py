@@ -342,7 +342,21 @@ class TestEvaluate:
             if method == "Runtime.evaluate":
                 return {
                     "result": {"type": "object"},
-                    "exceptionDetails": {"text": "ReferenceError: x is not defined"},
+                    "exceptionDetails": {
+                        "text": "Uncaught",
+                        "exception": {
+                            "description": "ReferenceError: x is not defined"
+                        },
+                        "stackTrace": {
+                            "callFrames": [
+                                {
+                                    "url": "https://example.test/app.js",
+                                    "lineNumber": 4,
+                                    "columnNumber": 8,
+                                }
+                            ]
+                        },
+                    },
                 }
             return {}
 
@@ -355,6 +369,8 @@ class TestEvaluate:
         with pytest.raises(BackendError) as exc_info:
             await ctx.evaluate("x")
         assert "ReferenceError" in exc_info.value.hint
+        assert "https://example.test/app.js:5:9" in exc_info.value.hint
+        assert not exc_info.value.hint.startswith("Uncaught")
 
     @pytest.mark.asyncio
     async def test_evaluate_undefined_returns_none(self) -> None:

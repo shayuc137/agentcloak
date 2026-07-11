@@ -53,8 +53,12 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 38 个工具。已包含在�
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|-------|------|
 | `full_page` | `bool` | `false` | 捕获完整可滚动页面 |
-| `format` | `str` | `jpeg` | `jpeg` 或 `png` |
+| `format` | `str \| null` | `null` | 用 `jpeg` 或 `png` 覆盖；省略时使用 `browser.screenshot_format` |
 | `quality` | `int` | `config.mcp_screenshot_quality` | JPEG 质量 0-100（默认比 CLI 小，匹配 MCP token 预算） |
+| `wait_selector` | `str` | `""` | 截图前等待此 CSS 选择器可见 |
+| `wait_timeout` | `int \| null` | `null` | 选择器等待超时（毫秒）；省略时使用 `browser.action_timeout` |
+
+返回的 `format` 同时决定 `ImageContent` MIME 类型和元数据。
 
 ## 交互
 

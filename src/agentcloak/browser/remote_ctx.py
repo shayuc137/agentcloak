@@ -1301,7 +1301,10 @@ class RemoteBridgeContext(BrowserContextBase):
     async def _screenshot_impl(
         self, *, full_page: bool, fmt: str, quality: int
     ) -> bytes:
-        result = await self._send("screenshot", {})
+        params: dict[str, Any] = {"format": fmt, "full_page": full_page}
+        if fmt == "jpeg":
+            params["quality"] = quality
+        result = await self._send("screenshot", params)
         b64 = result.get("base64", "")
         return base64.b64decode(b64)
 

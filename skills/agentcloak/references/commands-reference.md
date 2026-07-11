@@ -57,9 +57,11 @@ Read this file when you need full parameter detail. For the common path, the qui
 - MCP: `agentcloak_screenshot`
 - Query:
   - `full_page` (boolean, default: false) — Capture the full scrollable page instead of the viewport.
-  - `format` (string, default: "jpeg") — Format: jpeg (smaller) or png (lossless, better for OCR/design).
+  - `format` (string | null, default: —) — Format override: jpeg or png. Unset uses browser.screenshot_format.
   - `quality` (integer | null, default: —) — JPEG quality 1-100; unset uses the default. Ignored for png.
   - `output_path` (string, default: "") — Write the image to this path on the daemon host (7a R8) and return path+size instead of base64. Omit to return base64 inline.
+  - `wait_selector` (string, default: "") — Wait for this selector to be visible before capture.
+  - `wait_timeout` (integer | null, default: —) — Selector wait timeout in ms; unset uses browser.action_timeout.
 
 ### `GET /network`
 

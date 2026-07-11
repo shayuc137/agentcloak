@@ -20,7 +20,7 @@ Error: Element [99] not in selector_map (4 entries)
 | `no_valid_page` | Last `navigate` failed — page is still the previous URL | `cloak navigate <url>` again before screenshot/snapshot/click/evaluate. `fetch` and `network` are unaffected |
 | `blocked_by_dialog` | A dialog is blocking operations | `cloak dialog accept` or `dismiss`, then retry the action |
 | `debugger_paused` | Execution is paused at a breakpoint — page actions can't run | `cloak debugger resume` or `debugger step`, then retry. `debugger`/`console`/`tab` commands stay available while paused |
-| `wait_timeout` | Wait condition not met in time | Increase `--timeout`, or verify selector/condition |
+| `wait_timeout` | Wait condition not met in time | Increase `--timeout` (`screenshot`: `--wait-timeout`), or verify selector/condition |
 | `evaluate_failed` | JavaScript syntax/runtime failure | Read the bounded exception message and first source location; fix the script or probe nullable elements with optional chaining |
 | `frame_not_found` | Frame name/URL doesn't match | `cloak frame list` to see available frames |
 | `daemon_not_running` / `daemon_unreachable` | Daemon crashed or wasn't started | Should auto-start; if not, run `cloak daemon start -b` (or `cloak doctor --fix`) |

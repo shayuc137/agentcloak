@@ -58,6 +58,46 @@ class TestMCPServerCreation:
         except ImportError:
             pytest.skip("mcp package not installed")
 
+    @pytest.mark.asyncio
+    async def test_screenshot_uses_response_format_for_mime_and_forwards_wait(
+        self,
+    ) -> None:
+        try:
+            from mcp.server.fastmcp import FastMCP
+        except ImportError:
+            pytest.skip("mcp package not installed")
+        from unittest.mock import AsyncMock
+
+        from agentcloak.core.config import AgentcloakConfig
+        from agentcloak.mcp.tools.navigation import register
+
+        client = AsyncMock()
+        client.config = AgentcloakConfig()
+        client.screenshot.return_value = {
+            "ok": True,
+            "seq": 1,
+            "data": {"base64": "cG5n", "size": 3, "format": "png"},
+        }
+        mcp = FastMCP("test")
+        register(mcp, client)
+        tool = mcp._tool_manager._tools["agentcloak_screenshot"]  # type: ignore[union-attr]
+
+        result = await tool.fn(
+            format=None,
+            wait_selector="#ready",
+            wait_timeout=1500,
+        )
+
+        assert result[0].mimeType == "image/png"
+        assert "format=png" in result[1].text
+        client.screenshot.assert_awaited_once_with(
+            full_page=False,
+            format=None,
+            quality=50,
+            wait_selector="#ready",
+            wait_timeout=1500,
+        )
+
     def test_tool_count_is_35(self) -> None:
         try:
             from agentcloak.mcp.server import create_server

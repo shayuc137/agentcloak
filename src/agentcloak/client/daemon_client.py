@@ -939,8 +939,10 @@ class DaemonClient:
         self,
         *,
         full_page: bool = False,
-        format: str = "jpeg",
+        format: str | None = None,
         quality: int | None = None,
+        wait_selector: str = "",
+        wait_timeout: int | None = None,
     ) -> dict[str, Any]:
         return self._send_sync(
             "GET",
@@ -953,6 +955,8 @@ class DaemonClient:
                     if quality is not None
                     else self._cfg.browser.screenshot_quality
                 ),
+                wait_selector=wait_selector,
+                wait_timeout=wait_timeout,
             ),
         )
 
@@ -1078,8 +1082,10 @@ class DaemonClient:
         self,
         *,
         full_page: bool = False,
-        format: str = "jpeg",
+        format: str | None = None,
         quality: int | None = None,
+        wait_selector: str = "",
+        wait_timeout: int | None = None,
     ) -> dict[str, Any]:
         # MCP defaults to ``mcp_screenshot_quality`` (lower than CLI's 80) so
         # base64 output stays under typical MCP token budgets.
@@ -1092,6 +1098,8 @@ class DaemonClient:
                 quality=quality
                 if quality is not None
                 else self._cfg.browser.mcp_screenshot_quality,
+                wait_selector=wait_selector,
+                wait_timeout=wait_timeout,
             ),
         )
 
@@ -1846,12 +1854,20 @@ def _build_navigate_body(
 def _build_screenshot_params(
     *,
     full_page: bool,
-    format: str,
+    format: str | None,
     quality: int,
+    wait_selector: str,
+    wait_timeout: int | None,
 ) -> dict[str, str]:
-    params: dict[str, str] = {"format": format, "quality": str(quality)}
+    params: dict[str, str] = {"quality": str(quality)}
+    if format is not None:
+        params["format"] = format
     if full_page:
         params["full_page"] = "true"
+    if wait_selector:
+        params["wait_selector"] = wait_selector
+    if wait_timeout is not None:
+        params["wait_timeout"] = str(wait_timeout)
     return params
 
 

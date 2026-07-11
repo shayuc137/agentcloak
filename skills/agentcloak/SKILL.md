@@ -80,7 +80,7 @@ Snapshot modes: `compact` (default, interactive + containers only, capped at 80 
 | `cloak snapshot --offset 50` | Paginate from 50th element |
 | `cloak snapshot --frames` | Include iframe content |
 | `cloak snapshot --diff` | Mark `[+]` added, `[~]` changed vs previous |
-| `cloak screenshot [--output FILE]` | Screenshot to file, stdout = path (`--full-page`, `--format jpeg\|png`, `--quality N`; see `recipes.md` for format choice) |
+| `cloak screenshot [--output FILE]` | Screenshot to file, stdout = path (`--full-page`, `--format jpeg\|png`, `--quality N`, `--wait-selector CSS`) |
 | `cloak resume` | Session state: URL, tabs, recent actions |
 
 ### Interaction
@@ -209,7 +209,9 @@ cloak wait --js "document.fonts.ready.then(() => true)"
 cloak screenshot --format png
 ```
 
-**Screenshot format**: `jpeg` (default, ~4-10x smaller — observe-act loops, layout checks) vs `png` (lossless — UI design, OCR, vision models). MCP defaults to quality 50.
+For one selector readiness condition, combine it with capture: `cloak screenshot --wait-selector "#ready" --wait-timeout 15000`.
+
+**Screenshot format**: omitted format follows `browser.screenshot_format` (`jpeg` by default). JPEG is ~4-10x smaller for observe-act loops; PNG is lossless for UI design, OCR, and visual comparison. MCP defaults to JPEG quality 50.
 
 **Wait variants**: `--selector ".el"` | `--url "**/path"` | `--load networkidle` | `--js "expr"` | `--ms N` | add `--state hidden` to wait for disappearance. `--js` must return a truthy value — wrap Promises: `.then(() => true)`.
 

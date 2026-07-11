@@ -27,6 +27,7 @@ patch ``_send_async`` because the CLI is sync-only.
 
 from __future__ import annotations
 
+import base64
 import json
 from typing import TYPE_CHECKING, Any
 from unittest.mock import patch
@@ -222,6 +223,52 @@ class TestSnapshot:
 
         assert result.exit_code == 0, result.output
         assert send.call_args.kwargs["params"]["selector"] == "main"
+
+
+class TestScreenshot:
+    def test_uses_response_format_for_default_extension_and_forwards_wait(
+        self, tmp_path: Path
+    ) -> None:
+        payload = _envelope(
+            {
+                "base64": base64.b64encode(b"png-bytes").decode(),
+                "size": 9,
+                "format": "png",
+            }
+        )
+        with (
+            patch(
+                "agentcloak.client.DaemonClient.screenshot_sync",
+                return_value=payload,
+            ) as screenshot,
+            patch(
+                "agentcloak.cli.commands.browser.gettempdir",
+                return_value=str(tmp_path),
+            ),
+            patch("agentcloak.cli.commands.browser.time.time", return_value=1.0),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "screenshot",
+                    "--wait-selector",
+                    "#ready",
+                    "--wait-timeout",
+                    "1200",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        output = tmp_path / "agentcloak-1000.png"
+        assert result.stdout.strip() == str(output)
+        assert output.read_bytes() == b"png-bytes"
+        screenshot.assert_called_once_with(
+            full_page=False,
+            format=None,
+            quality=None,
+            wait_selector="#ready",
+            wait_timeout=1200,
+        )
 
 
 # ---------------------------------------------------------------------------

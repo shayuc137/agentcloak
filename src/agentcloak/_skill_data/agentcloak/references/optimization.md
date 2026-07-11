@@ -67,6 +67,7 @@ The page or wait condition didn't resolve in time.
 cloak navigate "<url>" --timeout 60        # one-off longer budget
 # or globally:  AGENTCLOAK_NAVIGATION_TIMEOUT=60
 cloak wait --selector ".ready" --timeout 15000   # verify the condition is actually reachable
+cloak screenshot --wait-selector ".ready" --wait-timeout 15000  # wait + capture in one call
 ```
 
 ### `fill` crawling on a form

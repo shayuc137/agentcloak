@@ -54,8 +54,12 @@ Take a screenshot of the current page. Returns an `ImageContent` (the image byte
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `full_page` | `bool` | `false` | Capture full scrollable page |
-| `format` | `str` | `jpeg` | `jpeg` or `png` |
+| `format` | `str \| null` | `null` | Override with `jpeg` or `png`; omitted uses `browser.screenshot_format` |
 | `quality` | `int` | `config.mcp_screenshot_quality` | JPEG quality 0-100 (defaults lower than the CLI to fit MCP token budgets) |
+| `wait_selector` | `str` | `""` | Wait for this CSS selector to be visible before capture |
+| `wait_timeout` | `int \| null` | `null` | Selector wait timeout in ms; omitted uses `browser.action_timeout` |
+
+The returned `format` determines both the `ImageContent` MIME type and metadata.
 
 ## Interaction
 

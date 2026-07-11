@@ -808,10 +808,14 @@ async function cmdScreenshot(msg) {
   if (!tabId) return { ok: false, error: "no active tab" };
 
   await ensureAttached(tabId);
+  const request = msg.params || {};
+  const format = request.format === "jpeg" ? "jpeg" : "png";
+  const params = { format };
+  if (format === "jpeg") params.quality = request.quality ?? 80;
   const result = await chrome.debugger.sendCommand(
     { tabId },
     "Page.captureScreenshot",
-    { format: "png" }
+    params
   );
 
   return { ok: true, data: { base64: result.data } };

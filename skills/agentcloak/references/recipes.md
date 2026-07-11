@@ -105,8 +105,7 @@ Other useful wait-then-screenshot patterns:
 
 ```bash
 # Wait for a specific element to render before capturing
-cloak wait --selector ".chart-rendered"
-cloak screenshot
+cloak screenshot --wait-selector ".chart-rendered" --wait-timeout 15000
 
 # Wait for client-side routing to complete
 cloak click 5                              # navigation link
@@ -118,7 +117,7 @@ cloak screenshot
 
 | Format | When to use | Size |
 |--------|------------|------|
-| `jpeg` (default) | Layout checks, page state verification, agent observe-act loops | ~4-10x smaller |
+| `jpeg` (default config) | Layout checks, page state verification, agent observe-act loops | ~4-10x smaller |
 | `png` | UI design verification, OCR, vision models, pixel-level comparison | Lossless |
 
 ```bash
@@ -127,7 +126,21 @@ cloak screenshot --format png              # lossless for design work
 cloak screenshot --format jpeg --quality 50 # smaller for token budgets
 ```
 
-MCP tools default to JPEG quality 50 (configurable via `browser.mcp_screenshot_quality`).
+Omitted format follows `browser.screenshot_format`. MCP tools default to JPEG quality 50 (configurable via `browser.mcp_screenshot_quality`).
+
+## SPA Hash Targets
+
+SPA routers may render a fragment target after browser-native hash scrolling has
+already finished. Keep navigation timing explicit:
+
+```bash
+cloak navigate "https://example.com/settings#billing"
+cloak wait --selector "#billing" --timeout 15000
+cloak js evaluate "document.getElementById('billing')?.scrollIntoView({block:'start'})"
+cloak screenshot --wait-selector "#billing"
+```
+
+Do not assume navigation will poll for or re-scroll a late-rendered hash target.
 
 ## Action with Snapshot (save a round trip)
 

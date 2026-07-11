@@ -42,6 +42,7 @@ humanize = true
 action_timeout = 30000
 batch_settle_timeout = 2000
 max_return_size = 50000
+screenshot_format = "jpeg"
 screenshot_quality = 80
 mcp_screenshot_quality = 50
 snapshot_max_nodes = 80
@@ -101,6 +102,7 @@ All environment variables use the `AGENTCLOAK_` prefix.
 | `AGENTCLOAK_ACTION_TIMEOUT` | `browser.action_timeout` | `30000` | Action timeout in milliseconds |
 | `AGENTCLOAK_BATCH_SETTLE_TIMEOUT` | `browser.batch_settle_timeout` | `2000` | Time to wait between batch actions for page to settle (ms) |
 | `AGENTCLOAK_MAX_RETURN_SIZE` | `browser.max_return_size` | `50000` | Max bytes returned from `/evaluate` before truncation (prevents MCP token blow-up) |
+| `AGENTCLOAK_SCREENSHOT_FORMAT` | `browser.screenshot_format` | `jpeg` | Default screenshot encoding: `jpeg` or lossless `png` |
 | `AGENTCLOAK_SCREENSHOT_QUALITY` | `browser.screenshot_quality` | `80` | Default JPEG quality for CLI screenshots (0-100) |
 | `AGENTCLOAK_MCP_SCREENSHOT_QUALITY` | `browser.mcp_screenshot_quality` | `50` | Default JPEG quality for MCP screenshots (lower than CLI to save tokens) |
 | `AGENTCLOAK_SNAPSHOT_MAX_NODES` | `browser.snapshot_max_nodes` | `80` | Default compact-mode snapshot node cap when caller didn't pass `--limit` / `max_nodes`. Pass `--limit 0` (CLI) or `max_nodes=0` (MCP) to opt back into the full tree. Only applied in compact mode. |

@@ -14,6 +14,7 @@ from fastapi import APIRouter, Query
 # ``screenshot_to_base64`` lives on the abstract base module so daemon code
 # stays backend-agnostic (layer isolation: daemon → BrowserContextBase).
 from agentcloak.browser.base import screenshot_to_base64
+from agentcloak.core.errors import BackendError
 from agentcloak.daemon.dependencies import (  # noqa: TC001
     BrowserCtxDep,
     ConfigDep,
@@ -87,9 +88,11 @@ async def handle_screenshot(
         False,
         description="Capture the full scrollable page instead of the viewport.",
     ),
-    format: str = Query(
-        "jpeg",
-        description="Format: jpeg (smaller) or png (lossless, better for OCR/design).",
+    format: str | None = Query(
+        None,
+        description=(
+            "Format override: jpeg or png. Unset uses browser.screenshot_format."
+        ),
     ),
     quality: int | None = Query(
         None,
@@ -102,13 +105,37 @@ async def handle_screenshot(
             "path+size instead of base64. Omit to return base64 inline."
         ),
     ),
+    wait_selector: str = Query(
+        "", description="Wait for this selector to be visible before capture."
+    ),
+    wait_timeout: int | None = Query(
+        None,
+        gt=0,
+        description="Selector wait timeout in ms; unset uses browser.action_timeout.",
+    ),
 ) -> dict[str, Any]:
+    resolved_format = format or config.browser.screenshot_format
+    if resolved_format not in ("jpeg", "png"):
+        raise BackendError(
+            error="invalid_screenshot_format",
+            hint=f"Unsupported screenshot format '{resolved_format}'",
+            action="use jpeg or png",
+        )
+    if wait_selector:
+        await ctx.wait(
+            condition="selector",
+            value=wait_selector,
+            timeout=wait_timeout,
+            state="visible",
+        )
     # ``quality=None`` resolves to the configured default. CLI callers leave
     # this unset and inherit the file/env default; MCP tools pass an explicit
     # lower value so screenshots stay under MCP token budgets.
     if quality is None:
         quality = config.browser.screenshot_quality
-    raw = await ctx.screenshot(full_page=full_page, format=format, quality=quality)
+    raw = await ctx.screenshot(
+        full_page=full_page, format=resolved_format, quality=quality
+    )
 
     # ``output_path`` lets an API/MCP caller driving a same-host daemon get a
     # file directly. The CLI keeps its own base64→file path (it may target a
@@ -119,11 +146,11 @@ async def handle_screenshot(
         dest = Path(output_path).expanduser()
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(raw)
-        data = {"path": str(dest), "size": len(raw), "format": format}
+        data = {"path": str(dest), "size": len(raw), "format": resolved_format}
         return _ok(data, seq=ctx.seq)
 
     b64 = screenshot_to_base64(raw)
-    data = {"base64": b64, "size": len(raw), "format": format}
+    data = {"base64": b64, "size": len(raw), "format": resolved_format}
     return _ok(data, seq=ctx.seq)
 
 

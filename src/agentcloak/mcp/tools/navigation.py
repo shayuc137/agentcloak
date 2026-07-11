@@ -139,23 +139,28 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     async def agentcloak_screenshot(
         full_page: bool = False,
-        format: str = "jpeg",
+        format: str | None = None,
         quality: int = cfg.browser.mcp_screenshot_quality,
+        wait_selector: str = "",
+        wait_timeout: int | None = None,
     ) -> list[ImageContent | TextContent]:
         """Take a screenshot of the current page.
 
         For understanding page layout or verifying visual state.
         For element interaction, prefer agentcloak_snapshot (a11y tree).
 
-        Default format is JPEG at a lower quality than the CLI default to keep
-        the base64 payload under MCP token budgets. Use format='png' when
-        pixel-perfect fidelity is needed.
+        The configured screenshot format is used when format is omitted. JPEG
+        uses a lower quality than the CLI default to keep the base64 payload
+        under MCP token budgets.
 
         Args:
             full_page: Capture the full scrollable page instead of viewport
-            format: Image format — 'jpeg' (default, smaller) or 'png' (lossless)
+            format: Optional image format override: 'jpeg' or 'png'
             quality: JPEG quality 0-100 (defaults to
                 ``config.browser.mcp_screenshot_quality``, ignored for png)
+            wait_selector: Wait for this selector to be visible before capture
+            wait_timeout: Selector wait timeout in ms; omitted uses the browser
+                action timeout
 
         Returns:
             A list with one ``ImageContent`` (the multimodal LLM reads the
@@ -166,7 +171,11 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         """
         try:
             envelope = await client.screenshot(
-                full_page=full_page, format=format, quality=quality
+                full_page=full_page,
+                format=format,
+                quality=quality,
+                wait_selector=wait_selector,
+                wait_timeout=wait_timeout,
             )
         except AgentBrowserError as exc:
             return [TextContent(type="text", text=error_json(exc))]
@@ -174,8 +183,12 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         data: dict[str, object] = envelope.get("data", envelope) or {}  # type: ignore[assignment]
         b64 = str(data.get("base64", "") or "")
         size = int(data.get("size", 0) or 0)  # type: ignore[arg-type]
-        mime = "image/png" if format == "png" else "image/jpeg"
+        resolved_format = str(data.get("format", "jpeg") or "jpeg")
+        mime = "image/png" if resolved_format == "png" else "image/jpeg"
         return [
             ImageContent(type="image", data=b64, mimeType=mime),
-            TextContent(type="text", text=f"screenshot {size} bytes | format={format}"),
+            TextContent(
+                type="text",
+                text=f"screenshot {size} bytes | format={resolved_format}",
+            ),
         ]

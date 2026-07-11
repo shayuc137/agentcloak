@@ -97,23 +97,25 @@ cloak snapshot [--mode MODE] [--selector CSS] [--limit N] [--focus N] [--offset 
 截取当前页面的屏幕截图。
 
 ```bash
-cloak screenshot [--output FILE] [--full-page] [--format FORMAT] [--quality N]
+cloak screenshot [--output FILE] [--full-page] [--format FORMAT] [--quality N] [--wait-selector CSS] [--wait-timeout MS]
 ```
 
 | 参数 | 默认值 | 说明 |
 |------|-------|------|
 | `--output` | 自动放在系统临时目录（`tempfile.gettempdir()`） | 保存到文件；stdout 打印文件路径 |
 | `--full-page` | 关闭 | 捕获完整可滚动页面 |
-| `--format` | `jpeg` | `jpeg` 或 `png` |
+| `--format` | `browser.screenshot_format`（`jpeg`） | `jpeg` 或 `png` |
 | `--quality` | `80` | JPEG 质量 0-100（PNG 时忽略） |
+| `--wait-selector` | 无 | 截图前等待 CSS 选择器可见 |
+| `--wait-timeout` | `browser.action_timeout` | 选择器等待超时（毫秒） |
 
 > [!TIP]
 > **PNG 和 JPEG 的选择：**
 > - `--format png` — UI 设计验证、OCR、视觉模型。无损质量避免 JPEG 伪影干扰文字识别或像素级对比。
-> - `--format jpeg`（默认）— 版面检查、页面状态验证。体积小 4-10 倍，像素精度要求不高时够用。
+> - `--format jpeg` — 版面检查、页面状态验证。体积小 4-10 倍，像素精度要求不高时够用。
 >
-> MCP 工具默认 JPEG 质量 50（可通过 `browser.mcp_screenshot_quality` 配置），
-> 控制 token 预算。CLI 默认质量 80。
+> 省略格式时使用 `browser.screenshot_format`。MCP 的 JPEG 质量默认 50
+> （可通过 `browser.mcp_screenshot_quality` 配置），CLI 默认质量 80。
 
 ### resume
 
@@ -296,12 +298,20 @@ cloak wait --load networkidle
 # 等待特定 API 数据就绪后提取
 cloak wait --js "window.__DATA_LOADED === true"
 
+# SPA 在浏览器原生锚点滚动结束后才渲染目标
+cloak navigate "https://example.com/settings#billing"
+cloak wait --selector "#billing" --timeout 15000
+cloak js evaluate "document.getElementById('billing')?.scrollIntoView({block:'start'})"
+cloak screenshot --wait-selector "#billing"
+
 # 组合：导航 → 等待网络空闲 + 字体加载 → 全页截图
 cloak navigate "https://example.com"
 cloak wait --load networkidle
 cloak wait --js "document.fonts.ready.then(() => true)"
 cloak screenshot --format png --full-page
 ```
+
+导航保留浏览器原生锚点行为，不会轮询延迟渲染的 SPA 目标。目标在导航后才出现时，使用显式选择器等待和滚动流程。
 
 > [!TIP]
 > `--js` 表达式必须返回真值。对于 Promise（如 `document.fonts.ready`），

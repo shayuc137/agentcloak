@@ -97,25 +97,27 @@ Output starts with a header line:
 Take a screenshot of the current page.
 
 ```bash
-cloak screenshot [--output FILE] [--full-page] [--format FORMAT] [--quality N]
+cloak screenshot [--output FILE] [--full-page] [--format FORMAT] [--quality N] [--wait-selector CSS] [--wait-timeout MS]
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--output` | auto-named in OS temp dir (`tempfile.gettempdir()`) | Save to file; stdout prints the path |
 | `--full-page` | off | Capture full scrollable page |
-| `--format` | `jpeg` | `jpeg` or `png` |
+| `--format` | `browser.screenshot_format` (`jpeg`) | `jpeg` or `png` |
 | `--quality` | `80` | JPEG quality 0-100 (ignored for PNG) |
+| `--wait-selector` | none | Wait for a CSS selector to be visible before capture |
+| `--wait-timeout` | `browser.action_timeout` | Selector wait timeout in milliseconds |
 
 > [!TIP]
 > **When to use PNG vs JPEG:**
 > - `--format png` — UI design verification, OCR, vision models. Lossless quality
 >   avoids JPEG artefacts that confuse text recognition or pixel-level comparison.
-> - `--format jpeg` (default) — layout checks, page state verification. Ships
+> - `--format jpeg` — layout checks, page state verification. Ships
 >   ~4-10× smaller payloads, good enough when pixel fidelity doesn't matter.
 >
-> MCP tools default to JPEG quality 50 (configurable via `browser.mcp_screenshot_quality`)
-> to stay within token budgets. CLI defaults to quality 80.
+> Omitted format follows `browser.screenshot_format`. MCP tools use JPEG quality 50
+> (configurable via `browser.mcp_screenshot_quality`); CLI uses quality 80.
 
 ### resume
 
@@ -300,12 +302,22 @@ cloak wait --load networkidle
 # Wait for a specific API response before extracting data
 cloak wait --js "window.__DATA_LOADED === true"
 
+# SPA hash target rendered after native fragment scrolling finished
+cloak navigate "https://example.com/settings#billing"
+cloak wait --selector "#billing" --timeout 15000
+cloak js evaluate "document.getElementById('billing')?.scrollIntoView({block:'start'})"
+cloak screenshot --wait-selector "#billing"
+
 # Combine: navigate, wait for fonts + network idle, then screenshot
 cloak navigate "https://example.com"
 cloak wait --load networkidle
 cloak wait --js "document.fonts.ready.then(() => true)"
 cloak screenshot --format png --full-page
 ```
+
+Navigation keeps browser-native fragment behavior and does not poll for late SPA
+targets. Use the explicit selector wait and scroll recipe when the target renders
+after navigation.
 
 > [!TIP]
 > `--js` expressions must return a truthy value. For Promises like

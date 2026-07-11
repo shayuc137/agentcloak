@@ -144,6 +144,7 @@ log_to_file = false        # write daemon log to ~/.agentcloak/logs/daemon.log
 log_max_bytes = 10000000   # rotate when log exceeds this size (10 MB)
 log_backup_count = 3       # keep N rotated logs
 max_return_size = 50000    # /evaluate response cap (bytes)
+screenshot_format = "jpeg" # jpeg (small) or png (lossless UI acceptance)
 screenshot_quality = 80    # CLI JPEG quality
 mcp_screenshot_quality = 50 # MCP JPEG quality (smaller base64)
 proxy = ""                  # upstream browser proxy (e.g. "socks5://user:pw@host:1080")

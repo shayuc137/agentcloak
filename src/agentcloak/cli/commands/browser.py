@@ -78,8 +78,11 @@ def browser_screenshot(
     full_page: bool = typer.Option(
         False, "--full-page", help="Capture full scrollable page."
     ),
-    format: str = typer.Option(
-        "jpeg", "--format", "-f", help="Image format: jpeg or png."
+    format: str | None = typer.Option(
+        None,
+        "--format",
+        "-f",
+        help="Image format override: jpeg or png (default: browser config).",
     ),
     quality: int | None = typer.Option(
         None,
@@ -90,14 +93,31 @@ def browser_screenshot(
             "ignored for png)."
         ),
     ),
+    wait_selector: str = typer.Option(
+        "",
+        "--wait-selector",
+        help="Wait for this selector to be visible before capture.",
+    ),
+    wait_timeout: int | None = typer.Option(
+        None,
+        "--wait-timeout",
+        help="Selector wait timeout in ms (default: browser.action_timeout).",
+    ),
 ) -> None:
     """Take a screenshot. Defaults to a file in the system temp dir; prints the path."""
     client = DaemonClient()
     # Always pull the JSON envelope so we get the base64 payload — text mode
     # would only give us a metadata line.
-    result = client.screenshot_sync(full_page=full_page, format=format, quality=quality)
+    result = client.screenshot_sync(
+        full_page=full_page,
+        format=format,
+        quality=quality,
+        wait_selector=wait_selector,
+        wait_timeout=wait_timeout,
+    )
     data = result.get("data", result)
     seq = int(result.get("seq", 0) or 0)
+    resolved_format = str(data.get("format", "jpeg") or "jpeg")
 
     b64_str: str = data.get("base64", "")
     if not b64_str:
@@ -109,7 +129,7 @@ def browser_screenshot(
 
     if output is None:
         ts = int(time.time() * 1000)
-        ext = "png" if format == "png" else "jpg"
+        ext = "png" if resolved_format == "png" else "jpg"
         output = Path(gettempdir()) / f"agentcloak-{ts}.{ext}"
 
     output.write_bytes(base64.b64decode(b64_str))
@@ -119,7 +139,11 @@ def browser_screenshot(
             {
                 "ok": True,
                 "seq": seq,
-                "data": {"saved": str(output), "size": data.get("size", 0)},
+                "data": {
+                    "saved": str(output),
+                    "size": data.get("size", 0),
+                    "format": resolved_format,
+                },
             }
         )
         return

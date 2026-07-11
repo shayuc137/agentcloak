@@ -127,6 +127,8 @@ class BrowserConfig:
     # Maximum bytes of serialized result returned from /evaluate. Larger values
     # are truncated with a marker — prevents MCP token blow-up.
     max_return_size: int = 50_000
+    # Default screenshot encoding when the caller omits an explicit format.
+    screenshot_format: str = "jpeg"
     # Default JPEG quality for /screenshot. CLI passes through unchanged.
     screenshot_quality: int = 80
     # Screenshot quality used by MCP tools. Lower than the CLI default (80) so
@@ -340,6 +342,10 @@ def load_config(*, root: Path | None = None) -> tuple[Paths, AgentcloakConfig]:
         _env("MAX_RETURN_SIZE")
         or browser_tbl.get("max_return_size", cfg.browser.max_return_size)
     )
+    cfg.browser.screenshot_format = str(
+        _env("SCREENSHOT_FORMAT")
+        or browser_tbl.get("screenshot_format", cfg.browser.screenshot_format)
+    )
     cfg.browser.screenshot_quality = int(
         _env("SCREENSHOT_QUALITY")
         or browser_tbl.get("screenshot_quality", cfg.browser.screenshot_quality)
@@ -432,6 +438,7 @@ class ConfigError(ValueError):
 
 _VALID_TIERS = {"auto", "cloak", "playwright", "remote_bridge"}
 _VALID_LOG_LEVELS = {"debug", "info", "warning", "error"}
+_VALID_SCREENSHOT_FORMATS = {"jpeg", "png"}
 
 
 def _validate(cfg: AgentcloakConfig) -> None:
@@ -452,6 +459,11 @@ def _validate(cfg: AgentcloakConfig) -> None:
         raise ConfigError(
             f"viewport dimensions must be positive, "
             f"got {cfg.browser.viewport_width}x{cfg.browser.viewport_height}"
+        )
+    if cfg.browser.screenshot_format not in _VALID_SCREENSHOT_FORMATS:
+        raise ConfigError(
+            "browser.screenshot_format must be one of "
+            f"{_VALID_SCREENSHOT_FORMATS}, got {cfg.browser.screenshot_format!r}"
         )
     if cfg.browser.screenshot_quality < 0 or cfg.browser.screenshot_quality > 100:
         raise ConfigError(
@@ -498,6 +510,7 @@ _ENV_KEYS: dict[str, list[str]] = {
     "http_connect_timeout": ["HTTP_CONNECT_TIMEOUT"],
     "session_idle_timeout": ["SESSION_IDLE_TIMEOUT"],
     "max_return_size": ["MAX_RETURN_SIZE"],
+    "screenshot_format": ["SCREENSHOT_FORMAT"],
     "screenshot_quality": ["SCREENSHOT_QUALITY"],
     "mcp_screenshot_quality": ["MCP_SCREENSHOT_QUALITY"],
     "snapshot_max_nodes": ["SNAPSHOT_MAX_NODES"],
@@ -546,6 +559,7 @@ _FIELD_SCHEMA: dict[str, tuple[str, str, type]] = {
     "browser.idle_timeout_min": ("browser", "idle_timeout_min", int),
     "browser.stop_on_exit": ("browser", "stop_on_exit", bool),
     "browser.max_return_size": ("browser", "max_return_size", int),
+    "browser.screenshot_format": ("browser", "screenshot_format", str),
     "browser.screenshot_quality": ("browser", "screenshot_quality", int),
     "browser.mcp_screenshot_quality": ("browser", "mcp_screenshot_quality", int),
     "browser.snapshot_max_nodes": ("browser", "snapshot_max_nodes", int),
@@ -595,6 +609,7 @@ _FLAT_FIELD_MAP: list[tuple[str, str, str]] = [
     ("idle_timeout_min", "browser", "idle_timeout_min"),
     ("stop_on_exit", "browser", "stop_on_exit"),
     ("max_return_size", "browser", "max_return_size"),
+    ("screenshot_format", "browser", "screenshot_format"),
     ("screenshot_quality", "browser", "screenshot_quality"),
     ("mcp_screenshot_quality", "browser", "mcp_screenshot_quality"),
     ("snapshot_max_nodes", "browser", "snapshot_max_nodes"),
@@ -964,6 +979,11 @@ def write_example_config(paths: Paths) -> Path:
                 defaults.browser.max_return_size,
                 "Cap (bytes) on serialised /evaluate result; longer values\n"
                 "are truncated with a marker.",
+            ),
+            (
+                "screenshot_format",
+                defaults.browser.screenshot_format,
+                "Default /screenshot encoding: jpeg or png.",
             ),
             (
                 "screenshot_quality",

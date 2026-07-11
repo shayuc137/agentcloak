@@ -7,6 +7,7 @@ import pytest
 
 from agentcloak.core.config import (
     AgentcloakConfig,
+    ConfigError,
     Paths,
     dump_config,
     load_config,
@@ -41,6 +42,7 @@ class TestDefaults:
         assert cfg.browser.viewport_width == 1280
         assert cfg.browser.viewport_height == 720
         assert cfg.browser.navigation_timeout == 30
+        assert cfg.browser.screenshot_format == "jpeg"
         assert cfg.security.domain_whitelist == []
         assert cfg.security.content_scan is False
 
@@ -76,6 +78,23 @@ class TestLoadConfig:
         _, cfg = load_config(root=tmp_path)
         assert cfg.security.domain_whitelist == ["example.com", "test.org"]
 
+    def test_screenshot_format_file_and_env_precedence(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / "config.toml").write_text('[browser]\nscreenshot_format = "png"\n')
+        _, cfg = load_config(root=tmp_path)
+        assert cfg.browser.screenshot_format == "png"
+
+        monkeypatch.setenv("AGENTCLOAK_SCREENSHOT_FORMAT", "jpeg")
+        _, cfg = load_config(root=tmp_path)
+        assert cfg.browser.screenshot_format == "jpeg"
+
+    def test_rejects_unsupported_screenshot_format(self, tmp_path: Path) -> None:
+        (tmp_path / "config.toml").write_text('[browser]\nscreenshot_format = "webp"\n')
+
+        with pytest.raises(ConfigError, match=r"browser\.screenshot_format"):
+            load_config(root=tmp_path)
+
 
 class TestWriteExampleConfig:
     def test_writes_example_with_all_sections(self, tmp_path: Path) -> None:
@@ -101,6 +120,9 @@ class TestWriteExampleConfig:
         assert data["daemon"]["port"] == defaults.daemon.port
         assert data["browser"]["headless"] is defaults.browser.headless
         assert data["browser"]["viewport_width"] == defaults.browser.viewport_width
+        assert (
+            data["browser"]["screenshot_format"] == defaults.browser.screenshot_format
+        )
         assert (
             data["bridge"]["local_idle_timeout"] == defaults.bridge.local_idle_timeout
         )

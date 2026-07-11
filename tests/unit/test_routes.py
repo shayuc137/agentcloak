@@ -18,6 +18,8 @@ from fastapi.testclient import TestClient
 
 from agentcloak.browser.playwright_ctx import PlaywrightContext
 from agentcloak.browser.state import PageSnapshot
+from agentcloak.core.config import AgentcloakConfig
+from agentcloak.core.errors import BrowserTimeoutError
 from agentcloak.core.seq import RingBuffer, SeqCounter, SeqEvent
 from agentcloak.daemon.app import create_app
 from agentcloak.daemon.routes import (
@@ -205,6 +207,60 @@ class TestRoutes:
         data = resp.json()
         assert data["ok"] is True
         assert "base64" in data["data"]
+
+    def test_screenshot_uses_config_format_and_allows_override(
+        self, client: TestClient
+    ) -> None:
+        cfg = AgentcloakConfig()
+        cfg.browser.screenshot_format = "png"
+        client.app.state.config = cfg
+        ctx = client.app.state.browser_ctx
+
+        configured = client.get("/screenshot")
+        assert configured.status_code == 200
+        assert configured.json()["data"]["format"] == "png"
+        ctx._page.screenshot.assert_awaited_with(full_page=False, type="png")
+
+        ctx._page.screenshot.reset_mock()
+        explicit = client.get("/screenshot?format=jpeg&quality=72")
+        assert explicit.status_code == 200
+        assert explicit.json()["data"]["format"] == "jpeg"
+        ctx._page.screenshot.assert_awaited_with(
+            full_page=False, type="jpeg", quality=72
+        )
+
+    def test_screenshot_waits_for_selector_before_capture(
+        self, client: TestClient
+    ) -> None:
+        ctx = client.app.state.browser_ctx
+        ctx.wait = AsyncMock(return_value={"elapsed_ms": 4})
+
+        resp = client.get("/screenshot?wait_selector=%23ready&wait_timeout=1234")
+
+        assert resp.status_code == 200
+        ctx.wait.assert_awaited_once_with(
+            condition="selector", value="#ready", timeout=1234, state="visible"
+        )
+        ctx._page.screenshot.assert_awaited_once()
+
+    def test_screenshot_wait_timeout_keeps_structured_guidance(
+        self, client: TestClient
+    ) -> None:
+        ctx = client.app.state.browser_ctx
+        ctx.wait = AsyncMock(
+            side_effect=BrowserTimeoutError(
+                error="wait_timeout",
+                hint="Wait condition 'selector' timed out after 100ms",
+                action="increase timeout or check the condition",
+            )
+        )
+
+        resp = client.get("/screenshot?wait_selector=%23ready&wait_timeout=100")
+
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "wait_timeout"
+        assert "increase timeout" in resp.json()["action"]
+        ctx._page.screenshot.assert_not_awaited()
 
     def test_snapshot(self, client: TestClient) -> None:
         # ``include_selector_map`` defaults to ``False`` route-side so MCP

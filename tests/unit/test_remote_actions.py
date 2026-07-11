@@ -172,6 +172,37 @@ class TestScopedSnapshot:
         assert ctx._backend_node_map == {1: 43}
 
 
+class TestScreenshot:
+    @pytest.mark.asyncio
+    async def test_forwards_jpeg_format_and_quality(self) -> None:
+        ctx = _make_ctx()
+        ctx._send = AsyncMock(  # type: ignore[method-assign]
+            return_value={"base64": "anBlZw=="}
+        )
+
+        assert (
+            await ctx._screenshot_impl(full_page=False, fmt="jpeg", quality=72)
+            == b"jpeg"
+        )
+        ctx._send.assert_awaited_once_with(
+            "screenshot", {"format": "jpeg", "full_page": False, "quality": 72}
+        )
+
+    @pytest.mark.asyncio
+    async def test_png_omits_quality(self) -> None:
+        ctx = _make_ctx()
+        ctx._send = AsyncMock(  # type: ignore[method-assign]
+            return_value={"base64": "cG5n"}
+        )
+
+        assert (
+            await ctx._screenshot_impl(full_page=True, fmt="png", quality=10) == b"png"
+        )
+        ctx._send.assert_awaited_once_with(
+            "screenshot", {"format": "png", "full_page": True}
+        )
+
+
 # ---------------------------------------------------------------------------
 # B2.2: _click_impl
 # ---------------------------------------------------------------------------

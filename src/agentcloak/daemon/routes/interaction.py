@@ -12,6 +12,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
+from agentcloak.core.cookie_snapshot import normalize_cookies_for_playwright
 from agentcloak.daemon.dependencies import (  # noqa: TC001
     BrowserCtxDep,
     RemoteCtxDep,
@@ -107,9 +108,10 @@ async def handle_cookies_import(
                 "action": "pass cookies as JSON array in 'cookies' field",
             },
         )
+    cookies, skipped = normalize_cookies_for_playwright(body.cookies)
     browser_context = ctx._get_browser_context()
-    await browser_context.add_cookies(body.cookies)
-    data = {"imported": len(body.cookies)}
+    await browser_context.add_cookies(cookies)
+    data = {"imported": len(cookies), "skipped": skipped}
     return _ok(data, seq=ctx.seq)
 
 

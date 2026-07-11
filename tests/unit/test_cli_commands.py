@@ -30,13 +30,14 @@ from __future__ import annotations
 import base64
 import json
 from typing import TYPE_CHECKING, Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 from typer.testing import CliRunner
 
 from agentcloak.cli import output as cli_output
 from agentcloak.cli.app import app
+from agentcloak.core.errors import AgentBrowserError
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -226,6 +227,70 @@ class TestSnapshot:
 
 
 class TestScreenshot:
+    def test_wait_for_calls_wait_then_screenshot(self, tmp_path: Path) -> None:
+        output = tmp_path / "page.png"
+        payload = _envelope(
+            {
+                "base64": base64.b64encode(b"png-bytes").decode(),
+                "size": 9,
+                "format": "png",
+            }
+        )
+        client = MagicMock()
+        client._send_sync.return_value = _envelope({"matched": True})
+        client.screenshot_sync.return_value = payload
+
+        with patch("agentcloak.cli.commands.browser.DaemonClient", return_value=client):
+            result = runner.invoke(
+                app,
+                ["screenshot", "--wait-for", "#late", "-o", str(output)],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert output.read_bytes() == b"png-bytes"
+        assert client.mock_calls[:2] == [
+            call._send_sync(
+                "POST",
+                "/wait",
+                json_body={
+                    "condition": "selector",
+                    "value": "#late",
+                    "state": "visible",
+                },
+            ),
+            call.screenshot_sync(
+                full_page=False,
+                format="png",
+                quality=None,
+                wait_selector="",
+                wait_timeout=None,
+            ),
+        ]
+
+    def test_wait_for_failure_short_circuits_screenshot(self, tmp_path: Path) -> None:
+        client = MagicMock()
+        client._send_sync.side_effect = AgentBrowserError(
+            error="wait_timeout",
+            hint="Selector '#late' was not visible before timeout",
+            action="check the selector or increase the timeout",
+        )
+
+        with patch("agentcloak.cli.commands.browser.DaemonClient", return_value=client):
+            result = runner.invoke(
+                app,
+                [
+                    "screenshot",
+                    "--wait-for",
+                    "#late",
+                    "-o",
+                    str(tmp_path / "page.png"),
+                ],
+            )
+
+        assert result.exit_code == 1
+        assert "Selector '#late' was not visible before timeout" in result.output
+        client.screenshot_sync.assert_not_called()
+
     def test_uses_response_format_for_default_extension_and_forwards_wait(
         self, tmp_path: Path
     ) -> None:

@@ -754,7 +754,11 @@ def render_cookies_export_text(data: dict[str, Any]) -> str:
 
 def render_cookies_import_text(data: dict[str, Any]) -> str:
     """Render cookies import as ``imported <N> cookies``."""
-    return f"imported {int(data.get('imported', 0) or 0)} cookies"
+    result = f"imported {int(data.get('imported', 0) or 0)} cookies"
+    skipped = int(data.get("skipped", 0) or 0)
+    if skipped > 0:
+        result += f"; skipped {skipped} invalid cookies"
+    return result
 
 
 def render_cdp_endpoint_text(data: dict[str, Any]) -> str:

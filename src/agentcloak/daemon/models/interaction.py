@@ -58,6 +58,7 @@ class CookiesImportRequest(BaseModel):
 
 class CookiesImportResponse(BaseModel):
     imported: int
+    skipped: int = 0
 
 
 class CookieSetRequest(BaseModel):

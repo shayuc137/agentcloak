@@ -105,6 +105,11 @@ def browser_screenshot(
         "--wait-timeout",
         help="Selector wait timeout in ms (default: browser.action_timeout).",
     ),
+    wait_for: str = typer.Option(
+        "",
+        "--wait-for",
+        help="Wait for this CSS selector via the wait command before capture.",
+    ),
 ) -> None:
     """Take a screenshot. Defaults to a file in the system temp dir; prints the path."""
     client = DaemonClient()
@@ -119,13 +124,26 @@ def browser_screenshot(
         return
     # Always pull the JSON envelope so we get the base64 payload — text mode
     # would only give us a metadata line.
-    result = client.screenshot_sync(
-        full_page=full_page,
-        format=resolution.format,
-        quality=quality,
-        wait_selector=wait_selector,
-        wait_timeout=wait_timeout,
-    )
+    try:
+        if wait_for:
+            wait_body: dict[str, object] = {
+                "condition": "selector",
+                "value": wait_for,
+                "state": "visible",
+            }
+            if wait_timeout is not None:
+                wait_body["timeout"] = wait_timeout
+            client._send_sync("POST", "/wait", json_body=wait_body)  # pyright: ignore[reportPrivateUsage]
+        result = client.screenshot_sync(
+            full_page=full_page,
+            format=resolution.format,
+            quality=quality,
+            wait_selector=wait_selector,
+            wait_timeout=wait_timeout,
+        )
+    except AgentBrowserError as exc:
+        error_from_exception(exc)
+        return
     data = result.get("data", result)
     seq = int(result.get("seq", 0) or 0)
     resolved_format = str(data.get("format", "jpeg") or "jpeg")

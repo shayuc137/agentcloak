@@ -98,6 +98,137 @@ class TestMCPServerCreation:
             wait_timeout=1500,
         )
 
+    @pytest.mark.asyncio
+    async def test_screenshot_wait_for_calls_wait_before_capture(self) -> None:
+        try:
+            from mcp.server.fastmcp import FastMCP
+        except ImportError:
+            pytest.skip("mcp package not installed")
+        from unittest.mock import AsyncMock
+
+        from agentcloak.core.config import AgentcloakConfig
+        from agentcloak.mcp.tools.navigation import register
+
+        client = AsyncMock()
+        client.config = AgentcloakConfig()
+        client.screenshot.return_value = {
+            "ok": True,
+            "seq": 1,
+            "data": {"base64": "cG5n", "size": 3, "format": "png"},
+        }
+        mcp = FastMCP("test")
+        register(mcp, client)
+        tool = mcp._tool_manager._tools["agentcloak_screenshot"]  # type: ignore[union-attr]
+
+        await tool.fn(wait_for="#late")
+
+        client.wait.assert_awaited_once_with(
+            condition="selector",
+            value="#late",
+            timeout=None,
+            state="visible",
+        )
+        assert client.method_calls[0][0] == "wait"
+        assert client.method_calls[1][0] == "screenshot"
+
+    @pytest.mark.asyncio
+    async def test_screenshot_wait_for_failure_skips_capture(self) -> None:
+        try:
+            from mcp.server.fastmcp import FastMCP
+        except ImportError:
+            pytest.skip("mcp package not installed")
+        from unittest.mock import AsyncMock
+
+        from agentcloak.core.config import AgentcloakConfig
+        from agentcloak.mcp.tools.navigation import register
+
+        client = AsyncMock()
+        client.config = AgentcloakConfig()
+        client.wait.side_effect = AgentBrowserError(
+            error="wait_timeout",
+            hint="selector did not become visible",
+            action="check the selector",
+        )
+        mcp = FastMCP("test")
+        register(mcp, client)
+        tool = mcp._tool_manager._tools["agentcloak_screenshot"]  # type: ignore[union-attr]
+
+        result = await tool.fn(wait_for="#late")
+
+        assert orjson.loads(result[0].text)["error"] == "wait_timeout"
+        client.screenshot.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_cookies_export_writes_active_profile_snapshot(
+        self, tmp_path: Any
+    ) -> None:
+        try:
+            from mcp.server.fastmcp import FastMCP
+        except ImportError:
+            pytest.skip("mcp package not installed")
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from agentcloak.core.config import Paths
+        from agentcloak.mcp.tools.management import register
+
+        client = AsyncMock()
+        client.cookies_export.return_value = {
+            "ok": True,
+            "seq": 1,
+            "data": {
+                "cookies": [{"name": "sid", "value": "abc"}],
+                "count": 1,
+            },
+        }
+        client.health.return_value = {"ok": True, "active_profile": "dos"}
+        mcp = FastMCP("test")
+        register(mcp, client)
+        tool = mcp._tool_manager._tools["agentcloak_cookies"]  # type: ignore[union-attr]
+
+        with patch(
+            "agentcloak.mcp.tools.management.load_config",
+            return_value=(Paths(root=tmp_path), MagicMock()),
+        ):
+            result = await tool.fn(action="export")
+
+        assert "sid=abc" in result
+        snapshot = tmp_path / "profiles" / "dos" / "cookies-snapshot.json"
+        assert orjson.loads(snapshot.read_bytes())["count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_cookies_restore_file_calls_existing_import(
+        self, tmp_path: Any
+    ) -> None:
+        try:
+            from mcp.server.fastmcp import FastMCP
+        except ImportError:
+            pytest.skip("mcp package not installed")
+        from unittest.mock import AsyncMock
+
+        from agentcloak.mcp.tools.management import register
+
+        snapshot = tmp_path / "manual.json"
+        snapshot.write_bytes(
+            orjson.dumps({"cookies": [{"name": "sid", "value": "abc"}]})
+        )
+        client = AsyncMock()
+        client.cookies_import.return_value = {
+            "ok": True,
+            "seq": 2,
+            "data": {"imported": 1},
+        }
+        mcp = FastMCP("test")
+        register(mcp, client)
+        tool = mcp._tool_manager._tools["agentcloak_cookies"]  # type: ignore[union-attr]
+
+        result = await tool.fn(action="restore", file=str(snapshot))
+
+        assert "imported 1 cookies" in result
+        client.cookies_import.assert_awaited_once_with(
+            cookies=[{"name": "sid", "value": "abc"}]
+        )
+        client.health.assert_not_awaited()
+
     def test_tool_count_is_35(self) -> None:
         try:
             from agentcloak.mcp.server import create_server

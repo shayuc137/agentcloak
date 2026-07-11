@@ -143,6 +143,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         quality: int = cfg.browser.mcp_screenshot_quality,
         wait_selector: str = "",
         wait_timeout: int | None = None,
+        wait_for: str = "",
     ) -> list[ImageContent | TextContent]:
         """Take a screenshot of the current page.
 
@@ -161,6 +162,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             wait_selector: Wait for this selector to be visible before capture
             wait_timeout: Selector wait timeout in ms; omitted uses the browser
                 action timeout
+            wait_for: CSS selector to wait for via the wait tool before capture
 
         Returns:
             A list with one ``ImageContent`` (the multimodal LLM reads the
@@ -170,6 +172,13 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             uniform across tools.
         """
         try:
+            if wait_for:
+                await client.wait(
+                    condition="selector",
+                    value=wait_for,
+                    timeout=wait_timeout,
+                    state="visible",
+                )
             envelope = await client.screenshot(
                 full_page=full_page,
                 format=format,

@@ -8,8 +8,15 @@ import orjson
 import typer
 
 from agentcloak.cli._dispatch import dispatch_text_or_json, emit_envelope
-from agentcloak.cli.output import is_json_mode, value
+from agentcloak.cli.output import error_from_exception, is_json_mode, value
 from agentcloak.client import DaemonClient
+from agentcloak.core.config import load_config
+from agentcloak.core.cookie_snapshot import (
+    read_cookie_snapshot,
+    resolve_cookie_snapshot_path,
+    write_cookie_snapshot,
+)
+from agentcloak.core.errors import AgentBrowserError
 from agentcloak.core.text_renderers import (
     render_cookie_delete_text,
     render_cookie_set_text,
@@ -31,10 +38,6 @@ def cookies_export(
     ),
 ) -> None:
     """Export cookies from the active browser session."""
-    body: dict[str, object] = {}
-    if url:
-        body["url"] = url
-
     client = DaemonClient()
     if output is not None:
         # File output needs the structured envelope to serialize the cookie
@@ -58,13 +61,23 @@ def cookies_export(
         value(f"saved {output} ({len(data.get('cookies', []))} cookies)")
         return
 
-    dispatch_text_or_json(
-        client,
-        "POST",
-        "/cookies/export",
-        json_body=body,
-        renderer=render_cookies_export_text,
-    )
+    try:
+        result = client.cookies_export_sync(url=url)
+        data = result.get("data", result)
+        health = client.health_sync()
+        paths, _ = load_config()
+        snapshot = resolve_cookie_snapshot_path(
+            paths, str(health.get("active_profile") or "") or None
+        )
+        write_cookie_snapshot(snapshot, data)
+    except AgentBrowserError as exc:
+        error_from_exception(exc)
+        return
+
+    if is_json_mode():
+        emit_envelope(result)
+        return
+    value(render_cookies_export_text(data))
 
 
 @app.command("import")
@@ -84,6 +97,39 @@ def cookies_import(
     cookies = orjson.loads(cookies_json)
     dispatch_text_or_json(
         DaemonClient(),
+        "POST",
+        "/cookies/import",
+        json_body={"cookies": cookies},
+        renderer=render_cookies_import_text,
+    )
+
+
+@app.command("restore")
+def cookies_restore(
+    file: Path | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="Restore from this snapshot instead of the active profile default.",
+    ),
+) -> None:
+    """Restore cookies from the latest client-side snapshot."""
+    client = DaemonClient()
+    try:
+        snapshot = file.expanduser() if file is not None else None
+        if snapshot is None:
+            health = client.health_sync()
+            paths, _ = load_config()
+            snapshot = resolve_cookie_snapshot_path(
+                paths, str(health.get("active_profile") or "") or None
+            )
+        cookies = read_cookie_snapshot(snapshot)
+    except AgentBrowserError as exc:
+        error_from_exception(exc)
+        return
+
+    dispatch_text_or_json(
+        client,
         "POST",
         "/cookies/import",
         json_body={"cookies": cookies},

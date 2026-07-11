@@ -5,11 +5,18 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 import orjson
 from mcp.types import ToolAnnotations
 
+from agentcloak.core.config import load_config
+from agentcloak.core.cookie_snapshot import (
+    read_cookie_snapshot,
+    resolve_cookie_snapshot_path,
+    write_cookie_snapshot,
+)
 from agentcloak.core.errors import AgentBrowserError
 from agentcloak.core.text_renderers import (
     render_cdp_endpoint_text,
@@ -71,18 +78,22 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
     async def agentcloak_cookies(
-        action: Literal["export", "import", "set", "clear", "delete"] = "export",
+        action: Literal[
+            "export", "import", "restore", "set", "clear", "delete"
+        ] = "export",
         url: str = "",
         cookies_json: str = "",
         curl: str = "",
         name: str = "",
         domain: str = "",
+        file: str = "",
     ) -> str:
-        """Manage browser cookies — export, import, set, clear, or delete.
+        """Manage browser cookies — export, import, restore, set, clear, or delete.
 
         Actions:
           export — get all cookies from the browser (local or bridge)
           import — inject cookies into the browser (supports httpOnly)
+          restore — import the active profile snapshot, or a file override
           set    — set cookies from cookies_json and/or a Copy-as-cURL string
           clear  — remove all cookies from the browser context
           delete — delete cookies matching 'name' (optionally scoped to 'domain')
@@ -96,6 +107,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                 parsed and set (set only)
             name: Cookie name to delete (delete only)
             domain: Restrict delete to this domain (delete only)
+            file: Snapshot path override (restore only)
 
         Returns:
             export: array of cookies with name, value, domain, path, httpOnly.
@@ -103,9 +115,18 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             clear/delete: confirmation.
         """
         if action == "export":
-            return await format_call(
-                client.cookies_export(url=url or None), render_cookies_export_text
-            )
+            try:
+                result = await client.cookies_export(url=url or None)
+                health = await client.health()
+                paths, _ = load_config()
+                snapshot = resolve_cookie_snapshot_path(
+                    paths, str(health.get("active_profile") or "") or None
+                )
+                data = result.get("data", result)
+                write_cookie_snapshot(snapshot, data)
+            except AgentBrowserError as exc:
+                return error_json(exc)
+            return render_envelope(result, render_cookies_export_text)
 
         if action == "import":
             if not cookies_json:
@@ -117,6 +138,23 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             # ``cookies_json`` is typed as ``str``; decode it once so the
             # daemon client always receives a list of dicts.
             cookies = orjson.loads(cookies_json)
+            return await format_call(
+                client.cookies_import(cookies=cookies), render_cookies_import_text
+            )
+
+        if action == "restore":
+            try:
+                if file:
+                    snapshot = Path(file).expanduser()
+                else:
+                    health = await client.health()
+                    paths, _ = load_config()
+                    snapshot = resolve_cookie_snapshot_path(
+                        paths, str(health.get("active_profile") or "") or None
+                    )
+                cookies = read_cookie_snapshot(snapshot)
+            except AgentBrowserError as exc:
+                return error_json(exc)
             return await format_call(
                 client.cookies_import(cookies=cookies), render_cookies_import_text
             )
@@ -152,7 +190,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         return _error_envelope(
             error="unknown_action",
             hint=f"Unknown action: {action}",
-            action="use export, import, set, clear, or delete",
+            action="use export, import, restore, set, clear, or delete",
         )
 
     @mcp.tool(annotations=ToolAnnotations(destructiveHint=False, readOnlyHint=False))

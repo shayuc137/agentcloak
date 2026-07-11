@@ -10,6 +10,7 @@ __all__ = [
     "DebuggerPausedError",
     "DialogBlockedError",
     "ElementNotFoundError",
+    "ImageDiffError",
     "NavigationError",
     "ProfileError",
     "SecurityError",
@@ -68,6 +69,10 @@ class SecurityError(AgentBrowserError):
 
 class BackendError(AgentBrowserError):
     """Browser backend internal failure."""
+
+
+class ImageDiffError(AgentBrowserError):
+    """Local screenshot comparison failed."""
 
 
 class DialogBlockedError(AgentBrowserError):

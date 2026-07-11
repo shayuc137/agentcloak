@@ -86,6 +86,7 @@ __all__ = [
     "render_headers_text",
     "render_health_text",
     "render_heap_snapshot_text",
+    "render_image_diff_text",
     "render_launch_text",
     "render_navigate_text",
     "render_network_text",
@@ -383,6 +384,22 @@ def render_screenshot_text(data: dict[str, Any]) -> str:
     size = int(data.get("size", 0) or 0)
     fmt = str(data.get("format", "") or "")
     return f"screenshot captured | {size} bytes | format={fmt}"
+
+
+def render_image_diff_text(data: dict[str, Any]) -> str:
+    """Render one stable line for a local pixel comparison."""
+    changed = int(data.get("changed_pixels", 0) or 0)
+    total = int(data.get("total_pixels", 0) or 0)
+    percentage = float(data.get("difference_percent", 0.0) or 0.0)
+    percent_text = "0%" if percentage == 0 else f"{percentage:.6f}%"
+    maximum = int(data.get("max_channel_delta", 0) or 0)
+    width = int(data.get("width", 0) or 0)
+    height = int(data.get("height", 0) or 0)
+    threshold = int(data.get("threshold", 0) or 0)
+    return (
+        f"diff {changed}/{total} pixels ({percent_text}) | "
+        f"max_delta={maximum} | {width}x{height} | threshold={threshold}"
+    )
 
 
 def render_evaluate_text(data: dict[str, Any]) -> str:

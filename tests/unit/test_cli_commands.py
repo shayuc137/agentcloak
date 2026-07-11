@@ -271,6 +271,119 @@ class TestScreenshot:
         )
 
 
+class TestScreenshotDiff:
+    @staticmethod
+    def _write_png(path: Path, pixels: list[tuple[int, int, int, int]]) -> bytes:
+        from io import BytesIO
+
+        from PIL import Image
+
+        image = Image.new("RGBA", (2, 2))
+        image.putdata(pixels)
+        image.save(path)
+        stream = BytesIO()
+        image.save(stream, format="PNG")
+        return stream.getvalue()
+
+    def test_local_comparison_does_not_create_daemon_client(
+        self, tmp_path: Path
+    ) -> None:
+        baseline = tmp_path / "baseline.png"
+        current = tmp_path / "current.png"
+        pixels = [(0, 0, 0, 255)] * 4
+        self._write_png(baseline, pixels)
+        self._write_png(current, pixels)
+
+        with patch("agentcloak.cli.commands.diff_cmd.DaemonClient") as client:
+            result = runner.invoke(
+                app,
+                ["diff", "screenshot", str(baseline), "--current", str(current)],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert result.stdout.strip() == (
+            "diff 0/4 pixels (0%) | max_delta=0 | 2x2 | threshold=0"
+        )
+        client.assert_not_called()
+
+    def test_json_reports_paths_and_exact_metrics(self, tmp_path: Path) -> None:
+        baseline = tmp_path / "baseline.png"
+        current = tmp_path / "current.png"
+        self._write_png(baseline, [(0, 0, 0, 255)] * 4)
+        self._write_png(
+            current,
+            [(20, 0, 0, 255), (0, 0, 0, 255), (0, 0, 0, 255), (0, 0, 0, 255)],
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "--json",
+                "diff",
+                "screenshot",
+                str(baseline),
+                "--current",
+                str(current),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.stdout)["data"]
+        assert data["changed_pixels"] == 1
+        assert data["difference_percent"] == 25
+        assert data["max_channel_delta"] == 20
+        assert data["baseline"] == str(baseline.resolve())
+        assert data["current"] == str(current.resolve())
+
+    def test_live_comparison_requests_png_and_uses_returned_bytes(
+        self, tmp_path: Path
+    ) -> None:
+        baseline = tmp_path / "baseline.png"
+        base_pixels = [(0, 0, 0, 255)] * 4
+        self._write_png(baseline, base_pixels)
+        current_bytes = self._write_png(
+            tmp_path / "actual.png",
+            [(50, 0, 0, 255), *base_pixels[1:]],
+        )
+        payload = _envelope(
+            {
+                "base64": base64.b64encode(current_bytes).decode(),
+                "size": len(current_bytes),
+                "format": "png",
+            },
+            seq=9,
+        )
+
+        with patch(
+            "agentcloak.client.DaemonClient.screenshot_sync", return_value=payload
+        ) as screenshot:
+            result = runner.invoke(app, ["--json", "diff", "screenshot", str(baseline)])
+
+        assert result.exit_code == 0, result.output
+        envelope = json.loads(result.stdout)
+        assert envelope["seq"] == 9
+        assert envelope["data"]["changed_pixels"] == 1
+        assert envelope["data"]["current"] == "<live-page>"
+        screenshot.assert_called_once_with(format="png")
+
+    def test_dimension_mismatch_uses_structured_error(self, tmp_path: Path) -> None:
+        from PIL import Image
+
+        baseline = tmp_path / "baseline.png"
+        current = tmp_path / "current.png"
+        self._write_png(baseline, [(0, 0, 0, 255)] * 4)
+        Image.new("RGBA", (3, 1)).save(current)
+
+        result = runner.invoke(
+            app,
+            ["diff", "screenshot", str(baseline), "--current", str(current)],
+        )
+
+        assert result.exit_code == 1
+        assert "baseline=2x2, current=3x1" in result.output
+        assert "same viewport and dimensions" in result.output
+
+
 # ---------------------------------------------------------------------------
 # B1: click
 # ---------------------------------------------------------------------------

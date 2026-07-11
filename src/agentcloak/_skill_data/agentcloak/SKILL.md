@@ -81,6 +81,7 @@ Snapshot modes: `compact` (default, interactive + containers only, capped at 80 
 | `cloak snapshot --frames` | Include iframe content |
 | `cloak snapshot --diff` | Mark `[+]` added, `[~]` changed vs previous |
 | `cloak screenshot [--output FILE]` | Screenshot to file, stdout = path (`--full-page`, `--format jpeg\|png`, `--quality N`, `--wait-selector CSS`) |
+| `cloak diff screenshot BASELINE [--current FILE]` | Exact RGBA pixel comparison; omit current for a live PNG, add `--output diff.png` for red highlights |
 | `cloak resume` | Session state: URL, tabs, recent actions |
 
 ### Interaction

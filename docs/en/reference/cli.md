@@ -119,6 +119,30 @@ cloak screenshot [--output FILE] [--full-page] [--format FORMAT] [--quality N] [
 > Omitted format follows `browser.screenshot_format`. MCP tools use JPEG quality 50
 > (configurable via `browser.mcp_screenshot_quality`); CLI uses quality 80.
 
+### diff screenshot
+
+Compare a local baseline with another local image or a fresh live-page PNG.
+
+```bash
+cloak diff screenshot BASELINE [--current FILE] [--threshold 0..255] [--output DIFF.png]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--current` | live page | Local current image; when omitted, capture PNG from the active browser |
+| `--threshold` | `0` | Ignore per-channel differences at or below this value |
+| `--output` | none | Write an RGBA diff with changed pixels highlighted red |
+
+Text output is one stable line:
+
+```text
+diff 12/921600 pixels (0.001302%) | max_delta=41 | 1280x720 | threshold=0
+```
+
+`--json` adds exact ratio/percentage, dimensions, threshold, maximum channel
+delta, baseline/current paths, and the optional output path. Different pixels
+still produce exit code 0; DOS or CI owns pass/fail policy.
+
 ### resume
 
 Get session state for context recovery.

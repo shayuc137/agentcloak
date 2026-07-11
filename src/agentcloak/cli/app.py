@@ -34,7 +34,7 @@ _SHORTCUTS = (
 _GROUPS = (
     "browser, do, js, tab, profile, spell, capture, frame, daemon, doctor, "
     "launch, network, fetch, bridge, cookies, skill, cdp, dialog, wait, "
-    "upload, config, console, download, storage, clipboard, pdf, serve, "
+    "upload, config, console, download, storage, clipboard, pdf, serve, diff, "
     "script, route, emulation, graphql, debugger, ws, sse, sourcemap, "
     "profiler, performance, session"
 )
@@ -198,6 +198,7 @@ def _register_commands() -> None:
         daemon_cmd,
         debugger,
         dialog,
+        diff_cmd,
         doctor,
         download_cmd,
         emulation,
@@ -224,6 +225,11 @@ def _register_commands() -> None:
         wait_cmd,
     )
 
+    app.add_typer(
+        diff_cmd.app,
+        name="diff",
+        help="Local comparison tools: screenshot pixel differences.",
+    )
     app.add_typer(
         config_cmd.app,
         name="config",

@@ -17,6 +17,7 @@ What do you need?
 ├─ Just what changed since last look? ────> cloak snapshot --diff
 ├─ Raw HTML (last resort)? ───────────────> cloak snapshot --mode dom      (large)
 └─ Visual layout / pixels matter? ────────> cloak screenshot              (most expensive — see below)
+      └─ Compare against baseline? ───────> cloak diff screenshot baseline.png
 
 Acting and observing in one call? add --snap to the action:
   cloak click 5 --snap     # action result + compact snapshot, one round-trip
@@ -33,6 +34,8 @@ Acting and observing in one call? add --snap to the action:
 7. `cloak screenshot` — image tokens; `--format jpeg` (default) is 4-10x smaller than `--format png`
 
 Rule of thumb: default to compact `cloak snapshot`; only escalate to `screenshot` when visual layout, OCR, or a vision model genuinely needs pixels. Action targets keep working even when a ref was truncated from the printed tree, so a tighter `--limit` rarely costs you reach.
+
+For repeatable UI acceptance, keep baselines local and run `cloak diff screenshot baseline.png`; the command captures a live PNG only when `--current` is omitted, so two-file comparisons do not start the daemon.
 
 ## Recovery Patterns
 

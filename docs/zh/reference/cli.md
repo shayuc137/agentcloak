@@ -117,6 +117,28 @@ cloak screenshot [--output FILE] [--full-page] [--format FORMAT] [--quality N] [
 > 省略格式时使用 `browser.screenshot_format`。MCP 的 JPEG 质量默认 50
 > （可通过 `browser.mcp_screenshot_quality` 配置），CLI 默认质量 80。
 
+### diff screenshot
+
+比较本地基线与另一个本地图像，或与实时页面的新 PNG 截图比较。
+
+```bash
+cloak diff screenshot BASELINE [--current FILE] [--threshold 0..255] [--output DIFF.png]
+```
+
+| 参数 | 默认值 | 说明 |
+|------|-------|------|
+| `--current` | 实时页面 | 本地当前图像；省略时从活动浏览器捕获 PNG |
+| `--threshold` | `0` | 忽略小于或等于此值的逐通道差异 |
+| `--output` | 无 | 写入 RGBA 差异图，用红色标出变化像素 |
+
+文本输出为稳定的单行格式：
+
+```text
+diff 12/921600 pixels (0.001302%) | max_delta=41 | 1280x720 | threshold=0
+```
+
+`--json` 还会返回精确比例和百分比、尺寸、阈值、最大通道差值、基线和当前图像路径，以及可选输出路径。像素存在差异时仍返回退出码 0；通过或失败规则由 DOS 或 CI 决定。
+
 ### resume
 
 获取会话状态用于上下文恢复。

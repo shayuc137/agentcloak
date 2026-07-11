@@ -229,6 +229,104 @@ class TestRoutes:
             full_page=False, type="jpeg", quality=72
         )
 
+    def test_screenshot_output_path_infers_format_and_warns_on_fallback(
+        self, client: TestClient, tmp_path: Any
+    ) -> None:
+        png_path = tmp_path / "capture.PNG"
+        inferred = client.get("/screenshot", params={"output_path": str(png_path)})
+
+        assert inferred.status_code == 200
+        assert inferred.json()["data"]["format"] == "png"
+        assert "warning" not in inferred.json()["data"]
+        assert png_path.read_bytes() == b"fakepng"
+
+        unknown_path = tmp_path / "capture.artifact"
+        fallback = client.get("/screenshot", params={"output_path": str(unknown_path)})
+
+        assert fallback.status_code == 200
+        assert fallback.json()["data"]["format"] == "jpeg"
+        assert (
+            "unrecognized screenshot suffix '.artifact'"
+            in fallback.json()["data"]["warning"]
+        )
+
+    def test_screenshot_rejects_explicit_format_suffix_conflict(
+        self, client: TestClient, tmp_path: Any
+    ) -> None:
+        output = tmp_path / "capture.png"
+
+        resp = client.get(
+            "/screenshot",
+            params={"format": "jpeg", "output_path": str(output)},
+        )
+
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "screenshot_format_suffix_conflict"
+        assert not output.exists()
+
+    def test_request_time_config_reloads_without_replacing_browser(
+        self, client: TestClient, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("AGENTCLOAK_SCREENSHOT_FORMAT", raising=False)
+        monkeypatch.delenv("SCREENSHOT_FORMAT", raising=False)
+        config_file = tmp_path / "config.toml"
+        config_file.write_text(
+            "[browser]\n"
+            'screenshot_format = "jpeg"\n'
+            "screenshot_quality = 61\n"
+            "snapshot_max_nodes = 11\n"
+            "batch_settle_timeout = 321\n",
+            encoding="utf-8",
+        )
+        client.app.state.config_root = tmp_path
+        ctx = client.app.state.browser_ctx
+
+        first = client.get("/screenshot")
+        assert first.json()["data"]["format"] == "jpeg"
+        ctx._page.screenshot.assert_awaited_with(
+            full_page=False, type="jpeg", quality=61
+        )
+
+        config_file.write_text(
+            "[browser]\n"
+            'screenshot_format = "png"\n'
+            "screenshot_quality = 93\n"
+            "snapshot_max_nodes = 7\n"
+            "batch_settle_timeout = 654\n"
+            "max_return_size = 1\n",
+            encoding="utf-8",
+        )
+        second = client.get("/screenshot")
+        assert second.json()["data"]["format"] == "png"
+        ctx._page.screenshot.assert_awaited_with(full_page=False, type="png")
+        assert client.app.state.browser_ctx is ctx
+
+        ctx.snapshot = AsyncMock(
+            return_value=PageSnapshot(
+                seq=0,
+                url="https://example.com",
+                title="Example",
+                mode="compact",
+                tree_text="",
+                total_nodes=0,
+                total_interactive=0,
+            )
+        )
+        snapshot = client.get("/snapshot")
+        assert snapshot.status_code == 200
+        assert ctx.snapshot.await_args.kwargs["max_nodes"] == 7
+
+        ctx.action_batch = AsyncMock(
+            return_value={"results": [], "completed": 0, "total": 0}
+        )
+        batch = client.post("/action/batch", json={"actions": [], "sleep": 0})
+        assert batch.status_code == 200
+        assert ctx.action_batch.await_args.kwargs["settle_timeout"] == 654
+
+        evaluated = client.post("/evaluate", json={"js": "1+1"})
+        assert evaluated.status_code == 200
+        assert evaluated.json()["data"]["truncated"] is True
+
     def test_screenshot_waits_for_selector_before_capture(
         self, client: TestClient
     ) -> None:

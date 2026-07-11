@@ -102,22 +102,25 @@ cloak screenshot [--output FILE] [--full-page] [--format FORMAT] [--quality N] [
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--output` | auto-named in OS temp dir (`tempfile.gettempdir()`) | Save to file; stdout prints the path |
+| `--output` | auto-named in OS temp dir (`tempfile.gettempdir()`) | Save to file; `.png` selects PNG and `.jpg`/`.jpeg` selects JPEG |
 | `--full-page` | off | Capture full scrollable page |
-| `--format` | `browser.screenshot_format` (`jpeg`) | `jpeg` or `png` |
+| `--format` | output suffix, then `browser.screenshot_format` (`jpeg`) | Explicit `jpeg` or `png` override; must agree with a recognized suffix |
 | `--quality` | `80` | JPEG quality 0-100 (ignored for PNG) |
 | `--wait-selector` | none | Wait for a CSS selector to be visible before capture |
 | `--wait-timeout` | `browser.action_timeout` | Selector wait timeout in milliseconds |
 
 > [!TIP]
 > **When to use PNG vs JPEG:**
-> - `--format png` — UI design verification, OCR, vision models. Lossless quality
+> - `-o page.png` — UI design verification, OCR, vision models. Lossless quality
 >   avoids JPEG artefacts that confuse text recognition or pixel-level comparison.
-> - `--format jpeg` — layout checks, page state verification. Ships
+> - `-o page.jpg` — layout checks, page state verification. Ships
 >   ~4-10× smaller payloads, good enough when pixel fidelity doesn't matter.
 >
-> Omitted format follows `browser.screenshot_format`. MCP tools use JPEG quality 50
-> (configurable via `browser.mcp_screenshot_quality`); CLI uses quality 80.
+> Recognized output suffixes select the encoding without `--format`. An unknown
+> non-empty suffix warns before falling back to the live
+> `browser.screenshot_format`; an extensionless path falls back quietly. MCP tools
+> use JPEG quality 50 (configurable via `browser.mcp_screenshot_quality`); CLI uses
+> quality 80.
 
 ### diff screenshot
 

@@ -533,6 +533,7 @@ async def start(
         resume_writer=resume_writer,
         bridge_token=bridge_token,
         config=cfg,
+        config_root=paths.root,
         session_manager=session_manager,
     )
     # Seed ContextManager with whatever the startup tier created so

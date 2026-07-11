@@ -90,7 +90,7 @@ Read this file when you need full parameter detail. For the common path, the qui
 - Body:
   - `actions` (array<object>, default: —) — Ordered action objects; may reference prior results via $N.path.
   - `sleep` (number, default: 0.0) — Seconds to pause between actions to let the page settle.
-  - `settle_timeout` (integer, default: 2000) — Max ms to wait for navigation/network to settle per action.
+  - `settle_timeout` (integer | null, default: —) — Max ms to wait for navigation/network to settle per action; unset uses browser.batch_settle_timeout.
 
 ## Dialog & Wait
 
@@ -168,7 +168,7 @@ Read this file when you need full parameter detail. For the common path, the qui
 - Body:
   - `js` (string, default: "") — JavaScript expression or function body to evaluate in the page.
   - `world` (enum("main" | "isolated"), default: "main") — World: main (sees site globals) or isolated (sandboxed).
-  - `max_return_size` (integer, default: 50000) — Max serialized result bytes; larger results are truncated.
+  - `max_return_size` (integer | null, default: —) — Max serialized result bytes; unset uses browser.max_return_size.
   - `preset` (string, default: "") — Reverse-engineering preset to run instead of 'js' (forced to the main world). One of: vue_inspect, react_inspect, jwt_decode, cookie_parse, storage_dump.
 
 ### `POST /fetch`

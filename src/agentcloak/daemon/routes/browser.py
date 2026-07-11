@@ -14,7 +14,7 @@ from fastapi import APIRouter, Query
 # ``screenshot_to_base64`` lives on the abstract base module so daemon code
 # stays backend-agnostic (layer isolation: daemon → BrowserContextBase).
 from agentcloak.browser.base import screenshot_to_base64
-from agentcloak.core.errors import BackendError
+from agentcloak.core.screenshot_format import resolve_screenshot_format
 from agentcloak.daemon.dependencies import (  # noqa: TC001
     BrowserCtxDep,
     ConfigDep,
@@ -114,13 +114,13 @@ async def handle_screenshot(
         description="Selector wait timeout in ms; unset uses browser.action_timeout.",
     ),
 ) -> dict[str, Any]:
-    resolved_format = format or config.browser.screenshot_format
-    if resolved_format not in ("jpeg", "png"):
-        raise BackendError(
-            error="invalid_screenshot_format",
-            hint=f"Unsupported screenshot format '{resolved_format}'",
-            action="use jpeg or png",
-        )
+    resolution = resolve_screenshot_format(
+        explicit_format=format,
+        output_path=output_path or None,
+        default_format=config.browser.screenshot_format,
+    )
+    assert resolution.format is not None
+    resolved_format = resolution.format
     if wait_selector:
         await ctx.wait(
             condition="selector",
@@ -147,6 +147,9 @@ async def handle_screenshot(
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(raw)
         data = {"path": str(dest), "size": len(raw), "format": resolved_format}
+        warning = resolution.warning_for(resolved_format)
+        if warning:
+            data["warning"] = warning
         return _ok(data, seq=ctx.seq)
 
     b64 = screenshot_to_base64(raw)
@@ -234,7 +237,9 @@ async def handle_snapshot(
 
 
 @router.post("/evaluate", response_model=OkEnvelope[EvaluateResponse])
-async def handle_evaluate(body: EvaluateRequest, ctx: BrowserCtxDep) -> dict[str, Any]:
+async def handle_evaluate(
+    body: EvaluateRequest, ctx: BrowserCtxDep, config: ConfigDep
+) -> dict[str, Any]:
     # A preset takes precedence over raw ``js`` and forces the main world —
     # the snippets reach for page-framework globals (__vue__, __reactFiber$)
     # an isolated world can't see. ``get_preset_js`` raises ``unknown_preset``
@@ -254,9 +259,14 @@ async def handle_evaluate(body: EvaluateRequest, ctx: BrowserCtxDep) -> dict[str
     # Truncate large results before they exceed MCP token limits.
     result_bytes = orjson.dumps(result)
     total_size = len(result_bytes)
-    if total_size > body.max_return_size:
+    max_return_size = (
+        body.max_return_size
+        if body.max_return_size is not None
+        else config.browser.max_return_size
+    )
+    if total_size > max_return_size:
         result_repr = (
-            result_bytes[: body.max_return_size].decode("utf-8", errors="replace")
+            result_bytes[:max_return_size].decode("utf-8", errors="replace")
             + "\n[...truncated...]"
         )
         data = {"result": result_repr, "truncated": True, "total_size": total_size}
@@ -334,7 +344,11 @@ async def handle_action_batch(
     ctx: BrowserCtxDep,
     config: ConfigDep,
 ) -> dict[str, Any]:
-    settle_timeout = body.settle_timeout or config.browser.batch_settle_timeout
+    settle_timeout = (
+        body.settle_timeout
+        if body.settle_timeout is not None
+        else config.browser.batch_settle_timeout
+    )
     result = await ActionService().execute_batch(
         ctx, body.actions, sleep_s=body.sleep, settle_timeout=settle_timeout
     )

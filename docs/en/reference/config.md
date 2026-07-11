@@ -249,5 +249,8 @@ cloak config keys                                               # list valid key
 ```
 
 Writes never touch env vars or defaults — only `~/.agentcloak/config.toml`.
-Setting a key under `[daemon]` or `[browser]` requires a daemon restart;
-the command prints `(restart daemon to apply)` when applicable.
+Request-time defaults (`browser.screenshot_format`, `screenshot_quality`,
+`snapshot_max_nodes`, `batch_settle_timeout`, and `max_return_size`) reload on
+the next relevant daemon request. Process- and browser-launch keys under
+`[daemon]` / `[browser]` still require a restart; mixed updates print
+`(restart daemon to apply)` when any changed key is launch-bound.

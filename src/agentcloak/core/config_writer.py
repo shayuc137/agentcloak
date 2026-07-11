@@ -38,9 +38,18 @@ __all__ = [
     "parse_batch_args",
 ]
 
-# Sections that require a daemon restart to take effect. Telling the user
-# this up-front saves them from setting a value and silently watching it
-# be ignored until they remember to restart.
+# Request-time defaults are reloaded by daemon ConfigDep on every relevant call.
+_RUNTIME_CONFIG_KEYS: frozenset[str] = frozenset(
+    {
+        "browser.batch_settle_timeout",
+        "browser.max_return_size",
+        "browser.screenshot_format",
+        "browser.screenshot_quality",
+        "browser.snapshot_max_nodes",
+    }
+)
+
+# Other daemon/browser values affect the process or browser launch snapshot.
 _RESTART_SECTIONS: frozenset[str] = frozenset({"daemon", "browser"})
 
 
@@ -139,10 +148,12 @@ def _load_all_sections(paths: Paths) -> dict[str, dict[str, Any]]:
     return out
 
 
-def _restart_hint(touched_sections: set[str]) -> str:
+def _restart_hint(touched_keys: set[str]) -> str:
     """Return ``" (restart daemon to apply)"`` when applicable, else ``""``."""
-    if touched_sections & _RESTART_SECTIONS:
-        return " (restart daemon to apply)"
+    for key in touched_keys:
+        section = key.split(".", 1)[0]
+        if section in _RESTART_SECTIONS and key not in _RUNTIME_CONFIG_KEYS:
+            return " (restart daemon to apply)"
     return ""
 
 
@@ -221,13 +232,13 @@ def config_set_batch(paths: Paths, args: list[str]) -> tuple[list[str], str]:
     """Apply a batch of ``key value [key value ...]`` assignments.
 
     Returns ``(confirmation_lines, restart_hint)``. The hint is empty when
-    no touched section requires a daemon restart.
+    no touched key requires a daemon restart.
     """
     pairs = parse_batch_args(args)
 
     sections = _load_all_sections(paths)
     confirmations: list[str] = []
-    touched_sections: set[str] = set()
+    touched_keys: set[str] = set()
 
     for key, values in pairs:
         section, field_name, field_type = _resolve_key(key)
@@ -236,14 +247,14 @@ def config_set_batch(paths: Paths, args: list[str]) -> tuple[list[str], str]:
         else:
             parsed = _parse_scalar(values[0], field_type)
         sections.setdefault(section, {})[field_name] = parsed
-        touched_sections.add(section)
+        touched_keys.add(key)
         confirmations.append(f"{key} = {_format_value(parsed)}")
 
     # ``_safe_write_and_validate`` writes then immediately reloads — if the
     # new combination is invalid (e.g. a port out of range), it rolls the
     # file back to the previous bytes so the daemon never sees junk.
     _safe_write_and_validate(paths, sections)
-    return confirmations, _restart_hint(touched_sections)
+    return confirmations, _restart_hint(touched_keys)
 
 
 def config_unset(paths: Paths, key: str) -> tuple[str, str]:
@@ -262,10 +273,10 @@ def config_unset(paths: Paths, key: str) -> tuple[str, str]:
         del sections[section]
 
     _safe_write_and_validate(paths, sections)
-    return (
-        f"{key} unset (will use default on next daemon start)",
-        _restart_hint({section}),
+    effective_time = (
+        "next request" if key in _RUNTIME_CONFIG_KEYS else "next daemon start"
     )
+    return f"{key} unset (will use default on {effective_time})", _restart_hint({key})
 
 
 def config_add(paths: Paths, key: str, values: list[str]) -> tuple[str, str]:
@@ -292,7 +303,7 @@ def config_add(paths: Paths, key: str, values: list[str]) -> tuple[str, str]:
     sections[section][field_name] = current
 
     _safe_write_and_validate(paths, sections)
-    return f"{key} = {_format_value(current)}", _restart_hint({section})
+    return f"{key} = {_format_value(current)}", _restart_hint({key})
 
 
 def config_remove(paths: Paths, key: str, value: str) -> tuple[str, str]:
@@ -331,7 +342,7 @@ def config_remove(paths: Paths, key: str, value: str) -> tuple[str, str]:
             del sections[section]
 
     _safe_write_and_validate(paths, sections)
-    return f"{key} = {_format_value(current)}", _restart_hint({section})
+    return f"{key} = {_format_value(current)}", _restart_hint({key})
 
 
 # Re-export so callers don't need to import from two modules.

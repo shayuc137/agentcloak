@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI
 
@@ -22,6 +22,9 @@ from agentcloak.daemon.middleware import MetricsState, install_middlewares
 from agentcloak.daemon.routes import register_routers
 
 __all__ = ["create_app"]
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def create_app() -> FastAPI:
@@ -47,6 +50,7 @@ def create_app() -> FastAPI:
     app.state.resume_writer = None
     app.state.bridge_token = None
     app.state.config = None
+    app.state.config_root = None
     app.state.shutdown_event = asyncio.Event()
     app.state.last_request_time = 0.0
     # Process-start reference for ``/health`` uptime. ``time.monotonic()`` (not
@@ -100,6 +104,7 @@ def configure_app_state(
     resume_writer: Any = None,
     bridge_token: str | None = None,
     config: Any = None,
+    config_root: Path | None = None,
     session_manager: Any = None,
 ) -> None:
     """Attach runtime resources to an existing app.
@@ -121,4 +126,5 @@ def configure_app_state(
     app.state.resume_writer = resume_writer
     app.state.bridge_token = bridge_token
     app.state.config = config
+    app.state.config_root = config_root
     app.state.session_manager = session_manager

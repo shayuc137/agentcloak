@@ -247,6 +247,8 @@ cloak config unset browser.proxy                                # 恢复默认
 cloak config keys                                               # 列出可用 key
 ```
 
-写入操作只动 `~/.agentcloak/config.toml`，不影响 env 或 default。改动
-`[daemon]` 或 `[browser]` 下的项需重启 daemon 才能生效，命令会在适用时
-输出 `(restart daemon to apply)` 提示。
+写入操作只动 `~/.agentcloak/config.toml`，不影响 env 或 default。请求期默认值
+（`browser.screenshot_format`、`screenshot_quality`、`snapshot_max_nodes`、
+`batch_settle_timeout` 和 `max_return_size`）会在下一次相关 daemon 请求时重新
+加载。`[daemon]` / `[browser]` 中影响进程或浏览器启动的配置仍需重启；批量
+修改包含任一启动期配置时会输出 `(restart daemon to apply)`。

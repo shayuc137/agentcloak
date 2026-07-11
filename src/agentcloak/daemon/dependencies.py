@@ -266,11 +266,16 @@ def require_remote_ctx(request: Request) -> Any:
 
 
 def get_config(request: Request) -> AgentcloakConfig:
-    """Get the AgentcloakConfig snapshot stored on app state.
+    """Get request-time config, reloading production TOML changes immediately.
 
-    Falls back to a fresh `load_config()` so tests that construct the app
-    without setting `app.state.config` still work.
+    Production startup records ``config_root``; tests that inject only
+    ``app.state.config`` retain a deterministic snapshot and never touch the
+    user's real config file.
     """
+    config_root = getattr(request.app.state, "config_root", None)
+    if config_root is not None:
+        _, cfg = load_config(root=config_root)
+        return cfg
     cfg: AgentcloakConfig | None = getattr(request.app.state, "config", None)
     if cfg is not None:
         return cfg

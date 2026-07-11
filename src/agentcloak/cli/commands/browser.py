@@ -18,8 +18,10 @@ from tempfile import gettempdir
 import typer
 
 from agentcloak.cli._dispatch import dispatch_text_or_json, emit_envelope
-from agentcloak.cli.output import error, info, is_json_mode, value
+from agentcloak.cli.output import error, error_from_exception, info, is_json_mode, value
 from agentcloak.client import DaemonClient
+from agentcloak.core.errors import AgentBrowserError
+from agentcloak.core.screenshot_format import resolve_screenshot_format
 from agentcloak.core.text_renderers import (
     render_navigate_text,
     render_resume_text,
@@ -106,11 +108,20 @@ def browser_screenshot(
 ) -> None:
     """Take a screenshot. Defaults to a file in the system temp dir; prints the path."""
     client = DaemonClient()
+    try:
+        resolution = resolve_screenshot_format(
+            explicit_format=format,
+            output_path=output,
+            default_format=None,
+        )
+    except AgentBrowserError as exc:
+        error_from_exception(exc)
+        return
     # Always pull the JSON envelope so we get the base64 payload — text mode
     # would only give us a metadata line.
     result = client.screenshot_sync(
         full_page=full_page,
-        format=format,
+        format=resolution.format,
         quality=quality,
         wait_selector=wait_selector,
         wait_timeout=wait_timeout,
@@ -118,6 +129,7 @@ def browser_screenshot(
     data = result.get("data", result)
     seq = int(result.get("seq", 0) or 0)
     resolved_format = str(data.get("format", "jpeg") or "jpeg")
+    warning = resolution.warning_for(resolved_format)
 
     b64_str: str = data.get("base64", "")
     if not b64_str:
@@ -143,10 +155,13 @@ def browser_screenshot(
                     "saved": str(output),
                     "size": data.get("size", 0),
                     "format": resolved_format,
+                    **({"warning": warning} if warning else {}),
                 },
             }
         )
         return
+    if warning:
+        info(f"Warning: {warning}")
     value(str(output))
 
 

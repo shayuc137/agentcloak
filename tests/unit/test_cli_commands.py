@@ -270,6 +270,71 @@ class TestScreenshot:
             wait_timeout=1200,
         )
 
+    def test_output_suffix_selects_format_without_flag(self, tmp_path: Path) -> None:
+        output = tmp_path / "page.PNG"
+        payload = _envelope(
+            {
+                "base64": base64.b64encode(b"png-bytes").decode(),
+                "size": 9,
+                "format": "png",
+            }
+        )
+        with patch(
+            "agentcloak.client.DaemonClient.screenshot_sync", return_value=payload
+        ) as screenshot:
+            result = runner.invoke(app, ["screenshot", "-o", str(output)])
+
+        assert result.exit_code == 0, result.output
+        assert output.read_bytes() == b"png-bytes"
+        screenshot.assert_called_once_with(
+            full_page=False,
+            format="png",
+            quality=None,
+            wait_selector="",
+            wait_timeout=None,
+        )
+
+    def test_unknown_suffix_warns_after_daemon_default(self, tmp_path: Path) -> None:
+        output = tmp_path / "page.artifact"
+        payload = _envelope(
+            {
+                "base64": base64.b64encode(b"jpeg-bytes").decode(),
+                "size": 10,
+                "format": "jpeg",
+            }
+        )
+        with patch(
+            "agentcloak.client.DaemonClient.screenshot_sync", return_value=payload
+        ) as screenshot:
+            result = runner.invoke(app, ["screenshot", "-o", str(output)])
+
+        assert result.exit_code == 0, result.output
+        assert "unrecognized screenshot suffix '.artifact'" in result.output
+        assert "configured format 'jpeg'" in result.output
+        assert result.stdout.strip() == str(output)
+        screenshot.assert_called_once_with(
+            full_page=False,
+            format=None,
+            quality=None,
+            wait_selector="",
+            wait_timeout=None,
+        )
+
+    def test_explicit_format_conflict_fails_before_request(
+        self, tmp_path: Path
+    ) -> None:
+        output = tmp_path / "page.png"
+        with patch("agentcloak.client.DaemonClient.screenshot_sync") as screenshot:
+            result = runner.invoke(
+                app,
+                ["screenshot", "-o", str(output), "--format", "jpeg"],
+            )
+
+        assert result.exit_code == 1
+        assert "conflicts with output suffix '.png'" in result.output
+        assert not output.exists()
+        screenshot.assert_not_called()
+
 
 class TestScreenshotDiff:
     @staticmethod

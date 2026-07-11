@@ -121,12 +121,14 @@ cloak screenshot
 | `png` | UI design verification, OCR, vision models, pixel-level comparison | Lossless |
 
 ```bash
-cloak screenshot                           # JPEG quality 80 (CLI default)
-cloak screenshot --format png              # lossless for design work
-cloak screenshot --format jpeg --quality 50 # smaller for token budgets
+cloak screenshot                           # live configured default
+cloak screenshot -o page.png               # suffix selects lossless PNG
+cloak screenshot -o page.jpg --quality 50  # suffix selects smaller JPEG
 ```
 
-Omitted format follows `browser.screenshot_format`. MCP tools default to JPEG quality 50 (configurable via `browser.mcp_screenshot_quality`).
+Recognized output suffixes select the encoding. Unknown suffixes warn and use the
+live `browser.screenshot_format`; extensionless paths fall back quietly. MCP tools
+default to JPEG quality 50 (configurable via `browser.mcp_screenshot_quality`).
 
 ## SPA Hash Targets
 

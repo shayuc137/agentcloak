@@ -102,20 +102,22 @@ cloak screenshot [--output FILE] [--full-page] [--format FORMAT] [--quality N] [
 
 | 参数 | 默认值 | 说明 |
 |------|-------|------|
-| `--output` | 自动放在系统临时目录（`tempfile.gettempdir()`） | 保存到文件；stdout 打印文件路径 |
+| `--output` | 自动放在系统临时目录（`tempfile.gettempdir()`） | 保存到文件；`.png` 选择 PNG，`.jpg`/`.jpeg` 选择 JPEG |
 | `--full-page` | 关闭 | 捕获完整可滚动页面 |
-| `--format` | `browser.screenshot_format`（`jpeg`） | `jpeg` 或 `png` |
+| `--format` | 输出后缀，其次为 `browser.screenshot_format`（`jpeg`） | 显式覆盖为 `jpeg` 或 `png`；必须与已识别后缀一致 |
 | `--quality` | `80` | JPEG 质量 0-100（PNG 时忽略） |
 | `--wait-selector` | 无 | 截图前等待 CSS 选择器可见 |
 | `--wait-timeout` | `browser.action_timeout` | 选择器等待超时（毫秒） |
 
 > [!TIP]
 > **PNG 和 JPEG 的选择：**
-> - `--format png` — UI 设计验证、OCR、视觉模型。无损质量避免 JPEG 伪影干扰文字识别或像素级对比。
-> - `--format jpeg` — 版面检查、页面状态验证。体积小 4-10 倍，像素精度要求不高时够用。
+> - `-o page.png` — UI 设计验证、OCR、视觉模型。无损质量避免 JPEG 伪影干扰文字识别或像素级对比。
+> - `-o page.jpg` — 版面检查、页面状态验证。体积小 4-10 倍，像素精度要求不高时够用。
 >
-> 省略格式时使用 `browser.screenshot_format`。MCP 的 JPEG 质量默认 50
-> （可通过 `browser.mcp_screenshot_quality` 配置），CLI 默认质量 80。
+> 已识别的输出后缀无需 `--format` 即可选择编码。未知的非空后缀会先给出
+> warning，再回退到实时 `browser.screenshot_format`；无后缀路径会安静回退。
+> MCP 的 JPEG 质量默认 50（可通过 `browser.mcp_screenshot_quality` 配置），
+> CLI 默认质量 80。
 
 ### diff screenshot
 

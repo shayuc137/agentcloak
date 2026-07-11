@@ -13,8 +13,6 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentcloak.daemon.models._defaults import (
-    DEFAULT_BATCH_SETTLE_TIMEOUT,
-    DEFAULT_MAX_RETURN_SIZE,
     DEFAULT_NAVIGATE_TIMEOUT,
 )
 
@@ -132,9 +130,11 @@ class EvaluateRequest(BaseModel):
         "main",
         description="World: main (sees site globals) or isolated (sandboxed).",
     )
-    max_return_size: int = Field(
-        DEFAULT_MAX_RETURN_SIZE,
-        description="Max serialized result bytes; larger results are truncated.",
+    max_return_size: int | None = Field(
+        None,
+        description=(
+            "Max serialized result bytes; unset uses browser.max_return_size."
+        ),
     )
     preset: str = Field(
         "",
@@ -207,9 +207,12 @@ class BatchActionRequest(BaseModel):
     sleep: float = Field(
         0.0, description="Seconds to pause between actions to let the page settle."
     )
-    settle_timeout: int = Field(
-        DEFAULT_BATCH_SETTLE_TIMEOUT,
-        description="Max ms to wait for navigation/network to settle per action.",
+    settle_timeout: int | None = Field(
+        None,
+        description=(
+            "Max ms to wait for navigation/network to settle per action; "
+            "unset uses browser.batch_settle_timeout."
+        ),
     )
 
 

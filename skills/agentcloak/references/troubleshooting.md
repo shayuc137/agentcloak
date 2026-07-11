@@ -28,7 +28,7 @@ Error: Element [99] not in selector_map (4 entries)
 | `daemon_timeout` | Daemon is up but slow to respond | Increase `AGENTCLOAK_HTTP_CLIENT_TIMEOUT` |
 | `stealth_not_installed` | The cloakbrowser pip dep didn't install correctly | `pip install agentcloak --upgrade` (or `cloak doctor --fix`) |
 | `xvfb_not_found` | Headed mode on a headless Linux box without Xvfb | Install Xvfb (doctor prints the per-distro command) or set `headless = true` |
-| `spell_no_browser` | Spell needs browser but none launched | Navigate to a page first, then run the spell |
+| `spell_no_browser` | Browser spell reached an executor without daemon context | Run it through `cloak spell run`; if it persists, use `cloak doctor --fix` and retry |
 | `spell_no_handler` | Spell definition is broken | Check the spell code |
 | `outbound_target_blocked` | fetch/download URL resolves to a private/loopback/link-local IP (SSRF guard) | Use a public URL; this guard protects against prompt-injection SSRF |
 | `outbound_scheme_blocked` | fetch/download URL uses a non-http(s) scheme | Use http:// or https:// |

@@ -160,7 +160,7 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak launch --tier cloak\|playwright\|remote_bridge` | Hot-switch the daemon's browser tier (no restart) |
 | `cloak profile list` / `create` / `launch` / `delete` | Browser profile management (`create --from-current` snapshots the live session's cookies) |
 | `cloak tab list` / `new` / `close` / `switch` | Tab management |
-| `cloak spell list` / `info` / `run NAME` / `scaffold` | Spells (reusable site automation) |
+| `cloak spell list` / `info` / `run NAME` / `scaffold` | Spells (PUBLIC runs locally; browser strategies use daemon + caller session) |
 | `cloak cookies export [--url URL]` / `import -c '[...]'` | Export/import cookies (text output is `domain \| name=value`; pass `--url` to scope to one site — without it every site's cookies are returned, with import preserving httpOnly) |
 | `cloak cookies set NAME VAL [--domain D]` / `set --curl '<copy-as-curl>'` / `clear` / `delete NAME` | Cookie CRUD; `--curl` seeds cookies from a DevTools Copy-as-cURL string |
 | `cloak pdf [-o file] [--format A4] [--landscape]` | Export the current page to PDF (headless only) |

@@ -495,7 +495,7 @@ cloak spell run NAME [key=value ...]
 cloak spell scaffold SITE COMMAND
 ```
 
-`capture export` 把裸 HAR/JSON 写到 stdout——pipe 到文件。`spell run` 直接打印 spell 返回值（不裹 envelope）。
+`capture export` 把裸 HAR/JSON 写到 stdout——pipe 到文件。文本模式下，`spell run` 直接打印返回值；`--json` 使用标准 envelope。PUBLIC spell 在本地运行且不启动 daemon；COOKIE、HEADER、INTERCEPT 和 UI spell 经 `/spell/run` 使用调用者当前的 Agentcloak 会话。
 
 ## Profile 管理
 

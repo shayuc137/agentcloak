@@ -15,13 +15,13 @@ cloak spell run weather/current city=Tokyo    # 带参的 spell 用 key=value
 
 每个 spell 声明一个 `Strategy`，告诉执行器它需要什么：
 
-| Strategy | 行为 | 需要浏览器？ |
-|----------|------|-----------|
-| `PUBLIC` | 纯 HTTP 调用，无认证 | 不需要 |
-| `COOKIE` | 用浏览器 cookie 重放 HTTP | 需要（取 cookie） |
-| `HEADER` | 用捕获的认证 header 重放 HTTP | 需要（取 header） |
-| `INTERCEPT` | 钩住真实浏览器请求抽取结果 | 需要 |
-| `UI` | 通过点击 / 填表驱动页面 | 需要 |
+| Strategy | 行为 | CLI 执行路径 |
+|----------|------|-------------|
+| `PUBLIC` | 纯 HTTP 调用，无认证 | 本地执行，不启动 daemon |
+| `COOKIE` | 用浏览器 cookie 重放 HTTP | daemon + 调用者会话 |
+| `HEADER` | 用捕获的认证 header 重放 HTTP | daemon + 调用者会话 |
+| `INTERCEPT` | 钩住真实浏览器请求抽取结果 | daemon + 调用者会话 |
+| `UI` | 通过点击 / 填表驱动页面 | daemon + 调用者会话 |
 
 总选能用的最低 strategy。`PUBLIC` 没有浏览器开销；`UI` 是兜底方案，给没有可用 API 的站点。模式 analyzer（`cloak capture analyze`）会告诉你站点支持哪种 strategy。
 
@@ -31,11 +31,13 @@ cloak spell run weather/current city=Tokyo    # 带参的 spell 用 key=value
 |------|------|
 | `cloak spell list` | 列出所有注册 spell，含 site、name、strategy |
 | `cloak spell info SITE/NAME` | strategy、参数、domain、描述、源码位置 |
-| `cloak spell run SITE/NAME` | 执行（需要时浏览器自动启动） |
+| `cloak spell run SITE/NAME` | PUBLIC 本地执行；其他 strategy 使用 daemon/browser |
 | `cloak spell run SITE/NAME k=v k2=v2` | 以 `key=value` 对的形式位置传 `Arg` |
 | `cloak spell scaffold SITE` | 从 `cloak capture analyze` 输出生成 spell 桩 |
 
 Spell 名永远是 `site/command`——site 把相关 spell 组在一起，command 标识具体操作。
+
+`cloak spell run` 会先在本地发现 metadata，再选择执行路径。PUBLIC spell 直接在 CLI 进程运行，不连接或启动 daemon。COOKIE、HEADER、INTERCEPT 和 UI spell 调用既有 daemon 端点，由它按正常流程自动启动并注入调用者当前的 Agentcloak 会话；CLI 不会另建浏览器。此路由不负责持久化凭据或刷新过期会话。
 
 ## 编写 spell
 
@@ -95,12 +97,12 @@ async def example_title(ctx: SpellContext) -> list[dict[str, object]]:
 
 ## 自动发现
 
-daemon 启动时从两个位置自动发现 spell：
+CLI 和 daemon 从两个位置发现 spell：
 
 1. **内置：**`src/agentcloak/spells/sites/`——随包提供，含 `httpbin` 和 `example` 范例
 2. **用户目录：**`~/.config/agentcloak/spells/*.py`——你的；不会被升级覆盖
 
-两个位置下的任意 `.py` 文件都会被 import 一次；文件里的 `@spell(...)` 装饰器在 import 时注册。新增 spell 只需把 Python 文件放进用户目录——Linux 下不强制重启 daemon（`spell list` 每次会重新扫描目录），但重启是最稳的路径。
+两个位置下的 `.py` 文件会被导入，其中的 `@spell(...)` 装饰器在导入时注册。CLI 的 list/info/run 在本地扫描；浏览器型运行由 daemon 在执行前重新发现，因此用户 spell 应放在两个进程指向的同一用户配置目录中。
 
 ## Capture → analyze → scaffold
 

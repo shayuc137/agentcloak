@@ -5,13 +5,13 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-import orjson
 import typer
 
-from agentcloak.cli._dispatch import emit_envelope
-from agentcloak.cli.output import is_json_mode, value
+from agentcloak.cli._dispatch import dispatch_text_or_json, emit_envelope
+from agentcloak.cli.output import error_from_exception, is_json_mode, value
 from agentcloak.client import DaemonClient
 from agentcloak.core.errors import AgentBrowserError
+from agentcloak.core.text_renderers import render_spell_run_text
 from agentcloak.spells.discovery import discover_spells
 from agentcloak.spells.registry import get_registry
 
@@ -156,21 +156,27 @@ def spell_run(
         )
 
     parsed_args = _parse_args(args or [])
+    if entry.meta.needs_browser:
+        try:
+            dispatch_text_or_json(
+                DaemonClient(),
+                "POST",
+                "/spell/run",
+                json_body={"name": name, "args": parsed_args},
+                renderer=render_spell_run_text,
+            )
+        except AgentBrowserError as exc:
+            error_from_exception(exc)
+        return
+
     # Local spell execution stays async (executor + pipeline are async); we
     # only need asyncio.run here, not a daemon round-trip.
     result = asyncio.run(_execute(entry, parsed_args))
+    data = {"result": result}
     if is_json_mode():
-        emit_envelope({"ok": True, "seq": 0, "data": {"result": result}})
+        emit_envelope({"ok": True, "seq": 0, "data": data})
         return
-    # Text mode: bare result if scalar/string, pretty JSON for structures.
-    if isinstance(result, str):
-        value(result)
-    elif isinstance(result, int | float | bool):
-        value(str(result))
-    elif result is None:
-        value("")
-    else:
-        value(orjson.dumps(result, option=orjson.OPT_INDENT_2).decode())
+    value(render_spell_run_text(data))
 
 
 async def _execute(entry: Any, args: dict[str, Any]) -> Any:
@@ -181,7 +187,7 @@ async def _execute(entry: Any, args: dict[str, Any]) -> Any:
             error="browser_required",
             hint=f"Spell '{entry.meta.full_name}' requires a browser "
             f"(strategy={entry.meta.strategy})",
-            action="start daemon first, then use spell run",
+            action="route browser-required spells through daemon /spell/run",
         )
 
     return await execute_spell(entry, args=args)

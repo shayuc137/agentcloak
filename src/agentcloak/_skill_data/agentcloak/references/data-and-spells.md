@@ -59,6 +59,12 @@ cloak spell scaffold mysite             # generate template for a new spell
 
 Built-in spells are minimal — only `httpbin/headers` and `example/title` ship by default. `cloak spell info <site/name>` shows whether a spell takes arguments; pass them as positional `key=value` pairs (`cloak spell run` has no `--arg` flag).
 
+Dispatch follows spell metadata. `Strategy.PUBLIC` runs inside the CLI process and
+does not contact the daemon. COOKIE, HEADER, INTERCEPT, and UI strategies call
+`/spell/run`; daemon auto-start and session headers work like other browser commands,
+so the spell receives the caller's current browser context. This is execution
+routing only—credential persistence, expiry detection, and refresh are separate.
+
 ### Creating Spells
 
 Two modes:

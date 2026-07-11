@@ -30,7 +30,7 @@ from __future__ import annotations
 import base64
 import json
 from typing import TYPE_CHECKING, Any
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
@@ -382,6 +382,124 @@ class TestScreenshotDiff:
         assert result.exit_code == 1
         assert "baseline=2x2, current=3x1" in result.output
         assert "same viewport and dimensions" in result.output
+
+
+class TestSpellRunRouting:
+    @staticmethod
+    def _entry(strategy: Any) -> Any:
+        from agentcloak.spells.types import SpellEntry, SpellMeta
+
+        return SpellEntry(
+            meta=SpellMeta(
+                site="dos",
+                name="login",
+                strategy=strategy,
+                description="Log in to DOS",
+            )
+        )
+
+    @staticmethod
+    def _registry(entry: Any) -> MagicMock:
+        registry = MagicMock()
+        registry.__len__.return_value = 1
+        registry.get.return_value = entry
+        return registry
+
+    def test_public_spell_stays_local_without_daemon(self) -> None:
+        from agentcloak.core.types import Strategy
+
+        entry = self._entry(Strategy.PUBLIC)
+        registry = self._registry(entry)
+        execute = AsyncMock(return_value=[{"source": "local"}])
+        with (
+            patch(
+                "agentcloak.cli.commands.spell_cmd.get_registry",
+                return_value=registry,
+            ),
+            patch("agentcloak.cli.commands.spell_cmd._execute", execute),
+            patch("agentcloak.cli.commands.spell_cmd.DaemonClient") as client,
+        ):
+            result = runner.invoke(app, ["spell", "run", "dos/login", "tenant=demo"])
+
+        assert result.exit_code == 0, result.output
+        assert '"source": "local"' in result.stdout
+        execute.assert_awaited_once_with(entry, {"tenant": "demo"})
+        client.assert_not_called()
+
+    def test_browser_spell_routes_name_and_parsed_args_to_daemon(self) -> None:
+        from agentcloak.core.types import Strategy
+
+        entry = self._entry(Strategy.UI)
+        registry = self._registry(entry)
+        payload = _envelope({"result": [{"logged_in": True}]}, seq=7)
+        execute = AsyncMock()
+        with (
+            patch(
+                "agentcloak.cli.commands.spell_cmd.get_registry",
+                return_value=registry,
+            ),
+            patch("agentcloak.cli.commands.spell_cmd._execute", execute),
+            patch(
+                "agentcloak.client.DaemonClient._send_sync", return_value=payload
+            ) as send,
+        ):
+            result = runner.invoke(
+                app,
+                ["spell", "run", "dos/login", "tenant=demo", "remember"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert '"logged_in": true' in result.stdout
+        send.assert_called_once_with(
+            "POST",
+            "/spell/run",
+            json_body={
+                "name": "dos/login",
+                "args": {"tenant": "demo", "remember": True},
+            },
+            params=None,
+        )
+        execute.assert_not_awaited()
+
+    def test_browser_spell_json_preserves_daemon_envelope(self) -> None:
+        from agentcloak.core.types import Strategy
+
+        registry = self._registry(self._entry(Strategy.COOKIE))
+        payload = _envelope({"result": [{"user": "shayu"}]}, seq=11)
+        with (
+            patch(
+                "agentcloak.cli.commands.spell_cmd.get_registry",
+                return_value=registry,
+            ),
+            patch("agentcloak.client.DaemonClient._send_sync", return_value=payload),
+        ):
+            result = runner.invoke(app, ["--json", "spell", "run", "dos/login"])
+
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.stdout) == payload
+
+    def test_browser_spell_daemon_failure_is_actionable(self) -> None:
+        from agentcloak.core.errors import AgentBrowserError
+        from agentcloak.core.types import Strategy
+
+        registry = self._registry(self._entry(Strategy.INTERCEPT))
+        failure = AgentBrowserError(
+            error="daemon_unreachable",
+            hint="Cannot reach the agentcloak daemon",
+            action="run 'cloak doctor --fix' and retry",
+        )
+        with (
+            patch(
+                "agentcloak.cli.commands.spell_cmd.get_registry",
+                return_value=registry,
+            ),
+            patch("agentcloak.client.DaemonClient._send_sync", side_effect=failure),
+        ):
+            result = runner.invoke(app, ["spell", "run", "dos/login"])
+
+        assert result.exit_code == 1
+        assert "Cannot reach the agentcloak daemon" in result.output
+        assert "cloak doctor --fix" in result.output
 
 
 # ---------------------------------------------------------------------------

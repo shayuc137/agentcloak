@@ -3,13 +3,26 @@
 from __future__ import annotations
 
 import json
+from typing import Any
+from unittest.mock import patch
 
+import pytest
 from typer.testing import CliRunner
 
+from agentcloak.cli import output as cli_output
 from agentcloak.cli.app import app
 from agentcloak.spells.registry import get_registry
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _reset_cli_mode() -> Any:
+    cli_output.set_json_mode(enabled=False)
+    cli_output.set_pretty(enabled=False)
+    yield
+    cli_output.set_json_mode(enabled=False)
+    cli_output.set_pretty(enabled=False)
 
 
 def _parse_json(stdout: str) -> dict:
@@ -76,9 +89,25 @@ class TestSpellRun:
 
         discover_spells()
 
-    def test_run_browser_required_spell_fails_without_daemon(self) -> None:
-        result = runner.invoke(app, ["spell", "run", "example/title"])
-        assert result.exit_code == 1
+    def test_run_browser_required_spell_routes_to_daemon(self) -> None:
+        payload = {
+            "ok": True,
+            "seq": 3,
+            "data": {"result": [{"title": "Example"}]},
+        }
+        with patch(
+            "agentcloak.client.DaemonClient._send_sync", return_value=payload
+        ) as send:
+            result = runner.invoke(app, ["spell", "run", "example/title"])
+
+        assert result.exit_code == 0, result.output
+        assert '"title": "Example"' in result.stdout
+        send.assert_called_once_with(
+            "POST",
+            "/spell/run",
+            json_body={"name": "example/title", "args": {}},
+            params=None,
+        )
 
 
 class TestDiscovery:

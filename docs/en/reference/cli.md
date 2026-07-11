@@ -503,7 +503,10 @@ cloak spell run NAME [key=value ...]
 cloak spell scaffold SITE COMMAND
 ```
 
-`capture export` writes the raw HAR/JSON to stdout — pipe to a file. `spell run` prints the spell's return value directly (no envelope).
+`capture export` writes the raw HAR/JSON to stdout — pipe to a file. In text mode,
+`spell run` prints the return value directly; `--json` uses the standard envelope.
+PUBLIC spells run locally without a daemon. COOKIE, HEADER, INTERCEPT, and UI spells
+route through `/spell/run` and use the caller's current Agentcloak session.
 
 ## Profile management
 

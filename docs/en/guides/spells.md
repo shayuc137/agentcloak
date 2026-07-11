@@ -15,13 +15,13 @@ cloak spell run weather/current city=Tokyo    # spells with args use key=value
 
 Every spell declares a `Strategy` that tells the executor what it needs:
 
-| Strategy | What it does | Needs browser? |
-|----------|--------------|----------------|
-| `PUBLIC` | Plain HTTP call, no auth | No |
-| `COOKIE` | Replay HTTP with the browser's cookies | Yes (for cookies) |
-| `HEADER` | Replay HTTP with captured auth headers | Yes (for headers) |
-| `INTERCEPT` | Hook a real browser request to extract its result | Yes |
-| `UI` | Drive the page through clicks / fills | Yes |
+| Strategy | What it does | CLI execution |
+|----------|--------------|---------------|
+| `PUBLIC` | Plain HTTP call, no auth | Local, daemon-free |
+| `COOKIE` | Replay HTTP with the browser's cookies | Daemon + caller session |
+| `HEADER` | Replay HTTP with captured auth headers | Daemon + caller session |
+| `INTERCEPT` | Hook a real browser request to extract its result | Daemon + caller session |
+| `UI` | Drive the page through clicks / fills | Daemon + caller session |
 
 Always pick the lowest-strategy you can. `PUBLIC` is free of browser overhead; `UI` is the fallback for sites with no usable API. The pattern analyser (`cloak capture analyze`) tells you which strategy the site supports.
 
@@ -31,11 +31,18 @@ Always pick the lowest-strategy you can. `PUBLIC` is free of browser overhead; `
 |---------|---------|
 | `cloak spell list` | List every registered spell with site, name, strategy |
 | `cloak spell info SITE/NAME` | Strategy, args, domain, description, source location |
-| `cloak spell run SITE/NAME` | Execute (browser auto-starts if strategy needs it) |
+| `cloak spell run SITE/NAME` | Execute locally for PUBLIC; use daemon/browser for other strategies |
 | `cloak spell run SITE/NAME k=v k2=v2` | Pass `Arg` values positionally as `key=value` pairs |
 | `cloak spell scaffold SITE` | Generate spell stubs from `cloak capture analyze` output |
 
 Spell names are always `site/command` — the site groups related spells, the command identifies the operation.
+
+`cloak spell run` discovers metadata locally before choosing a path. PUBLIC spells
+run in the CLI process without contacting or starting the daemon. COOKIE, HEADER,
+INTERCEPT, and UI spells call the existing daemon endpoint, which auto-starts as
+usual and injects the caller's current Agentcloak session. The CLI never constructs
+a separate browser. This routing does not persist credentials or refresh expired
+sessions.
 
 ## Writing a spell
 
@@ -95,12 +102,12 @@ When `strategy` is `COOKIE` / `HEADER` and `domain` is set, the executor automat
 
 ## Discovery
 
-Spells are auto-discovered on daemon start from two locations:
+The CLI and daemon discover spells from two locations:
 
 1. **Built-in:** `src/agentcloak/spells/sites/` — ships with the package, includes the `httpbin` and `example` examples
 2. **User directory:** `~/.config/agentcloak/spells/*.py` — yours; survives package updates
 
-Any `.py` file in either location is imported once; any `@spell(...)` decorators in those files register at import time. Add a new spell by dropping a Python file into the user directory — no daemon restart on Linux (the directory is rescanned on each `spell list`), but a restart is the safest path.
+Any `.py` file in either location is imported; its `@spell(...)` decorators register at import time. CLI list/info/run scans locally. Browser-backed runs are rediscovered by the daemon before execution, so place user spells where both processes resolve the same user config directory.
 
 ## Capture → analyze → scaffold
 

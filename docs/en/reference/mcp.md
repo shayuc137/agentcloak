@@ -307,7 +307,7 @@ Download files — fetch a URL directly or capture a click-triggered download.
 | `output_dir` | `str` | `""` | Directory to save into (daemon host) |
 | `timeout` | `float` | `0.0` | Max wait seconds for `wait` / `wait-click` |
 | `index` | `int` | `0` | Element `[N]` to click (required for `wait-click`) |
-| `force` | `bool` | `false` | Skip pointer check on the click (`wait-click` only) |
+| `force` | `bool` | `false` | Bypass overlays with a DOM click (`wait-click` only) |
 
 ### agentcloak_storage
 

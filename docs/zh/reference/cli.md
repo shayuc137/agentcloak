@@ -166,7 +166,7 @@ cloak click --x X --y Y           # 坐标 fallback
 cloak click N --force             # 跳过 pointer 遮挡检查（被 overlay 盖住时）
 ```
 
-元素被 overlay 遮挡时加 `--force`：Playwright/Cloak 会跳过可操作性检查，RemoteBridge 会对解析出的 DOM 元素调用 `click()`，绕过坐标命中测试。页面需要自定义事件路径时，退回用 `js evaluate "document.querySelector('...')?.click()"`。
+元素被 overlay 遮挡时加 `--force`：所有后端都会对解析出的 DOM 元素调用 `click()`，绕过坐标命中测试。页面需要自定义事件路径时，退回用 `js evaluate "document.querySelector('...')?.click()"`。
 
 ### fill
 

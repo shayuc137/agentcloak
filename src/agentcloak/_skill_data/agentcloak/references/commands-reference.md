@@ -321,7 +321,7 @@ Read this file when you need full parameter detail. For the common path, the qui
   - `index` (integer, default: *required*) — Element [N] to click (the download trigger).
   - `output_dir` (string | null, default: —) — Directory to save into. Defaults to the system temp dir.
   - `timeout` (number | null, default: —) — Seconds to wait for a download. Defaults to navigation_timeout.
-  - `force` (boolean, default: false) — Pass force=True to the click (skip pointer check).
+  - `force` (boolean, default: false) — Bypass overlays with a DOM click on the element ref.
 
 ### `GET /download/list`
 

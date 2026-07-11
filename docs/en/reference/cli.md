@@ -170,7 +170,7 @@ cloak click --x X --y Y           # coordinate fallback
 cloak click N --force             # skip the pointer-intercept check (covering overlay)
 ```
 
-When an element is hidden behind an overlay, retry with `--force`: Playwright/Cloak bypass actionability checks and RemoteBridge invokes the resolved DOM element's `click()` instead of coordinate hit testing. Fall back to `js evaluate "document.querySelector('...')?.click()"` when a page requires a custom event path.
+When an element is hidden behind an overlay, retry with `--force`: every backend invokes the resolved DOM element's `click()` instead of coordinate hit testing. Fall back to `js evaluate "document.querySelector('...')?.click()"` when a page requires a custom event path.
 
 ### fill
 

@@ -306,7 +306,7 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 38 个工具。已包含在�
 | `output_dir` | `str` | `""` | 保存目录（daemon 主机路径） |
 | `timeout` | `float` | `0.0` | `wait` / `wait-click` 的最大等待秒数 |
 | `index` | `int` | `0` | 要点击的元素 `[N]`（`wait-click` 必填） |
-| `force` | `bool` | `false` | 跳过点击的 pointer check（仅 `wait-click`） |
+| `force` | `bool` | `false` | 使用 DOM 点击绕过遮挡层（仅 `wait-click`） |
 
 ### agentcloak_storage
 

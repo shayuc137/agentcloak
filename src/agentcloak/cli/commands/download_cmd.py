@@ -88,7 +88,7 @@ def download_wait_click(
         None, "--timeout", help="Seconds to wait for the download."
     ),
     force: bool = typer.Option(
-        False, "--force", help="Skip pointer check on the click."
+        False, "--force", help="Bypass overlays with a DOM click on the element ref."
     ),
 ) -> None:
     """Click an element and wait for the triggered download to complete."""

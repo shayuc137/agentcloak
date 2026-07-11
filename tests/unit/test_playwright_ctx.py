@@ -303,7 +303,7 @@ class TestSnapshot:
     @pytest.mark.asyncio
     async def test_selector_resolves_backend_dom_id_via_cdp(self) -> None:
         ctx = _make_ctx()
-        ctx._raw_cdp_impl = AsyncMock(  # type: ignore[method-assign]
+        ctx._cdp_send = AsyncMock(  # type: ignore[method-assign]
             side_effect=[
                 {"root": {"nodeId": 1}},
                 {"nodeId": 7},
@@ -312,7 +312,7 @@ class TestSnapshot:
         )
 
         assert await ctx._resolve_snapshot_selector("main") == 42
-        calls = ctx._raw_cdp_impl.call_args_list
+        calls = ctx._cdp_send.call_args_list
         assert [call.args[0] for call in calls] == [
             "DOM.getDocument",
             "DOM.querySelector",
@@ -323,7 +323,7 @@ class TestSnapshot:
     @pytest.mark.asyncio
     async def test_selector_normalizes_stale_cdp_document_error(self) -> None:
         ctx = _make_ctx()
-        ctx._raw_cdp_impl = AsyncMock(  # type: ignore[method-assign]
+        ctx._cdp_send = AsyncMock(  # type: ignore[method-assign]
             side_effect=BackendError(
                 error="cdp_call_failed",
                 hint="DOM.querySelector: Could not find node with given id",
@@ -339,7 +339,7 @@ class TestSnapshot:
     @pytest.mark.asyncio
     async def test_selector_normalizes_invalid_cdp_query_error(self) -> None:
         ctx = _make_ctx()
-        ctx._raw_cdp_impl = AsyncMock(  # type: ignore[method-assign]
+        ctx._cdp_send = AsyncMock(  # type: ignore[method-assign]
             side_effect=BackendError(
                 error="cdp_call_failed",
                 hint="DOM.querySelector: DOM Error while querying",
@@ -559,6 +559,55 @@ class TestEvaluate:
         with pytest.raises(BackendError) as exc_info:
             await ctx.evaluate("1+1")
         assert "main world" in exc_info.value.hint
+
+
+class TestClick:
+    @pytest.mark.asyncio
+    async def test_force_click_invokes_dom_click(self) -> None:
+        ctx = _make_ctx()
+        element = MagicMock()
+        element.evaluate = AsyncMock()
+        element.click = AsyncMock()
+        ctx._resolve_element = AsyncMock(  # type: ignore[method-assign]
+            return_value=element
+        )
+        ctx._get_ref = MagicMock(return_value=MagicMock())  # type: ignore[method-assign]
+
+        result = await ctx._click_impl(
+            target="1",
+            x=None,
+            y=None,
+            button="left",
+            click_count=1,
+            force=True,
+        )
+
+        assert result["clicked"] is True
+        element.evaluate.assert_awaited_once_with("(node) => node.click()")
+        element.click.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_regular_click_keeps_physical_playwright_path(self) -> None:
+        ctx = _make_ctx()
+        element = MagicMock()
+        element.evaluate = AsyncMock()
+        element.click = AsyncMock()
+        ctx._resolve_element = AsyncMock(  # type: ignore[method-assign]
+            return_value=element
+        )
+        ctx._get_ref = MagicMock(return_value=MagicMock())  # type: ignore[method-assign]
+
+        await ctx._click_impl(
+            target="1",
+            x=None,
+            y=None,
+            button="right",
+            click_count=2,
+            force=False,
+        )
+
+        element.click.assert_awaited_once_with(button="right", click_count=2)
+        element.evaluate.assert_not_awaited()
 
 
 class TestScreenshot:

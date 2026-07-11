@@ -1031,7 +1031,7 @@ class BrowserContextBase(ABC):
     async def _resolve_snapshot_selector(self, selector: str) -> int:
         """Resolve a main-document CSS selector to its backend DOM node id."""
         try:
-            document = await self._raw_cdp_impl(
+            document = await self._cdp_send(
                 "DOM.getDocument", {"depth": -1, "pierce": True}
             )
             root = document.get("root", {})
@@ -1046,7 +1046,7 @@ class BrowserContextBase(ABC):
                     hint="CDP did not return a document root",
                     action="retry after the page finishes loading",
                 )
-            match = await self._raw_cdp_impl(
+            match = await self._cdp_send(
                 "DOM.querySelector", {"nodeId": root_id, "selector": selector}
             )
             node_id = match.get("nodeId")
@@ -1056,9 +1056,7 @@ class BrowserContextBase(ABC):
                     hint=f"No element matches selector '{selector}'",
                     action="check the selector in the main document and retry",
                 )
-            described = await self._raw_cdp_impl(
-                "DOM.describeNode", {"nodeId": node_id}
-            )
+            described = await self._cdp_send("DOM.describeNode", {"nodeId": node_id})
             node = described.get("node", {})
             backend_id = (
                 cast("dict[str, Any]", node).get("backendNodeId")

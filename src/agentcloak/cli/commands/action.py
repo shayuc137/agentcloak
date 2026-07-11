@@ -94,7 +94,7 @@ def do_click(
     button: str = typer.Option("left", "--button", help="Mouse button."),
     click_count: int = typer.Option(1, "--click-count", help="Number of clicks."),
     force: bool = typer.Option(
-        False, "--force", help="Skip pointer-events check (bypass overlays)."
+        False, "--force", help="Bypass overlays with a DOM click for element refs."
     ),
     snap: bool = typer.Option(
         False,

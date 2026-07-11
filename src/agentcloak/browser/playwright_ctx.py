@@ -718,9 +718,10 @@ class PlaywrightContext(BrowserContextBase):
         index = int(target)
         element = await self._resolve_element(index)
         try:
-            await element.click(
-                button=button, click_count=int(click_count), force=force
-            )
+            if force:
+                await element.evaluate("(node) => node.click()")
+            else:
+                await element.click(button=button, click_count=int(click_count))
         except Exception as exc:
             msg = str(exc).lower()
             if not force and (

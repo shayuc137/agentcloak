@@ -56,7 +56,7 @@ class DownloadWaitClickRequest(BaseModel):
         description="Seconds to wait for a download. Defaults to navigation_timeout.",
     )
     force: bool = Field(
-        False, description="Pass force=True to the click (skip pointer check)."
+        False, description="Bypass overlays with a DOM click on the element ref."
     )
 
 

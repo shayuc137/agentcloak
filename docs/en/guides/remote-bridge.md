@@ -53,6 +53,11 @@ cloak snapshot                                   # sees the real page
 cloak click 5                                    # clicks in real Chrome
 ```
 
+RemoteBridge normally sends physical coordinate mouse events. Use
+`cloak click N --force` when an overlay intercepts the target; force resolves the
+ref and invokes its DOM `click()` directly. `fill` uses native value setters plus
+bubbling `input`/`change` events for React/Vue controlled fields.
+
 Make the bridge the default for the daemon:
 
 ```bash

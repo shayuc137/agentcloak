@@ -88,7 +88,7 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 
 | Command | Purpose |
 |---------|---------|
-| `cloak click N` | Click element (`--x/--y` coordinate fallback when no `[N]` ref; `--button right`; `--click-count 2` for double-click) |
+| `cloak click N [--force]` | Click element (`--force` bypasses covering overlays; `--x/--y` coordinate fallback; `--button right`; `--click-count 2` for double-click) |
 | `cloak fill N "value"` | Clear and set input value — fast path, but slow under humanize (see Gotchas) |
 | `cloak type N "value"` | Type character by character; pick this when you want the anti-detection typing cadence |
 | `cloak press Enter` | Press key (Enter, Tab, Escape, Backspace, ArrowDown, Space...; `--target N` focuses element [N] first) |

@@ -139,7 +139,7 @@ cloak click --x X --y Y           # 坐标 fallback
 cloak click N --force             # 跳过 pointer 遮挡检查（被 overlay 盖住时）
 ```
 
-元素被 overlay 遮挡时点击会失败并返回 `element_covered`；加 `--force` 跳过 Playwright 的可操作性检查，或退回用 `js evaluate`。
+元素被 overlay 遮挡时加 `--force`：Playwright/Cloak 会跳过可操作性检查，RemoteBridge 会对解析出的 DOM 元素调用 `click()`，绕过坐标命中测试。页面需要自定义事件路径时，退回用 `js evaluate "document.querySelector('...')?.click()"`。
 
 ### fill
 
@@ -149,6 +149,9 @@ cloak click N --force             # 跳过 pointer 遮挡检查（被 overlay �
 cloak fill N "value" [--snap]
 cloak fill --index N --text "value" [--snap]
 ```
+
+`fill` 使用兼容前端框架的 value setter。RemoteBridge 会先调用 input/textarea/select
+的原生 prototype setter，再依次冒泡 `input` 和 `change`，React/Vue 受控字段能收到更新。
 
 ### type
 

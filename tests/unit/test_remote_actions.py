@@ -188,6 +188,44 @@ class TestClickImpl:
         assert calls[0].args[1]["params"]["x"] == 123.0
         assert calls[0].args[1]["params"]["y"] == 456.0
 
+    @pytest.mark.asyncio
+    async def test_force_click_invokes_dom_click_without_mouse_events(self) -> None:
+        ctx = _make_ctx()
+        _seed_selector_map(ctx, ref=7)
+        ctx._send = AsyncMock(  # type: ignore[method-assign]
+            side_effect=[{"object": {"objectId": "obj-7"}}, {}]
+        )
+
+        result = await ctx._click_impl(
+            target="7", x=None, y=None, button="left", click_count=1, force=True
+        )
+
+        assert result == {"clicked": True}
+        calls = ctx._send.call_args_list
+        assert [call.args[1]["method"] for call in calls] == [
+            "DOM.resolveNode",
+            "Runtime.callFunctionOn",
+        ]
+        params = calls[1].args[1]["params"]
+        assert params["objectId"] == "obj-7"
+        assert "this.click()" in params["functionDeclaration"]
+        assert params["userGesture"] is True
+
+    @pytest.mark.asyncio
+    async def test_force_click_rejects_stale_ref_before_cdp(self) -> None:
+        from agentcloak.core.errors import ElementNotFoundError
+
+        ctx = _make_ctx()
+        _seed_selector_map(ctx, ref=1)
+        ctx._send = AsyncMock(return_value={})  # type: ignore[method-assign]
+
+        with pytest.raises(ElementNotFoundError, match="not in selector_map"):
+            await ctx._click_impl(
+                target="9", x=None, y=None, button="left", click_count=1, force=True
+            )
+
+        ctx._send.assert_not_awaited()
+
 
 # ---------------------------------------------------------------------------
 # B2.3: _fill_impl
@@ -224,9 +262,39 @@ class TestFillImpl:
         # The injected JS must JSON-encode the text so quotes are escaped.
         assert json.dumps("hello world") in js_payload
         assert "document.activeElement" in js_payload
-        # Both input + change events are fired (React/Vue compatibility).
-        assert "Event('input'" in js_payload
-        assert "Event('change'" in js_payload
+        # Native prototype setters update React/Vue trackers before events fire.
+        assert "HTMLInputElement.prototype" in js_payload
+        assert "HTMLTextAreaElement.prototype" in js_payload
+        assert "HTMLSelectElement.prototype" in js_payload
+        assert "Object.getOwnPropertyDescriptor(proto,'value')?.set" in js_payload
+        assert js_payload.index("Event('input'") < js_payload.index("Event('change'")
+
+
+# ---------------------------------------------------------------------------
+# B2.3b: _select_impl
+# ---------------------------------------------------------------------------
+
+
+class TestSelectImpl:
+    @pytest.mark.asyncio
+    async def test_select_uses_native_setter(self) -> None:
+        ctx = _make_ctx()
+        _seed_selector_map(ctx, ref=4)
+        ctx._send = AsyncMock(  # type: ignore[method-assign]
+            side_effect=[{"object": {"objectId": "obj-select"}}, {}]
+        )
+
+        result = await ctx._select_impl(target="4", value="active", label=None)
+
+        assert result == {"selected": True, "value": "active", "label": None}
+        calls = ctx._send.call_args_list
+        assert calls[0].args[1]["method"] == "DOM.resolveNode"
+        params = calls[1].args[1]["params"]
+        assert params["objectId"] == "obj-select"
+        fn_decl = params["functionDeclaration"]
+        assert "HTMLSelectElement.prototype" in fn_decl
+        assert "setter.call(this,value)" in fn_decl
+        assert fn_decl.index("Event('input'") < fn_decl.index("Event('change'")
 
 
 # ---------------------------------------------------------------------------

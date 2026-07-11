@@ -48,6 +48,22 @@ __all__ = ["RemoteBridgeContext"]
 
 logger = structlog.get_logger()
 
+_NATIVE_VALUE_SETTER = (
+    "function(value){"
+    "let proto=null;"
+    "if(typeof HTMLInputElement!=='undefined'&&this instanceof HTMLInputElement)"
+    "proto=HTMLInputElement.prototype;"
+    "else if(typeof HTMLTextAreaElement!=='undefined'&&"
+    "this instanceof HTMLTextAreaElement)proto=HTMLTextAreaElement.prototype;"
+    "else if(typeof HTMLSelectElement!=='undefined'&&"
+    "this instanceof HTMLSelectElement)proto=HTMLSelectElement.prototype;"
+    "const setter=proto&&Object.getOwnPropertyDescriptor(proto,'value')?.set;"
+    "if(setter)setter.call(this,value);else this.value=value;"
+    "this.dispatchEvent(new Event('input',{bubbles:true}));"
+    "this.dispatchEvent(new Event('change',{bubbles:true}));"
+    "}"
+)
+
 # Paper sizes in inches for CDP Page.printToPDF (which wants explicit
 # paperWidth/paperHeight rather than the named formats Playwright accepts).
 _PAPER_SIZES_IN: dict[str, tuple[float, float]] = {
@@ -433,6 +449,32 @@ class RemoteBridgeContext(BrowserContextBase):
     # Element resolution via backendDOMNodeId
     # ------------------------------------------------------------------
 
+    async def _resolve_element_object_id(self, ref: int) -> str:
+        """Resolve a cached ref to a CDP Runtime object id."""
+        self._require_snapshot(ref)
+        backend_id = self._backend_node_map.get(ref)
+        if backend_id is None:
+            raise BackendError(
+                error="element_not_found",
+                hint=f"Ref [{ref}] not in current snapshot",
+                action="re-snapshot and use a valid [N] ref",
+            )
+        resolve_result = await self._send(
+            "cdp",
+            {
+                "method": "DOM.resolveNode",
+                "params": {"backendNodeId": backend_id},
+            },
+        )
+        object_id = resolve_result.get("object", {}).get("objectId")
+        if not isinstance(object_id, str) or not object_id:
+            raise BackendError(
+                error="element_not_resolved",
+                hint=f"Could not resolve backendDOMNodeId {backend_id} for ref [{ref}]",
+                action="re-snapshot and retry — the element may have been removed",
+            )
+        return object_id
+
     async def _resolve_element_center(self, ref: int) -> tuple[float, float]:
         """Resolve [N] ref to element center coordinates via backendDOMNodeId."""
         self._require_snapshot(ref)
@@ -452,24 +494,7 @@ class RemoteBridgeContext(BrowserContextBase):
         )
         node_id = desc.get("node", {}).get("nodeId", 0)
         if not node_id:
-            resolve_result = await self._send(
-                "cdp",
-                {
-                    "method": "DOM.resolveNode",
-                    "params": {"backendNodeId": backend_id},
-                },
-            )
-            object_id = resolve_result.get("object", {}).get("objectId")
-            if not object_id:
-                raise BackendError(
-                    error="element_not_resolved",
-                    hint=(
-                        f"Could not resolve backendNodeId {backend_id} for ref [{ref}]"
-                    ),
-                    action=(
-                        "re-snapshot and retry — the element may have been removed"
-                    ),
-                )
+            object_id = await self._resolve_element_object_id(ref)
             box = await self._send(
                 "cdp",
                 {
@@ -532,6 +557,22 @@ class RemoteBridgeContext(BrowserContextBase):
     ) -> dict[str, Any]:
         if x is not None and y is not None:
             cx, cy = float(x), float(y)
+        elif force:
+            ref = int(target)
+            object_id = await self._resolve_element_object_id(ref)
+            await self._send(
+                "cdp",
+                {
+                    "method": "Runtime.callFunctionOn",
+                    "params": {
+                        "objectId": object_id,
+                        "functionDeclaration": "function(){this.click();}",
+                        "returnByValue": True,
+                        "userGesture": True,
+                    },
+                },
+            )
+            return {"clicked": True}
         else:
             cx, cy = await self._resolve_element_center(int(target))
         await self._dispatch_click(cx, cy)
@@ -556,16 +597,10 @@ class RemoteBridgeContext(BrowserContextBase):
     async def _set_active_value(self, text: str) -> None:
         val = json.dumps(text)
         js = (
-            f"(() => {{"
-            f" const el = document.activeElement;"
-            f" if (el) {{"
-            f" el.value = {val};"
-            f" el.dispatchEvent(new Event('input',"
-            f" {{bubbles:true}}));"
-            f" el.dispatchEvent(new Event('change',"
-            f" {{bubbles:true}}));"
-            f" }}"
-            f"}})()"
+            "(() => {"
+            "const el=document.activeElement;"
+            f"if(el)({_NATIVE_VALUE_SETTER}).call(el,{val});"
+            "})()"
         )
         await self._send("evaluate", {"js": js})
 
@@ -646,36 +681,11 @@ class RemoteBridgeContext(BrowserContextBase):
                 hint="select requires a target element",
                 action="provide 'target' as '[N]' ref from snapshot",
             )
-        self._require_snapshot(int(target))
-        backend_id = self._backend_node_map.get(int(target))
-        if backend_id is None:
-            raise BackendError(
-                error="element_not_found",
-                hint=f"Ref [{target}] not in current snapshot",
-                action="re-snapshot and use a valid [N] ref",
-            )
-        resolve_result = await self._send(
-            "cdp",
-            {
-                "method": "DOM.resolveNode",
-                "params": {"backendNodeId": backend_id},
-            },
-        )
-        object_id = resolve_result.get("object", {}).get("objectId")
-        if not object_id:
-            raise BackendError(
-                error="element_not_resolved",
-                hint=(
-                    f"Could not resolve backendNodeId {backend_id} for ref [{target}]"
-                ),
-                action="re-snapshot and retry — the element may have been removed",
-            )
+        object_id = await self._resolve_element_object_id(int(target))
         if value is not None:
             set_js = (
                 "function() {"
-                f"  this.value = {json.dumps(value)};"
-                "  this.dispatchEvent(new Event('input', {bubbles:true}));"
-                "  this.dispatchEvent(new Event('change', {bubbles:true}));"
+                f"  ({_NATIVE_VALUE_SETTER}).call(this,{json.dumps(value)});"
                 "}"
             )
         else:
@@ -684,9 +694,8 @@ class RemoteBridgeContext(BrowserContextBase):
                 "  const opts = Array.from(this.options);"
                 "  const opt = opts.find("
                 f"o => o.text === {json.dumps(label)});"
-                "  if (opt) { this.value = opt.value; }"
-                "  this.dispatchEvent(new Event('input', {bubbles:true}));"
-                "  this.dispatchEvent(new Event('change', {bubbles:true}));"
+                "  const nextValue = opt ? opt.value : this.value;"
+                f"  ({_NATIVE_VALUE_SETTER}).call(this,nextValue);"
                 "}"
             )
         await self._send(

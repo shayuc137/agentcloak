@@ -141,7 +141,7 @@ cloak click --x X --y Y           # coordinate fallback
 cloak click N --force             # skip the pointer-intercept check (covering overlay)
 ```
 
-When an element is hidden behind an overlay the click fails with `element_covered`; retry with `--force` to bypass Playwright's actionability check, or fall back to `js evaluate`.
+When an element is hidden behind an overlay, retry with `--force`: Playwright/Cloak bypass actionability checks and RemoteBridge invokes the resolved DOM element's `click()` instead of coordinate hit testing. Fall back to `js evaluate "document.querySelector('...')?.click()"` when a page requires a custom event path.
 
 ### fill
 
@@ -151,6 +151,10 @@ Clear an input field and set its value.
 cloak fill N "value" [--snap]
 cloak fill --index N --text "value" [--snap]
 ```
+
+`fill` uses framework-compatible value setters. RemoteBridge calls the native
+input/textarea/select prototype setter before bubbling `input` and `change`, so
+React/Vue controlled fields receive the update.
 
 ### type
 

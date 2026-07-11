@@ -15,6 +15,7 @@ Error: Element [99] not in selector_map (4 entries)
 | Error text on stderr | Cause | Recovery |
 |----------------------|-------|----------|
 | `element_not_found` / `[N] not in selector_map` | `[N]` ref is stale (page changed) | Auto-retried once; if still fails, re-snapshot and use the new ref |
+| `element_covered` / visible ref does not react | Overlay intercepted coordinate click | Retry `cloak click N --force`; use `js evaluate "el.click()"` only for a custom event path |
 | `navigation_timeout` | Page took too long to load | Retry with `--timeout 60`, or check the URL is correct |
 | `no_valid_page` | Last `navigate` failed — page is still the previous URL | `cloak navigate <url>` again before screenshot/snapshot/click/evaluate. `fetch` and `network` are unaffected |
 | `blocked_by_dialog` | A dialog is blocking operations | `cloak dialog accept` or `dismiss`, then retry the action |

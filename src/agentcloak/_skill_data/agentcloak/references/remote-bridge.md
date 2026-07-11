@@ -105,6 +105,11 @@ cloak cdp endpoint
 Remote `js evaluate` failures return the thrown message plus the first useful CDP
 source location, capped at 400 characters instead of a bare `Uncaught`.
 
+Remote `fill` calls the matching native input/textarea/select value setter before
+dispatching `input` and `change`, so controlled React/Vue fields update. If an
+overlay intercepts a ref click, retry with `cloak click N --force`; RemoteBridge
+invokes the resolved DOM element's `click()` without coordinate hit testing.
+
 ## Cookie Export
 
 Export cookies from the real browser for use in scripts:

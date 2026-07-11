@@ -53,6 +53,10 @@ cloak snapshot                                   # 看到真实页面
 cloak click 5                                    # 在真实 Chrome 里点击
 ```
 
+RemoteBridge 默认发送物理坐标鼠标事件。overlay 拦截目标时使用
+`cloak click N --force`，它会解析 ref 并直接调用 DOM `click()`。`fill` 使用原生
+value setter，再冒泡 `input`/`change`，兼容 React/Vue 受控字段。
+
 让 bridge 成为 daemon 默认后端：
 
 ```bash

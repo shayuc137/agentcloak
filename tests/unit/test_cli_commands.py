@@ -100,6 +100,117 @@ class TestNavigate:
         assert data["data"]["title"] == "Example Domain"
 
 
+class TestHide:
+    def test_add_and_list_use_text_renderers(self) -> None:
+        with patch(
+            "agentcloak.client.DaemonClient._send_sync",
+            return_value=_envelope(
+                {
+                    "identifier": "hide-abc",
+                    "selector": ".toolbar",
+                    "scope": "session-only",
+                }
+            ),
+        ) as send:
+            added = runner.invoke(app, ["hide", "add", ".toolbar"])
+
+        assert added.exit_code == 0, added.output
+        assert added.stdout.strip() == "hidden .toolbar (session-only)"
+        send.assert_called_once_with(
+            "POST", "/hide/add", json_body={"selector": ".toolbar"}, params=None
+        )
+
+        with patch(
+            "agentcloak.client.DaemonClient._send_sync",
+            return_value=_envelope(
+                {
+                    "selectors": [
+                        {
+                            "identifier": "builtin",
+                            "selector": "[data-cloak-hide]",
+                            "builtin": True,
+                        }
+                    ],
+                    "count": 1,
+                    "scope": "session-only",
+                }
+            ),
+        ):
+            listed = runner.invoke(app, ["hide", "list"])
+
+        assert listed.exit_code == 0, listed.output
+        assert "scope: session-only" in listed.stdout
+        assert "builtin: [data-cloak-hide] [builtin]" in listed.stdout
+
+    def test_snapshot_forwards_one_time_hide_and_escape_hatch(self) -> None:
+        payload = _envelope(
+            {
+                "url": "https://example.com",
+                "title": "Example",
+                "mode": "compact",
+                "tree_text": "",
+                "tree_size": 0,
+                "truncated": False,
+                "total_nodes": 0,
+                "total_interactive": 0,
+            }
+        )
+        with patch(
+            "agentcloak.client.DaemonClient._send_sync", return_value=payload
+        ) as send:
+            result = runner.invoke(
+                app,
+                [
+                    "snapshot",
+                    "--hide",
+                    ".toolbar,#dev",
+                    "--keep-overlays",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        params = send.call_args.kwargs["params"]
+        assert params["hide"] == ".toolbar,#dev"
+        assert params["keep_overlays"] == "true"
+
+    def test_screenshot_forwards_one_time_hide_and_escape_hatch(
+        self, tmp_path: Path
+    ) -> None:
+        output = tmp_path / "page.png"
+        payload = _envelope(
+            {
+                "base64": base64.b64encode(b"png-bytes").decode(),
+                "size": 9,
+                "format": "png",
+            }
+        )
+        with patch(
+            "agentcloak.client.DaemonClient.screenshot_sync", return_value=payload
+        ) as screenshot:
+            result = runner.invoke(
+                app,
+                [
+                    "screenshot",
+                    "--hide",
+                    ".toolbar,#dev",
+                    "--keep-overlays",
+                    "-o",
+                    str(output),
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        screenshot.assert_called_once_with(
+            full_page=False,
+            format="png",
+            quality=None,
+            wait_selector="",
+            wait_timeout=None,
+            hide=".toolbar,#dev",
+            keep_overlays=True,
+        )
+
+
 # ---------------------------------------------------------------------------
 # B1: evaluate
 # ---------------------------------------------------------------------------

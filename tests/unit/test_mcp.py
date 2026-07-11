@@ -159,6 +159,91 @@ class TestMCPServerCreation:
         client.screenshot.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_hide_tool_add_and_list_are_symmetric(self) -> None:
+        try:
+            from mcp.server.fastmcp import FastMCP
+        except ImportError:
+            pytest.skip("mcp package not installed")
+        from unittest.mock import AsyncMock
+
+        from agentcloak.mcp.tools.hide import register
+
+        client = AsyncMock()
+        client.hide_add.return_value = {
+            "ok": True,
+            "seq": 1,
+            "data": {
+                "identifier": "hide-abc",
+                "selector": ".toolbar",
+                "scope": "session-only",
+            },
+        }
+        client.hide_list.return_value = {
+            "ok": True,
+            "seq": 1,
+            "data": {
+                "selectors": [],
+                "count": 0,
+                "scope": "session-only",
+            },
+        }
+        mcp = FastMCP("test")
+        register(mcp, client)
+        tool = mcp._tool_manager._tools["agentcloak_hide"]  # type: ignore[union-attr]
+
+        added = await tool.fn(action="add", selector=".toolbar")
+        listed = await tool.fn(action="list")
+
+        assert added == "hidden .toolbar (session-only)"
+        assert listed == "scope: session-only"
+        client.hide_add.assert_awaited_once_with(selector=".toolbar")
+        client.hide_list.assert_awaited_once_with()
+
+    @pytest.mark.asyncio
+    async def test_observation_tools_forward_hide_parameters(self) -> None:
+        try:
+            from mcp.server.fastmcp import FastMCP
+        except ImportError:
+            pytest.skip("mcp package not installed")
+        from unittest.mock import AsyncMock
+
+        from agentcloak.core.config import AgentcloakConfig
+        from agentcloak.mcp.tools.navigation import register
+
+        client = AsyncMock()
+        client.config = AgentcloakConfig()
+        client.snapshot.return_value = {
+            "ok": True,
+            "seq": 1,
+            "data": {
+                "url": "https://example.com",
+                "title": "Example",
+                "tree_text": "",
+                "total_nodes": 0,
+                "total_interactive": 0,
+            },
+        }
+        client.screenshot.return_value = {
+            "ok": True,
+            "seq": 1,
+            "data": {"base64": "cG5n", "size": 3, "format": "png"},
+        }
+        mcp = FastMCP("test")
+        register(mcp, client)
+
+        await mcp._tool_manager._tools["agentcloak_snapshot"].fn(  # type: ignore[union-attr]
+            hide=".toolbar", keep_overlays=True
+        )
+        await mcp._tool_manager._tools["agentcloak_screenshot"].fn(  # type: ignore[union-attr]
+            hide=".toolbar", keep_overlays=True
+        )
+
+        assert client.snapshot.await_args.kwargs["hide"] == ".toolbar"
+        assert client.snapshot.await_args.kwargs["keep_overlays"] is True
+        assert client.screenshot.await_args.kwargs["hide"] == ".toolbar"
+        assert client.screenshot.await_args.kwargs["keep_overlays"] is True
+
+    @pytest.mark.asyncio
     async def test_cookies_export_writes_active_profile_snapshot(
         self, tmp_path: Any
     ) -> None:
@@ -239,8 +324,8 @@ class TestMCPServerCreation:
             # storage, clipboard, pdf, serve) + 4 from the 7b T1 batch
             # (script, route, headers, graphql) + 1 from 7b T2 (streaming)
             # + 1 from 7b T3 (debugger) + 1 from 7b T4 (sourcemap).
-            assert len(tools) == 38, (
-                f"Expected 38 tools, got {len(tools)}: {sorted(tools.keys())}"
+            assert len(tools) == 39, (
+                f"Expected 39 tools, got {len(tools)}: {sorted(tools.keys())}"
             )
         except ImportError:
             pytest.skip("mcp package not installed")
@@ -303,6 +388,7 @@ class TestMCPServerCreation:
                 "agentcloak_sourcemap",
                 "agentcloak_profiler",
                 "agentcloak_performance",
+                "agentcloak_hide",
             }
             assert set(tools.keys()) == expected
         except ImportError:

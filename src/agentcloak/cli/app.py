@@ -36,7 +36,7 @@ _GROUPS = (
     "launch, network, fetch, bridge, cookies, skill, cdp, dialog, wait, "
     "upload, config, console, download, storage, clipboard, pdf, serve, diff, "
     "script, route, emulation, graphql, debugger, ws, sse, sourcemap, "
-    "profiler, performance, session"
+    "profiler, performance, session, hide"
 )
 _EPILOG = (
     f"Shortcuts (top-level, also documented under their groups):\n  {_SHORTCUTS}\n"
@@ -205,6 +205,7 @@ def _register_commands() -> None:
         fetch,
         frame,
         graphql,
+        hide,
         js,
         launch,
         network,
@@ -229,6 +230,11 @@ def _register_commands() -> None:
         diff_cmd.app,
         name="diff",
         help="Local comparison tools: screenshot pixel differences.",
+    )
+    app.add_typer(
+        hide.app,
+        name="hide",
+        help="Persistent page-overlay hiding: add, remove, list.",
     )
     app.add_typer(
         config_cmd.app,

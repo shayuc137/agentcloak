@@ -97,6 +97,7 @@ def create_server(session_id: str | None = None) -> object:
         emulation,
         frame,
         graphql,
+        hide,
         interaction,
         management,
         navigation,
@@ -159,6 +160,7 @@ def create_server(session_id: str | None = None) -> object:
     route.register(mcp, client)
     emulation.register(mcp, client)
     graphql.register(mcp, client)
+    hide.register(mcp, client)
     streaming.register(mcp, client)
     debugger.register(mcp, client)
     sourcemap.register(mcp, client)

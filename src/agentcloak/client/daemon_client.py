@@ -943,6 +943,8 @@ class DaemonClient:
         quality: int | None = None,
         wait_selector: str = "",
         wait_timeout: int | None = None,
+        hide: str | None = None,
+        keep_overlays: bool = False,
     ) -> dict[str, Any]:
         return self._send_sync(
             "GET",
@@ -957,6 +959,8 @@ class DaemonClient:
                 ),
                 wait_selector=wait_selector,
                 wait_timeout=wait_timeout,
+                hide=hide,
+                keep_overlays=keep_overlays,
             ),
         )
 
@@ -1086,6 +1090,8 @@ class DaemonClient:
         quality: int | None = None,
         wait_selector: str = "",
         wait_timeout: int | None = None,
+        hide: str | None = None,
+        keep_overlays: bool = False,
     ) -> dict[str, Any]:
         # MCP defaults to ``mcp_screenshot_quality`` (lower than CLI's 80) so
         # base64 output stays under typical MCP token budgets.
@@ -1100,6 +1106,8 @@ class DaemonClient:
                 else self._cfg.browser.mcp_screenshot_quality,
                 wait_selector=wait_selector,
                 wait_timeout=wait_timeout,
+                hide=hide,
+                keep_overlays=keep_overlays,
             ),
         )
 
@@ -1115,6 +1123,8 @@ class DaemonClient:
         selector: str = "",
         diff: bool = False,
         include_selector_map: bool = False,
+        hide: str | None = None,
+        keep_overlays: bool = False,
     ) -> dict[str, Any]:
         return await self._send_async(
             "GET",
@@ -1129,6 +1139,8 @@ class DaemonClient:
                 selector=selector,
                 diff=diff,
                 include_selector_map=include_selector_map,
+                hide=hide,
+                keep_overlays=keep_overlays,
             ),
         )
 
@@ -1569,6 +1581,23 @@ class DaemonClient:
     async def script_list(self) -> dict[str, Any]:
         return await self._send_async("GET", "/script/list")
 
+    # --- Persistent page hiding ---
+
+    async def hide_add(self, *, selector: str) -> dict[str, Any]:
+        return await self._send_async(
+            "POST", "/hide/add", json_body={"selector": selector}
+        )
+
+    async def hide_remove(self, *, identifier_or_selector: str) -> dict[str, Any]:
+        return await self._send_async(
+            "POST",
+            "/hide/remove",
+            json_body={"identifier_or_selector": identifier_or_selector},
+        )
+
+    async def hide_list(self) -> dict[str, Any]:
+        return await self._send_async("GET", "/hide/list")
+
     # --- Network route interception (async, 7b T1.3) ---
 
     async def route_add(
@@ -1858,6 +1887,8 @@ def _build_screenshot_params(
     quality: int,
     wait_selector: str,
     wait_timeout: int | None,
+    hide: str | None = None,
+    keep_overlays: bool = False,
 ) -> dict[str, str]:
     params: dict[str, str] = {"quality": str(quality)}
     if format is not None:
@@ -1868,6 +1899,10 @@ def _build_screenshot_params(
         params["wait_selector"] = wait_selector
     if wait_timeout is not None:
         params["wait_timeout"] = str(wait_timeout)
+    if hide:
+        params["hide"] = hide
+    if keep_overlays:
+        params["keep_overlays"] = "true"
     return params
 
 
@@ -1882,6 +1917,8 @@ def _build_snapshot_params(
     selector: str,
     diff: bool,
     include_selector_map: bool,
+    hide: str | None = None,
+    keep_overlays: bool = False,
 ) -> dict[str, str]:
     params: dict[str, str] = {"mode": mode}
     if not include_selector_map:
@@ -1905,6 +1942,10 @@ def _build_snapshot_params(
         params["selector"] = selector
     if diff:
         params["diff"] = "true"
+    if hide:
+        params["hide"] = hide
+    if keep_overlays:
+        params["keep_overlays"] = "true"
     return params
 
 

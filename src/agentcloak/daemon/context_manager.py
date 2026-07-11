@@ -210,6 +210,16 @@ class ContextManager:
         self._state.browser_ctx = SecureBrowserContext(
             self._state.local_ctx, self._config
         )
+        from agentcloak.core.config import load_config
+        from agentcloak.daemon.services import ProfileService
+
+        paths, _ = load_config()
+        selectors = (
+            ProfileService(paths.profiles_dir).read_hide_selectors(profile)
+            if profile
+            else []
+        )
+        await self._state.browser_ctx.hide_manager.load(selectors)
         self._state.active_tier = tier
         logger.info(
             "context_manager: activated local tier=%s profile=%s (cache_hit=%s)",

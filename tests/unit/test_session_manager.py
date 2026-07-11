@@ -31,6 +31,8 @@ class _FakeCtx:
 
     def __init__(self) -> None:
         self.closed = False
+        self.hide_manager = MagicMock()
+        self.hide_manager.load = AsyncMock()
 
     async def close(self) -> None:
         self.closed = True
@@ -80,6 +82,27 @@ class TestAcquisition:
             assert len(sessions) == 1
             assert sessions[0]["session_id"] == "alpha"
             assert sessions[0]["state"] == "active"
+        finally:
+            _teardown(mgr)
+
+    @pytest.mark.asyncio
+    async def test_session_browser_inherits_profile_hide_selectors(self) -> None:
+        mgr, created = _make()
+        mgr._hide_selectors_provider = lambda: [".toolbar", "#dev-banner"]
+        try:
+            await mgr.get_or_create("alpha")
+            created[0].hide_manager.load.assert_awaited_once_with(
+                [".toolbar", "#dev-banner"]
+            )
+        finally:
+            _teardown(mgr)
+
+    @pytest.mark.asyncio
+    async def test_session_browser_without_provider_loads_builtin_only(self) -> None:
+        mgr, created = _make()
+        try:
+            await mgr.get_or_create("alpha")
+            created[0].hide_manager.load.assert_awaited_once_with([])
         finally:
             _teardown(mgr)
 

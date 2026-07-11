@@ -56,6 +56,7 @@ from agentcloak.core.config import resolve_tier
 from agentcloak.core.types import StealthTier
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from agentcloak.core.config import AgentcloakConfig
@@ -106,8 +107,14 @@ class SessionManager:
         drift.
     """
 
-    def __init__(self, config: AgentcloakConfig) -> None:
+    def __init__(
+        self,
+        config: AgentcloakConfig,
+        *,
+        hide_selectors_provider: Callable[[], list[str]] | None = None,
+    ) -> None:
         self._config = config
+        self._hide_selectors_provider = hide_selectors_provider
         self._sessions: dict[str, SessionSlot] = {}
         # All mutation of ``_sessions`` and per-slot browser launch/close runs
         # under this lock. Browser creation is slow (a few hundred ms), so the
@@ -301,7 +308,17 @@ class SessionManager:
             extra_args=chromium_args,
             browser_config=self._config.browser,
         )
-        return SecureBrowserContext(raw_ctx, self._config)
+        ctx = SecureBrowserContext(raw_ctx, self._config)
+        # Session browsers keep ephemeral data but inherit the daemon's
+        # profile-scoped hide selectors — hiding overlays is observation
+        # behaviour, not browser state.
+        selectors = (
+            self._hide_selectors_provider()
+            if self._hide_selectors_provider is not None
+            else []
+        )
+        await ctx.hide_manager.load(selectors)
+        return ctx
 
     async def _close_ctx(self, ctx: Any, *, session_id: str) -> None:
         """Best-effort close of a session's browser.

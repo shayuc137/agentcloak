@@ -106,6 +106,14 @@ from agentcloak.daemon.models.graphql import (
     GraphQLQueryRequest,
     GraphQLResponse,
 )
+from agentcloak.daemon.models.hide import (
+    HideAddRequest,
+    HideAddResponse,
+    HideListResponse,
+    HideRemoveRequest,
+    HideRemoveResponse,
+    HideSelectorModel,
+)
 from agentcloak.daemon.models.interaction import (
     CookieDeleteRequest,
     CookieDeleteResponse,
@@ -289,6 +297,12 @@ __all__ = [
     "HealthResponse",
     "HeapSnapshotRequest",
     "HeapSnapshotResponse",
+    "HideAddRequest",
+    "HideAddResponse",
+    "HideListResponse",
+    "HideRemoveRequest",
+    "HideRemoveResponse",
+    "HideSelectorModel",
     "LaunchRequest",
     "LaunchResponse",
     "NavigateRequest",

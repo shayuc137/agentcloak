@@ -74,6 +74,8 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         frames: bool = False,
         selector: str = "",
         diff: bool = False,
+        hide: str | None = None,
+        keep_overlays: bool = False,
     ) -> str:
         """Get page content as an accessibility tree with [N] element references.
 
@@ -109,6 +111,8 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                 Added elements are prefixed with [+], changed with [~].
                 Removed interactive refs are listed at the bottom.
                 Useful for seeing what changed after an action.
+            hide: Comma-separated CSS selectors to hide for this snapshot.
+            keep_overlays: Disable all persistent and builtin hiding once.
 
         Returns:
             Plain text starting with a header line
@@ -116,7 +120,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             followed by the indented accessibility tree. Same shape as
             ``cloak snapshot``.
         """
-        return await format_call(
+        snapshot_call = (
             client.snapshot(
                 mode=mode,
                 max_chars=max_chars,
@@ -129,7 +133,24 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                 # MCP omits selector_map by default to save tokens — agents
                 # work with [N] refs from the tree, not the raw map.
                 include_selector_map=False,
-            ),
+                hide=hide,
+                keep_overlays=keep_overlays,
+            )
+            if hide or keep_overlays
+            else client.snapshot(
+                mode=mode,
+                max_chars=max_chars,
+                max_nodes=max_nodes,
+                focus=focus,
+                offset=offset,
+                frames=frames,
+                selector=selector,
+                diff=diff,
+                include_selector_map=False,
+            )
+        )
+        return await format_call(
+            snapshot_call,
             render_snapshot_text,
             # ``seq`` is envelope-only in the daemon response; the header
             # renderer reads ``data.seq`` so we promote it here.
@@ -144,6 +165,8 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         wait_selector: str = "",
         wait_timeout: int | None = None,
         wait_for: str = "",
+        hide: str | None = None,
+        keep_overlays: bool = False,
     ) -> list[ImageContent | TextContent]:
         """Take a screenshot of the current page.
 
@@ -163,6 +186,8 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             wait_timeout: Selector wait timeout in ms; omitted uses the browser
                 action timeout
             wait_for: CSS selector to wait for via the wait tool before capture
+            hide: Comma-separated CSS selectors to hide for this capture
+            keep_overlays: Disable all persistent and builtin hiding once
 
         Returns:
             A list with one ``ImageContent`` (the multimodal LLM reads the
@@ -179,13 +204,24 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                     timeout=wait_timeout,
                     state="visible",
                 )
-            envelope = await client.screenshot(
-                full_page=full_page,
-                format=format,
-                quality=quality,
-                wait_selector=wait_selector,
-                wait_timeout=wait_timeout,
-            )
+            if hide or keep_overlays:
+                envelope = await client.screenshot(
+                    full_page=full_page,
+                    format=format,
+                    quality=quality,
+                    wait_selector=wait_selector,
+                    wait_timeout=wait_timeout,
+                    hide=hide,
+                    keep_overlays=keep_overlays,
+                )
+            else:
+                envelope = await client.screenshot(
+                    full_page=full_page,
+                    format=format,
+                    quality=quality,
+                    wait_selector=wait_selector,
+                    wait_timeout=wait_timeout,
+                )
         except AgentBrowserError as exc:
             return [TextContent(type="text", text=error_json(exc))]
 

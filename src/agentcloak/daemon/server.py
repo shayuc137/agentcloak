@@ -338,6 +338,13 @@ async def start(
     tier = StealthTier(resolved)
     actual_headless = headless if headless is not None else cfg.browser.headless
     actual_humanize = humanize if humanize is not None else cfg.browser.humanize
+    # Write the CLI overrides back into the shared config snapshot: the lazy
+    # launch paths (SessionManager per-session browsers, ContextManager
+    # hot-switch) resolve headless/humanize from ``cfg.browser``, and would
+    # otherwise diverge from this startup launch — e.g. a ``--headless``
+    # daemon spawning a headed session browser on a display-less host.
+    cfg.browser.headless = actual_headless
+    cfg.browser.humanize = actual_humanize
     xvfb_mgr: XvfbManager | None = None
 
     # remote_bridge tier starts with no local browser at all — the
@@ -498,6 +505,15 @@ async def start(
     from agentcloak.browser.secure_ctx import SecureBrowserContext
 
     ctx: Any = SecureBrowserContext(raw_ctx, cfg) if raw_ctx is not None else None
+    if ctx is not None:
+        from agentcloak.daemon.services import ProfileService
+
+        selectors = (
+            ProfileService(paths.profiles_dir).read_hide_selectors(profile)
+            if profile
+            else []
+        )
+        await ctx.hide_manager.load(selectors)
 
     logger.info(
         "bridge_token_loaded",
@@ -522,10 +538,39 @@ async def start(
     # lazily on demand.
     from agentcloak.daemon.services import SessionManager
 
-    session_manager = SessionManager(cfg)
-
     # Build FastAPI app and wire runtime state.
     app = create_app()
+
+    def _profile_hide_selectors() -> list[str]:
+        """Give per-session browsers the active profile's hide selectors.
+
+        Named sessions keep ephemeral browser data, but observation
+        preferences are daemon-scoped behaviour: a daemon launched with a
+        profile should hide the same overlays in every session. Reads the
+        live ``local_profile`` so profile hot-switches are picked up, and
+        degrades to no extra hiding on a corrupt hide.json — a bad config
+        file must not block a session browser launch.
+        """
+        profile_name = getattr(app.state, "local_profile", None)
+        if not profile_name:
+            return []
+        from agentcloak.daemon.services import ProfileService
+
+        try:
+            return ProfileService(paths.profiles_dir).read_hide_selectors(
+                str(profile_name)
+            )
+        except Exception as exc:
+            logger.warning(
+                "session_hide_selectors_unavailable",
+                profile=str(profile_name),
+                error=str(exc),
+            )
+            return []
+
+    session_manager = SessionManager(
+        cfg, hide_selectors_provider=_profile_hide_selectors
+    )
     configure_app_state(
         app,
         browser_ctx=ctx,

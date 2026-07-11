@@ -110,6 +110,14 @@ def browser_screenshot(
         "--wait-for",
         help="Wait for this CSS selector via the wait command before capture.",
     ),
+    hide: str | None = typer.Option(
+        None, "--hide", help="Comma-separated CSS selectors to hide for this capture."
+    ),
+    keep_overlays: bool = typer.Option(
+        False,
+        "--keep-overlays",
+        help="Disable persistent, one-time, and builtin hiding for this capture.",
+    ),
 ) -> None:
     """Take a screenshot. Defaults to a file in the system temp dir; prints the path."""
     client = DaemonClient()
@@ -134,13 +142,24 @@ def browser_screenshot(
             if wait_timeout is not None:
                 wait_body["timeout"] = wait_timeout
             client._send_sync("POST", "/wait", json_body=wait_body)  # pyright: ignore[reportPrivateUsage]
-        result = client.screenshot_sync(
-            full_page=full_page,
-            format=resolution.format,
-            quality=quality,
-            wait_selector=wait_selector,
-            wait_timeout=wait_timeout,
-        )
+        if hide or keep_overlays:
+            result = client.screenshot_sync(
+                full_page=full_page,
+                format=resolution.format,
+                quality=quality,
+                wait_selector=wait_selector,
+                wait_timeout=wait_timeout,
+                hide=hide,
+                keep_overlays=keep_overlays,
+            )
+        else:
+            result = client.screenshot_sync(
+                full_page=full_page,
+                format=resolution.format,
+                quality=quality,
+                wait_selector=wait_selector,
+                wait_timeout=wait_timeout,
+            )
     except AgentBrowserError as exc:
         error_from_exception(exc)
         return
@@ -239,6 +258,14 @@ def browser_snapshot(
         "--selector-map",
         help="Include selector_map (off by default — agents don't need it).",
     ),
+    hide: str | None = typer.Option(
+        None, "--hide", help="Comma-separated CSS selectors to hide for this snapshot."
+    ),
+    keep_overlays: bool = typer.Option(
+        False,
+        "--keep-overlays",
+        help="Disable persistent, one-time, and builtin hiding for this snapshot.",
+    ),
 ) -> None:
     """Get page snapshot (accessibility tree by default)."""
     client = DaemonClient()
@@ -265,6 +292,10 @@ def browser_snapshot(
         params["include_selector_map"] = "true"
     else:
         params["include_selector_map"] = "false"
+    if hide:
+        params["hide"] = hide
+    if keep_overlays:
+        params["keep_overlays"] = "true"
     # ``promote_seq`` copies envelope.seq → data.seq so the snapshot header
     # line ``... | seq=N`` matches the pre-refactor daemon output without
     # leaking seq into the JSON payload.

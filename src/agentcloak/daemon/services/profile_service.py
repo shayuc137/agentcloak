@@ -15,7 +15,7 @@ import os as _os
 import shutil
 import sys
 import tempfile as _tempfile
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from agentcloak.core.errors import ProfileError
 from agentcloak.core.types import PROFILE_NAME_RE
@@ -38,6 +38,70 @@ class ProfileService:
 
     def ensure_dir(self) -> None:
         self._profiles_dir.mkdir(parents=True, exist_ok=True)
+
+    def read_hide_selectors(self, name: str) -> list[str]:
+        """Read profile-scoped hide selectors from ``hide.json``."""
+        self.validate_name(name)
+        path = self._profiles_dir / name / "hide.json"
+        if not path.exists():
+            return []
+        try:
+            payload = _json_mod.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, _json_mod.JSONDecodeError) as exc:
+            raise ProfileError(
+                error="profile_hide_invalid",
+                hint=f"Could not read hide selectors for profile '{name}': {exc}",
+                action="fix or remove the profile hide.json file",
+            ) from exc
+        selectors_obj = (
+            cast("dict[str, object]", payload).get("selectors")
+            if isinstance(payload, dict)
+            else None
+        )
+        if not isinstance(selectors_obj, list):
+            raise ProfileError(
+                error="profile_hide_invalid",
+                hint=f"Profile '{name}' hide.json must contain a selectors string list",
+                action='replace hide.json with {"selectors": [".toolbar"]}',
+            )
+        selector_values = cast("list[object]", selectors_obj)
+        if not all(isinstance(selector, str) for selector in selector_values):
+            raise ProfileError(
+                error="profile_hide_invalid",
+                hint=f"Profile '{name}' hide.json must contain a selectors string list",
+                action='replace hide.json with {"selectors": [".toolbar"]}',
+            )
+        selectors = cast("list[str]", selector_values)
+        return list(
+            dict.fromkeys(
+                selector.strip() for selector in selectors if selector.strip()
+            )
+        )
+
+    def write_hide_selectors(self, name: str, selectors: list[str]) -> None:
+        """Atomically write profile-scoped hide selectors."""
+        self.validate_name(name)
+        profile_dir = self._profiles_dir / name
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        path = profile_dir / "hide.json"
+        temp_path = profile_dir / ".hide.json.tmp"
+        normalized = list(
+            dict.fromkeys(
+                selector.strip() for selector in selectors if selector.strip()
+            )
+        )
+        try:
+            temp_path.write_text(
+                _json_mod.dumps({"selectors": normalized}, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            temp_path.replace(path)
+        except OSError as exc:
+            raise ProfileError(
+                error="profile_hide_write_failed",
+                hint=f"Could not write hide selectors for profile '{name}': {exc}",
+                action="check that the profile directory is writable",
+            ) from exc
 
     # ------------------------------------------------------------------
     # List

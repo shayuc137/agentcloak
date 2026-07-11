@@ -370,6 +370,62 @@ class TestRoutes:
         assert "tree_text" in data["data"]
         assert "selector_map" in data["data"]
 
+    def test_hide_add_list_remove_is_session_scoped(self, client: TestClient) -> None:
+        added = client.post("/hide/add", json={"selector": ".toolbar"})
+        assert added.status_code == 200
+        assert added.json()["data"]["scope"] == "session-only"
+        identifier = added.json()["data"]["identifier"]
+
+        listed = client.get("/hide/list").json()["data"]
+        assert listed["scope"] == "session-only"
+        assert [entry["selector"] for entry in listed["selectors"]] == [
+            "[data-cloak-hide]",
+            ".toolbar",
+        ]
+
+        removed = client.post(
+            "/hide/remove", json={"identifier_or_selector": identifier}
+        )
+        assert removed.status_code == 200
+        assert removed.json()["data"]["removed"] is True
+
+    def test_hide_add_persists_for_active_profile(
+        self, client: TestClient, tmp_path: Any
+    ) -> None:
+        from agentcloak.core.config import Paths
+
+        client.app.state.local_profile = "dos"
+        with patch(
+            "agentcloak.core.config.load_config",
+            return_value=(Paths(root=tmp_path), AgentcloakConfig()),
+        ):
+            response = client.post("/hide/add", json={"selector": ".toolbar"})
+
+        assert response.status_code == 200
+        assert response.json()["data"]["scope"] == "dos"
+        payload = orjson.loads(
+            (tmp_path / "profiles" / "dos" / "hide.json").read_bytes()
+        )
+        assert payload == {"selectors": [".toolbar"]}
+
+    def test_keep_overlays_restores_style_when_screenshot_raises(self) -> None:
+        app = create_app()
+        ctx = _mock_ctx()
+        ctx._page.screenshot = AsyncMock(side_effect=RuntimeError("capture failed"))
+        # HideManager evaluates in the main world (CDP), not via page.evaluate,
+        # so observe the impl seam directly — same pattern as test_hide_routes.
+        ctx._evaluate_impl = AsyncMock(return_value=True)  # type: ignore[method-assign]
+        app.state.browser_ctx = ctx
+        app.state.shutdown_event = asyncio.Event()
+
+        with TestClient(app, raise_server_exceptions=False) as local_client:
+            response = local_client.get("/screenshot?keep_overlays=true")
+
+        assert response.status_code == 500
+        scripts = [call.args[0] for call in ctx._evaluate_impl.await_args_list]
+        assert any("style.disabled=true" in script for script in scripts)
+        assert "style.disabled=false" in scripts[-1]
+
     def test_snapshot_selector_resets_diff_baseline(self, client: TestClient) -> None:
         ctx = client.app.state.browser_ctx
         ctx._cached_lines = [(0, '[1] button "Save"', 1)]

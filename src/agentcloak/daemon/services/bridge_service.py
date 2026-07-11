@@ -16,6 +16,7 @@ the lifecycle one unit of testable code.
 
 from __future__ import annotations
 
+import asyncio
 import secrets
 from typing import TYPE_CHECKING, Any
 
@@ -220,6 +221,7 @@ class BridgeService:
 
         # Feed the hello message to remote_ctx in case it carries useful data.
         remote_ctx.feed_message(first_msg)
+        hide_init = asyncio.create_task(remote_ctx.hide_manager.load([]))
 
         try:
             while True:
@@ -228,6 +230,9 @@ class BridgeService:
         except WebSocketDisconnect:
             pass
         finally:
+            if not hide_init.done():
+                hide_init.cancel()
+            await asyncio.gather(hide_init, return_exceptions=True)
             adapter.mark_closed()
             self._fail_pending(remote_ctx, "extension websocket closed")
             self._state.ext_ws = None

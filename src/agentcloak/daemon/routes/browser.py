@@ -113,6 +113,12 @@ async def handle_screenshot(
         gt=0,
         description="Selector wait timeout in ms; unset uses browser.action_timeout.",
     ),
+    hide: str | None = Query(
+        None, description="Comma-separated CSS selectors to hide for this capture."
+    ),
+    keep_overlays: bool = Query(
+        False, description="Disable all persistent and builtin hiding for this capture."
+    ),
 ) -> dict[str, Any]:
     resolution = resolve_screenshot_format(
         explicit_format=format,
@@ -133,9 +139,13 @@ async def handle_screenshot(
     # lower value so screenshots stay under MCP token budgets.
     if quality is None:
         quality = config.browser.screenshot_quality
-    raw = await ctx.screenshot(
-        full_page=full_page, format=resolved_format, quality=quality
-    )
+    extra_hide = hide.split(",") if hide else None
+    async with ctx.hide_manager.observation(
+        extra=extra_hide, keep_overlays=keep_overlays
+    ):
+        raw = await ctx.screenshot(
+            full_page=full_page, format=resolved_format, quality=quality
+        )
 
     # ``output_path`` lets an API/MCP caller driving a same-host daemon get a
     # file directly. The CLI keeps its own base64→file path (it may target a
@@ -194,6 +204,13 @@ async def handle_snapshot(
         False,
         description="Mark [+] added / [~] changed nodes versus the previous snapshot.",
     ),
+    hide: str | None = Query(
+        None, description="Comma-separated CSS selectors to hide for this snapshot."
+    ),
+    keep_overlays: bool = Query(
+        False,
+        description="Disable all persistent and builtin hiding for this snapshot.",
+    ),
 ) -> dict[str, Any]:
     # ``-1`` = unspecified → cap compact mode at config.browser.snapshot_max_nodes
     # (busy pages exceed agent budgets); ``0`` = explicit full tree; ``>0``
@@ -209,19 +226,23 @@ async def handle_snapshot(
     prev_cached_lines = (
         snapshot_cache.prev_lines if snapshot_cache.signature == signature else None
     )
-    data, cur_cache = await SnapshotService().get(
-        ctx,
-        mode=mode,
-        max_nodes=effective_max_nodes,
-        max_chars=max_chars,
-        focus=focus,
-        offset=offset,
-        include_selector_map=include_selector_map,
-        frames=frames,
-        selector=selector,
-        diff=diff,
-        prev_cached_lines=prev_cached_lines,
-    )
+    extra_hide = hide.split(",") if hide else None
+    async with ctx.hide_manager.observation(
+        extra=extra_hide, keep_overlays=keep_overlays
+    ):
+        data, cur_cache = await SnapshotService().get(
+            ctx,
+            mode=mode,
+            max_nodes=effective_max_nodes,
+            max_chars=max_chars,
+            focus=focus,
+            offset=offset,
+            include_selector_map=include_selector_map,
+            frames=frames,
+            selector=selector,
+            diff=diff,
+            prev_cached_lines=prev_cached_lines,
+        )
 
     if cur_cache is not None:
         snapshot_cache.prev_lines = cur_cache

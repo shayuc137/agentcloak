@@ -22,6 +22,7 @@ from agentcloak.browser.managers.debugger_manager import (
     PausedState,
     ScriptInfo,
 )
+from agentcloak.browser.managers.hide_manager import HideManager
 from agentcloak.browser.managers.route_manager import RouteManager, RouteRule
 from agentcloak.browser.managers.script_manager import (
     PRESET_TEMPLATES,
@@ -43,6 +44,7 @@ __all__ = [
     "PRESET_TEMPLATES",
     "BreakpointInfo",
     "DebuggerManager",
+    "HideManager",
     "ParsedSourceMap",
     "PausedState",
     "RouteManager",

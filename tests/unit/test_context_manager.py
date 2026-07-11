@@ -168,6 +168,7 @@ def _make_fake_local_ctx() -> Any:
     local = MagicMock()
     local.stealth_tier = MagicMock(value="cloak")
     local.close = AsyncMock()
+    local.hide_manager.load = AsyncMock()
     return local
 
 
@@ -289,6 +290,40 @@ async def test_switch_back_to_local_reuses_cache() -> None:
     assert result["browser_ready"] is True
     # Cache reused — close() never called.
     assert cached_local.close.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_switch_to_profile_loads_profile_hide_selectors(tmp_path: Path) -> None:
+    state = _fake_app_state()
+    cfg = AgentcloakConfig(bridge=BridgeConfig(local_idle_timeout=0))
+    mgr = ContextManager(state, cfg)
+    mgr.seed_initial(
+        active_tier=StealthTier.CLOAK,
+        local_ctx=None,
+        local_tier=None,
+        local_profile=None,
+    )
+    new_local = _make_fake_local_ctx()
+    paths = Paths(root=tmp_path)
+    paths.profiles_dir.joinpath("dos").mkdir(parents=True)
+    paths.profiles_dir.joinpath("dos", "hide.json").write_text(
+        '{"selectors": [".toolbar"]}', encoding="utf-8"
+    )
+
+    with (
+        patch(
+            "agentcloak.daemon.context_manager.create_context",
+            new=AsyncMock(return_value=new_local),
+        ),
+        patch(
+            "agentcloak.core.config.load_config",
+            return_value=(paths, cfg),
+        ),
+    ):
+        await mgr.switch_tier(StealthTier.CLOAK, profile="dos")
+
+    new_local.hide_manager.load.assert_awaited_once_with([".toolbar"])
+    assert state.local_profile == "dos"
 
 
 @pytest.mark.asyncio

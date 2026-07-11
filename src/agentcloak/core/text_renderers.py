@@ -1393,6 +1393,31 @@ def render_script_list_text(data: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def render_hide_op_text(data: dict[str, Any]) -> str:
+    """Render ``/hide/add`` and ``/hide/remove`` with persistence scope."""
+    scope = str(data.get("scope", "session-only") or "session-only")
+    selector = str(data.get("selector", "") or "")
+    if selector:
+        return f"hidden {selector} ({scope})"
+    return f"removed ({scope})" if data.get("removed") else f"not removed ({scope})"
+
+
+def render_hide_list_text(data: dict[str, Any]) -> str:
+    """Render active hide selectors, including the immutable builtin."""
+    scope = str(data.get("scope", "session-only") or "session-only")
+    selectors: list[Any] = list(data.get("selectors") or [])
+    lines = [f"scope: {scope}"]
+    for raw in selectors:
+        if not isinstance(raw, dict):
+            continue
+        entry = _as_dict(raw)
+        identifier = str(entry.get("identifier", "") or "")
+        selector = str(entry.get("selector", "") or "")
+        suffix = " [builtin]" if entry.get("builtin") else ""
+        lines.append(f"{identifier}: {selector}{suffix}")
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # Network route interception (7b T1.3)
 # ---------------------------------------------------------------------------

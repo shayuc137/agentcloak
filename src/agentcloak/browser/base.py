@@ -57,6 +57,7 @@ if TYPE_CHECKING:
 
     from agentcloak.browser.managers import (
         DebuggerManager,
+        HideManager,
         RouteManager,
         RouteRule,
         ScriptManager,
@@ -295,6 +296,7 @@ class BrowserContextBase(ABC):
         self._streaming_mgr: StreamingMonitor | None = None
         self._debugger_mgr: DebuggerManager | None = None
         self._sourcemap_mgr: SourceMapManager | None = None
+        self._hide_mgr: HideManager | None = None
 
         # 7b T1.2: extra HTTP headers injected on every request. Kept here so
         # ``emulation headers`` can report the active set; the backend applies
@@ -313,6 +315,15 @@ class BrowserContextBase(ABC):
 
             self._script_mgr = ScriptManager(self)
         return self._script_mgr
+
+    @property
+    def hide_manager(self) -> HideManager:
+        """Lazily construct the persistent page-overlay hider."""
+        if self._hide_mgr is None:
+            from agentcloak.browser.managers import HideManager
+
+            self._hide_mgr = HideManager(self)
+        return self._hide_mgr
 
     @property
     def route_manager(self) -> RouteManager:
@@ -1517,6 +1528,8 @@ class BrowserContextBase(ABC):
         """
         if self._script_mgr is not None:
             await self._script_mgr.on_tab_switched()
+        if self._hide_mgr is not None:
+            await self._hide_mgr.on_tab_switched()
         if self._route_mgr is not None:
             await self._route_mgr.on_tab_switched()
         # The debugger's domain state is per-page: a switched-to tab has its own
@@ -1544,6 +1557,8 @@ class BrowserContextBase(ABC):
         """
         if self._streaming_mgr is not None:
             await self._streaming_mgr.on_navigated()
+        if self._hide_mgr is not None:
+            await self._hide_mgr.on_navigated()
         # The debugger drops its now-stale script inventory and re-applies XHR
         # breakpoints (Chrome resets DOMDebugger state on navigation); URL
         # breakpoints re-bind natively so they're left alone.

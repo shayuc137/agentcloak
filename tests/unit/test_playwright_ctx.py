@@ -284,6 +284,86 @@ class TestSnapshot:
         with pytest.raises(BackendError):
             await ctx.snapshot(mode="invalid")
 
+    @pytest.mark.asyncio
+    async def test_selector_scopes_tree_before_ref_assignment(self) -> None:
+        ctx = _make_ctx()
+        ctx._resolve_snapshot_selector = AsyncMock(  # type: ignore[method-assign]
+            return_value=11
+        )
+
+        snap = await ctx.snapshot(mode="accessible", selector="main")
+
+        assert snap.total_nodes == 1
+        assert snap.total_interactive == 1
+        assert "Submit" in snap.tree_text
+        assert "Click me" not in snap.tree_text
+        assert ctx._backend_node_map == {1: 11}
+        ctx._resolve_snapshot_selector.assert_awaited_once_with("main")
+
+    @pytest.mark.asyncio
+    async def test_selector_resolves_backend_dom_id_via_cdp(self) -> None:
+        ctx = _make_ctx()
+        ctx._raw_cdp_impl = AsyncMock(  # type: ignore[method-assign]
+            side_effect=[
+                {"root": {"nodeId": 1}},
+                {"nodeId": 7},
+                {"node": {"backendNodeId": 42}},
+            ]
+        )
+
+        assert await ctx._resolve_snapshot_selector("main") == 42
+        calls = ctx._raw_cdp_impl.call_args_list
+        assert [call.args[0] for call in calls] == [
+            "DOM.getDocument",
+            "DOM.querySelector",
+            "DOM.describeNode",
+        ]
+        assert calls[1].args[1]["selector"] == "main"
+
+    @pytest.mark.asyncio
+    async def test_selector_normalizes_stale_cdp_document_error(self) -> None:
+        ctx = _make_ctx()
+        ctx._raw_cdp_impl = AsyncMock(  # type: ignore[method-assign]
+            side_effect=BackendError(
+                error="cdp_call_failed",
+                hint="DOM.querySelector: Could not find node with given id",
+                action="check CDP method name and parameters",
+            )
+        )
+
+        with pytest.raises(BackendError) as exc_info:
+            await ctx._resolve_snapshot_selector("main")
+
+        assert exc_info.value.error == "snapshot_selector_not_found"
+
+    @pytest.mark.asyncio
+    async def test_selector_normalizes_invalid_cdp_query_error(self) -> None:
+        ctx = _make_ctx()
+        ctx._raw_cdp_impl = AsyncMock(  # type: ignore[method-assign]
+            side_effect=BackendError(
+                error="cdp_call_failed",
+                hint="DOM.querySelector: DOM Error while querying",
+                action="check CDP method name and parameters",
+            )
+        )
+
+        with pytest.raises(BackendError) as exc_info:
+            await ctx._resolve_snapshot_selector("[invalid")
+
+        assert exc_info.value.error == "snapshot_selector_invalid"
+
+    @pytest.mark.asyncio
+    async def test_selector_rejects_frames_and_dom_mode(self) -> None:
+        ctx = _make_ctx()
+
+        with pytest.raises(BackendError) as frames_exc:
+            await ctx.snapshot(selector="main", frames=True)
+        assert frames_exc.value.error == "snapshot_selector_with_frames"
+
+        with pytest.raises(BackendError) as dom_exc:
+            await ctx.snapshot(mode="dom", selector="main")
+        assert dom_exc.value.error == "snapshot_selector_unsupported"
+
 
 class TestEvaluate:
     @pytest.mark.asyncio

@@ -77,13 +77,15 @@ cloak snapshot --focus 42                    # drill into a hit
 cloak click 42                               # act
 ```
 
+When the relevant region has a stable CSS selector, `cloak snapshot --within main` scopes the raw accessibility tree before refs are assigned. The resulting tree and selector map contain only that main-document subtree, which avoids spending refs and output on navigation, sidebars, and toolbars. Selector scoping cannot be combined with `--frames` or `--mode dom`.
+
 ## Multi-frame snapshots
 
 By default a snapshot covers only the current frame. Add `--frames` to merge child iframe AX trees into the parent — the daemon walks each frame and inlines its tree under the corresponding iframe node. Use this on payment widgets, embedded forms, and OAuth dialogs that live inside iframes.
 
 ## Diff mode
 
-`cloak snapshot --diff` compares against the previous cached snapshot and marks every line:
+`cloak snapshot --diff` compares against the previous cached snapshot with the same mode, selector, and frame settings, and marks every line:
 
 ```
   [3] textbox "Search" value="shoes" focused

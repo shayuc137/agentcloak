@@ -10,6 +10,7 @@ from agentcloak.browser._snapshot_builder import (
     count_diff,
     diff_snapshots,
     render_diff_tree,
+    scope_ax_tree,
     truncate_diff_lines,
 )
 
@@ -57,6 +58,28 @@ class TestBuildSnapshotBasic:
         assert 1 in result.selector_map
         assert result.backend_node_map[1] == 42
         assert result.snapshot.total_interactive == 1
+
+
+class TestScopeAxTree:
+    def test_keeps_matched_node_and_descendants_in_source_order(self) -> None:
+        nodes = [
+            _make_node("root", "WebArea", child_ids=["main", "toolbar"]),
+            _make_node(
+                "main",
+                "main",
+                child_ids=["button"],
+                backend_dom_id=20,
+            ),
+            _make_node("toolbar", "toolbar", backend_dom_id=30),
+            _make_node("button", "button", "Save", backend_dom_id=21),
+        ]
+
+        scoped = scope_ax_tree(nodes, 20)
+
+        assert [node["nodeId"] for node in scoped] == ["main", "button"]
+
+    def test_missing_backend_node_returns_empty(self) -> None:
+        assert scope_ax_tree([_make_node("root", "WebArea")], 999) == []
 
     def test_link_emits_href(self) -> None:
         """Link nodes should surface the AX 'url' property as href=."""

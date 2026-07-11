@@ -24,7 +24,7 @@ import re
 import time
 from abc import ABC, abstractmethod
 from collections import deque
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import structlog
 
@@ -923,10 +923,18 @@ class BrowserContextBase(ABC):
         focus: int = 0,
         offset: int = 0,
         frames: bool = False,
+        selector: str = "",
     ) -> PageSnapshot:
         self._check_debugger_paused()
         self._check_browser_alive()
         self._check_page_valid()
+        selector = selector.strip()
+        if selector and frames:
+            raise BackendError(
+                error="snapshot_selector_with_frames",
+                hint="Selector-scoped snapshots cannot merge child frame trees",
+                action="use --selector without --frames, or focus a frame first",
+            )
         # ``content`` joins ``accessible``/``compact`` on the unified AX-tree
         # path so it picks up StaticText aggregation (proper word spacing) and
         # ``--frames`` iframe merging for free. The old
@@ -942,8 +950,15 @@ class BrowserContextBase(ABC):
                 focus=focus,
                 offset=offset,
                 frames=frames,
+                selector=selector,
             )
         if mode == "dom":
+            if selector:
+                raise BackendError(
+                    error="snapshot_selector_unsupported",
+                    hint="Selector scope is not supported for DOM snapshots",
+                    action="use compact, accessible, or content mode",
+                )
             html = await self._snapshot_dom_impl()
             url, title = await self._get_page_info()
             return PageSnapshot(
@@ -968,10 +983,26 @@ class BrowserContextBase(ABC):
         focus: int,
         offset: int,
         frames: bool,
+        selector: str,
     ) -> PageSnapshot:
-        from agentcloak.browser._snapshot_builder import FrameData, build_snapshot
+        from agentcloak.browser._snapshot_builder import (
+            FrameData,
+            build_snapshot,
+            scope_ax_tree,
+        )
 
         raw_nodes = await self._get_ax_tree(frames=frames)
+        if selector:
+            backend_node_id = await self._resolve_snapshot_selector(selector)
+            raw_nodes = scope_ax_tree(raw_nodes, backend_node_id)
+            if not raw_nodes:
+                raise BackendError(
+                    error="snapshot_selector_not_accessible",
+                    hint=f"Selector '{selector}' has no accessibility-tree node",
+                    action=(
+                        "select an accessible ancestor such as main, form, or section"
+                    ),
+                )
         frame_trees: list[FrameData] | None = None
         if frames:
             collected = await self._get_child_frame_trees()
@@ -996,6 +1027,79 @@ class BrowserContextBase(ABC):
         self._cached_lines = result.cached_lines
         self._cached_mode = mode
         return result.snapshot
+
+    async def _resolve_snapshot_selector(self, selector: str) -> int:
+        """Resolve a main-document CSS selector to its backend DOM node id."""
+        try:
+            document = await self._raw_cdp_impl(
+                "DOM.getDocument", {"depth": -1, "pierce": True}
+            )
+            root = document.get("root", {})
+            root_id = (
+                cast("dict[str, Any]", root).get("nodeId")
+                if isinstance(root, dict)
+                else None
+            )
+            if not isinstance(root_id, int) or root_id <= 0:
+                raise BackendError(
+                    error="snapshot_selector_failed",
+                    hint="CDP did not return a document root",
+                    action="retry after the page finishes loading",
+                )
+            match = await self._raw_cdp_impl(
+                "DOM.querySelector", {"nodeId": root_id, "selector": selector}
+            )
+            node_id = match.get("nodeId")
+            if not isinstance(node_id, int) or node_id <= 0:
+                raise BackendError(
+                    error="snapshot_selector_not_found",
+                    hint=f"No element matches selector '{selector}'",
+                    action="check the selector in the main document and retry",
+                )
+            described = await self._raw_cdp_impl(
+                "DOM.describeNode", {"nodeId": node_id}
+            )
+            node = described.get("node", {})
+            backend_id = (
+                cast("dict[str, Any]", node).get("backendNodeId")
+                if isinstance(node, dict)
+                else None
+            )
+            if not isinstance(backend_id, int) or backend_id <= 0:
+                raise BackendError(
+                    error="snapshot_selector_failed",
+                    hint=f"Could not resolve selector '{selector}' to a backend node",
+                    action="retry after the page finishes loading",
+                )
+            return backend_id
+        except BackendError as exc:
+            if exc.error.startswith("snapshot_selector_"):
+                raise
+            raise self._snapshot_selector_query_error(selector, exc) from exc
+        except Exception as exc:
+            raise self._snapshot_selector_query_error(selector, exc) from exc
+
+    @staticmethod
+    def _snapshot_selector_query_error(selector: str, exc: Exception) -> BackendError:
+        detail = str(getattr(exc, "hint", exc))
+        lowered = detail.lower()
+        stale_markers = (
+            "could not find node",
+            "no node with given id",
+            "document updated",
+            "cannot find context with specified id",
+        )
+        if any(marker in lowered for marker in stale_markers):
+            return BackendError(
+                error="snapshot_selector_not_found",
+                hint=f"The document changed while resolving selector '{selector}'",
+                action="retry the snapshot after the page finishes loading",
+            )
+        return BackendError(
+            error="snapshot_selector_invalid",
+            hint=f"Could not query selector '{selector}': {detail}",
+            action="fix the CSS selector or retry after the page finishes loading",
+        )
 
     async def evaluate(self, js: str, *, world: str = "main") -> Any:
         self._check_debugger_paused()

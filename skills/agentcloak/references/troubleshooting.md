@@ -78,7 +78,7 @@ cloak daemon status      # tier, browser status, seq, current URL, capture state
 
 ### Too much output
 
-`cloak snapshot` already runs `--mode compact` with a default 80-node cap. Tighten with `--limit 50`, or zoom into an area with `--focus N` (expand around `[N]`). Pass `--limit 0` to disable the cap entirely.
+`cloak snapshot` already runs `--mode compact` with a default 80-node cap. If the relevant region has a stable main-document selector, scope first with `--within main`; otherwise tighten with `--limit 50` or zoom into an area with `--focus N` (expand around `[N]`). Pass `--limit 0` to disable the cap entirely.
 
 ### Missing elements
 

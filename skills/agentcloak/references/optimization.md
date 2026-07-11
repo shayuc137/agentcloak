@@ -11,6 +11,7 @@ What do you need?
 ├─ A single fact from the DOM? ───────────> cloak js evaluate "expr"     (precise, near-zero overhead)
 ├─ Page text only (article, results)? ────> cloak snapshot --mode content
 ├─ Interactive elements to act on? ───────> cloak snapshot               (compact, the default — ~1.8K tokens)
+│     ├─ stable content selector? ─────────> cloak snapshot --within main (scope tree + refs before rendering)
 │     └─ page is huge (100+ nodes)? ──────> cloak snapshot --limit 50, then --focus N / --offset N
 ├─ Full structure incl. containers? ──────> cloak snapshot --mode accessible   (heavier)
 ├─ Just what changed since last look? ────> cloak snapshot --diff
@@ -86,6 +87,7 @@ cloak daemon start -b   # manual start if doctor is clean
 A snapshot or evaluate result is blowing past your token budget.
 ```bash
 cloak snapshot --limit 50      # fewer nodes
+cloak snapshot --within main   # exclude navigation and sidebars before refs are assigned
 cloak snapshot --focus N       # zoom into one subtree
 cloak snapshot --mode content  # text only, drop the tree
 cloak snapshot --max-chars 4000  # hard cap the printed output

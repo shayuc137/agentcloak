@@ -1104,6 +1104,7 @@ class DaemonClient:
         focus: int = 0,
         offset: int = 0,
         frames: bool = False,
+        selector: str = "",
         diff: bool = False,
         include_selector_map: bool = False,
     ) -> dict[str, Any]:
@@ -1117,6 +1118,7 @@ class DaemonClient:
                 focus=focus,
                 offset=offset,
                 frames=frames,
+                selector=selector,
                 diff=diff,
                 include_selector_map=include_selector_map,
             ),
@@ -1861,6 +1863,7 @@ def _build_snapshot_params(
     focus: int,
     offset: int,
     frames: bool,
+    selector: str,
     diff: bool,
     include_selector_map: bool,
 ) -> dict[str, str]:
@@ -1882,6 +1885,8 @@ def _build_snapshot_params(
         params["offset"] = str(offset)
     if frames:
         params["frames"] = "true"
+    if selector:
+        params["selector"] = selector
     if diff:
         params["diff"] = "true"
     return params

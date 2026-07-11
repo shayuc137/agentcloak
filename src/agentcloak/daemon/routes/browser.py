@@ -157,6 +157,9 @@ async def handle_snapshot(
     frames: bool = Query(
         False, description="Merge child iframe accessibility trees into the snapshot."
     ),
+    selector: str = Query(
+        "", description="Scope the AX snapshot to a main-document CSS selector."
+    ),
     diff: bool = Query(
         False,
         description="Mark [+] added / [~] changed nodes versus the previous snapshot.",
@@ -172,6 +175,10 @@ async def handle_snapshot(
     else:
         effective_max_nodes = max_nodes
 
+    signature = (mode, selector.strip(), frames)
+    prev_cached_lines = (
+        snapshot_cache.prev_lines if snapshot_cache.signature == signature else None
+    )
     data, cur_cache = await SnapshotService().get(
         ctx,
         mode=mode,
@@ -181,12 +188,14 @@ async def handle_snapshot(
         offset=offset,
         include_selector_map=include_selector_map,
         frames=frames,
+        selector=selector,
         diff=diff,
-        prev_cached_lines=snapshot_cache.prev_lines,
+        prev_cached_lines=prev_cached_lines,
     )
 
     if cur_cache is not None:
         snapshot_cache.prev_lines = cur_cache
+        snapshot_cache.signature = signature
 
     # ``seq`` only goes in the envelope — CLI/MCP renderers reconstruct
     # the seq for the header line by promoting envelope.seq → data.seq

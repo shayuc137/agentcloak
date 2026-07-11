@@ -70,18 +70,21 @@ cloak navigate URL [--timeout SECONDS] [--snap] [--snapshot-mode MODE]
 Get the page as an accessibility tree with `[N]` element references.
 
 ```bash
-cloak snapshot [--mode MODE] [--limit N] [--focus N] [--offset N] [--frames] [--diff] [--selector-map]
+cloak snapshot [--mode MODE] [--selector CSS] [--limit N] [--focus N] [--offset N] [--frames] [--diff] [--selector-map]
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--mode` | `compact` | `compact` (default), `accessible`, `content`, `dom` |
+| `--selector` (aliases `--within`, `-s`) | none | Scope the accessibility tree to a main-document CSS selector |
 | `--limit` (alias `--max-nodes`) | `0` | Truncate after N nodes (0 = no limit) |
 | `--focus` | `0` | Expand subtree around element `[N]` |
 | `--offset` | `0` | Start output from Nth element (pagination) |
 | `--frames` | off | Include iframe content |
 | `--diff` | off | Mark changes since previous snapshot |
 | `--selector-map` | off | Include the raw selector_map (debug / scripting) |
+
+`--selector` scopes the tree before `[N]` refs are assigned, keeping refs and output limited to the selected subtree. It cannot be combined with `--frames` or `--mode dom`.
 
 Output starts with a header line:
 

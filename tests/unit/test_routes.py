@@ -17,6 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from agentcloak.browser.playwright_ctx import PlaywrightContext
+from agentcloak.browser.state import PageSnapshot
 from agentcloak.core.seq import RingBuffer, SeqCounter, SeqEvent
 from agentcloak.daemon.app import create_app
 from agentcloak.daemon.routes import (
@@ -214,6 +215,39 @@ class TestRoutes:
         assert data["ok"] is True
         assert "tree_text" in data["data"]
         assert "selector_map" in data["data"]
+
+    def test_snapshot_selector_resets_diff_baseline(self, client: TestClient) -> None:
+        ctx = client.app.state.browser_ctx
+        ctx._cached_lines = [(0, '[1] button "Save"', 1)]
+        ctx.snapshot = AsyncMock(
+            return_value=PageSnapshot(
+                seq=0,
+                url="https://example.com",
+                title="Example",
+                mode="accessible",
+                tree_text='[1] button "Save"',
+                total_nodes=1,
+                total_interactive=1,
+            )
+        )
+
+        first = client.get("/snapshot?mode=accessible&selector=main")
+        assert first.status_code == 200
+        ctx.snapshot.assert_awaited_with(
+            mode="accessible",
+            max_nodes=0,
+            max_chars=0,
+            focus=0,
+            offset=0,
+            frames=False,
+            selector="main",
+        )
+
+        changed_scope = client.get("/snapshot?mode=accessible&selector=aside&diff=true")
+        assert changed_scope.json()["data"]["diff"] is False
+
+        same_scope = client.get("/snapshot?mode=accessible&selector=aside&diff=true")
+        assert same_scope.json()["data"]["diff"] is True
 
     def test_evaluate(self, client: TestClient) -> None:
         resp = client.post("/evaluate", json={"js": "1+1"})

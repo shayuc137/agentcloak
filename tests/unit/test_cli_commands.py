@@ -213,6 +213,16 @@ class TestSnapshot:
         assert data["ok"] is True
         assert data["data"]["tree_text"].startswith("[1] button")
 
+    def test_snapshot_within_forwards_selector(self) -> None:
+        with patch(
+            "agentcloak.client.DaemonClient._send_sync",
+            return_value=self._snap_payload(),
+        ) as send:
+            result = runner.invoke(app, ["snapshot", "--within", "main"])
+
+        assert result.exit_code == 0, result.output
+        assert send.call_args.kwargs["params"]["selector"] == "main"
+
 
 # ---------------------------------------------------------------------------
 # B1: click

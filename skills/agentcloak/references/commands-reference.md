@@ -48,6 +48,7 @@ Read this file when you need full parameter detail. For the common path, the qui
   - `offset` (integer, default: 0) — Node offset for paging through a large tree.
   - `include_selector_map` (boolean, default: false) — Include the [N] → element selector map in the response.
   - `frames` (boolean, default: false) — Merge child iframe accessibility trees into the snapshot.
+  - `selector` (string, default: "") — Scope the AX snapshot to a main-document CSS selector.
   - `diff` (boolean, default: false) — Mark [+] added / [~] changed nodes versus the previous snapshot.
 
 ### `GET /screenshot`

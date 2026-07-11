@@ -36,12 +36,15 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 38 个工具。已包含在�
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|-------|------|
 | `mode` | `str` | `compact` | `compact`（默认）、`accessible`、`content` 或 `dom` |
+| `selector` | `str` | `""` | 将无障碍树限制到主文档中的 CSS 选择器范围 |
 | `max_chars` | `int` | `0` | 截断 tree_text 到 N 个字符（0 = 不限制） |
 | `max_nodes` | `int` | `0` | 在 N 个节点后截断（0 = 不限制） |
 | `focus` | `int` | `0` | 展开元素 `[N]` 周围的子树 |
 | `offset` | `int` | `0` | 从第 N 个元素开始（分页） |
 | `frames` | `bool` | `false` | 包含 iframe 内容 |
 | `diff` | `bool` | `false` | 标记与上一次 snapshot 相比的变更 |
+
+`selector` 不能与 `frames=true` 或 `mode="dom"` 组合使用。仅当模式、选择器和 frame 设置一致时，才会复用 diff 基线。
 
 ### agentcloak_screenshot
 

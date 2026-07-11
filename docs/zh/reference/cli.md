@@ -70,18 +70,21 @@ cloak navigate URL [--timeout SECONDS] [--snap] [--snapshot-mode MODE]
 获取带有 `[N]` 元素引用的无障碍树。
 
 ```bash
-cloak snapshot [--mode MODE] [--limit N] [--focus N] [--offset N] [--frames] [--diff] [--selector-map]
+cloak snapshot [--mode MODE] [--selector CSS] [--limit N] [--focus N] [--offset N] [--frames] [--diff] [--selector-map]
 ```
 
 | 参数 | 默认值 | 说明 |
 |------|-------|------|
 | `--mode` | `compact` | `compact`（默认）、`accessible`、`content`、`dom` |
+| `--selector`（别名 `--within`、`-s`） | 无 | 将无障碍树限制到主文档中的 CSS 选择器范围 |
 | `--limit`（别名 `--max-nodes`） | `0` | 在 N 个节点后截断（0 = 不限制） |
 | `--focus` | `0` | 展开元素 `[N]` 周围的子树 |
 | `--offset` | `0` | 从第 N 个元素开始输出（分页） |
 | `--frames` | 关闭 | 包含 iframe 内容 |
 | `--diff` | 关闭 | 标记与上一次 snapshot 相比的变更 |
 | `--selector-map` | 关闭 | 输出原始 selector_map（调试/脚本场景） |
+
+`--selector` 会先裁剪树，再分配 `[N]` 引用，因此引用和输出都只覆盖选中的子树。它不能与 `--frames` 或 `--mode dom` 组合使用。
 
 输出以 header 行开头：
 

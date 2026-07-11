@@ -165,6 +165,13 @@ def browser_snapshot(
         "--frames",
         help="Include iframe content in the snapshot (merges child frame AX trees).",
     ),
+    selector: str = typer.Option(
+        "",
+        "--selector",
+        "--within",
+        "-s",
+        help="Scope the snapshot to a main-document CSS selector.",
+    ),
     diff: bool = typer.Option(
         False,
         "--diff",
@@ -193,6 +200,8 @@ def browser_snapshot(
         params["offset"] = str(offset)
     if frames:
         params["frames"] = "true"
+    if selector:
+        params["selector"] = selector
     if diff:
         params["diff"] = "true"
     if selector_map:

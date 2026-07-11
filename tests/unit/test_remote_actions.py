@@ -125,6 +125,53 @@ class TestResolveElementCenter:
         assert "getBoundingClientRect" in fn_decl
 
 
+class TestScopedSnapshot:
+    @pytest.mark.asyncio
+    async def test_scoped_refs_keep_remote_backend_node_mapping(self) -> None:
+        ctx = _make_ctx()
+        ctx._get_ax_tree = AsyncMock(  # type: ignore[method-assign]
+            return_value=[
+                {
+                    "nodeId": "root",
+                    "role": {"value": "RootWebArea"},
+                    "name": {"value": "Page"},
+                    "childIds": ["main", "toolbar"],
+                },
+                {
+                    "nodeId": "main",
+                    "role": {"value": "main"},
+                    "name": {"value": "App"},
+                    "childIds": ["save"],
+                    "backendDOMNodeId": 42,
+                },
+                {
+                    "nodeId": "save",
+                    "role": {"value": "button"},
+                    "name": {"value": "Save"},
+                    "backendDOMNodeId": 43,
+                },
+                {
+                    "nodeId": "toolbar",
+                    "role": {"value": "toolbar"},
+                    "name": {"value": "Agentation"},
+                    "backendDOMNodeId": 99,
+                },
+            ]
+        )
+        ctx._resolve_snapshot_selector = AsyncMock(  # type: ignore[method-assign]
+            return_value=42
+        )
+        ctx._get_page_info = AsyncMock(  # type: ignore[method-assign]
+            return_value=("https://example.test", "Example")
+        )
+
+        snap = await ctx.snapshot(mode="accessible", selector="main")
+
+        assert "Save" in snap.tree_text
+        assert "Agentation" not in snap.tree_text
+        assert ctx._backend_node_map == {1: 43}
+
+
 # ---------------------------------------------------------------------------
 # B2.2: _click_impl
 # ---------------------------------------------------------------------------

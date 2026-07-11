@@ -428,6 +428,7 @@ class RemoteBridgeContext(BrowserContextBase):
         focus: int = 0,
         offset: int = 0,
         frames: bool = False,
+        selector: str = "",
     ) -> PageSnapshot:
         # Remote bridge only supports accessible / compact / content modes.
         if mode == "dom":
@@ -443,6 +444,7 @@ class RemoteBridgeContext(BrowserContextBase):
             focus=focus,
             offset=offset,
             frames=frames,
+            selector=selector,
         )
 
     # ------------------------------------------------------------------

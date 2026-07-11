@@ -72,6 +72,7 @@ Snapshot modes: `compact` (default, interactive + containers only, capped at 80 
 |---------|---------|
 | `cloak navigate URL` | Navigate to URL (add `--snap` to get a11y tree in one step) |
 | `cloak snapshot` | Get a11y tree with `[N]` refs (default mode: compact) |
+| `cloak snapshot --within main` | Scope tree and refs to a main-document CSS subtree |
 | `cloak snapshot --mode accessible` | Full a11y tree (heavier, all containers) |
 | `cloak snapshot --mode content` | Text extraction |
 | `cloak snapshot --limit 50` | Limit node count (summary of hidden); `--max-nodes` still accepted |

@@ -77,13 +77,15 @@ cloak snapshot --focus 42                    # 钻进感兴趣的部分
 cloak click 42                               # 操作
 ```
 
+当目标区域有稳定的 CSS 选择器时，可用 `cloak snapshot --within main` 在分配引用前裁剪原始无障碍树。生成的树和 selector map 只包含主文档中的该子树，从而避开导航栏、侧栏和工具栏。选择器范围不能与 `--frames` 或 `--mode dom` 组合使用。
+
 ## 多 frame snapshot
 
 默认 snapshot 只覆盖当前 frame。加上 `--frames` 后，daemon 会把子 iframe 的 AX 树合并进父树——遍历每个 frame 并把子树嵌入到对应的 iframe 节点下。用于支付控件、嵌入表单、OAuth 对话框这类住在 iframe 里的场景。
 
 ## Diff 模式
 
-`cloak snapshot --diff` 会和上一次缓存的 snapshot 比较，给每行打标记：
+`cloak snapshot --diff` 会和上一次模式、选择器及 frame 设置均相同的缓存 snapshot 比较，给每行打标记：
 
 ```
   [3] textbox "Search" value="shoes" focused

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from agentcloak.browser.state import (
     CONTEXT_ROLES as _CONTEXT_ROLES,
@@ -34,6 +34,7 @@ __all__ = [
     "count_diff",
     "diff_snapshots",
     "render_diff_tree",
+    "scope_ax_tree",
     "truncate_diff_lines",
 ]
 
@@ -106,6 +107,40 @@ class SnapshotResult:
     selector_map: dict[int, ElementRef]
     backend_node_map: dict[int, int]
     cached_lines: list[tuple[int, str, int | None]]
+
+
+def scope_ax_tree(
+    raw_nodes: list[dict[str, Any]], backend_node_id: int
+) -> list[dict[str, Any]]:
+    """Return the AX node matching ``backend_node_id`` and all descendants."""
+    node_by_id: dict[str, dict[str, Any]] = {}
+    root_id = ""
+    for node in raw_nodes:
+        node_id = str(node.get("nodeId", ""))
+        if not node_id:
+            continue
+        node_by_id[node_id] = node
+        if node.get("backendDOMNodeId") == backend_node_id:
+            root_id = node_id
+
+    if not root_id:
+        return []
+
+    included: set[str] = set()
+    pending = [root_id]
+    while pending:
+        node_id = pending.pop()
+        if node_id in included:
+            continue
+        included.add(node_id)
+        node = node_by_id.get(node_id)
+        if node is None:
+            continue
+        child_ids = node.get("childIds")
+        if isinstance(child_ids, list):
+            pending.extend(str(child_id) for child_id in cast("list[Any]", child_ids))
+
+    return [node for node in raw_nodes if str(node.get("nodeId", "")) in included]
 
 
 @dataclass

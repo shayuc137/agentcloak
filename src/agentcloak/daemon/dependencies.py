@@ -76,6 +76,15 @@ class SnapshotCache:
     def prev_lines(self, value: Any) -> None:
         self._state.prev_snapshot_lines = value
 
+    @property
+    def signature(self) -> Any:
+        """Return the scope identity associated with ``prev_lines``."""
+        return getattr(self._state, "prev_snapshot_signature", None)
+
+    @signature.setter
+    def signature(self, value: Any) -> None:
+        self._state.prev_snapshot_signature = value
+
 
 # Header carrying the caller's session identity. Absent header (every
 # legacy CLI invocation, curl, etc.) maps to the default session so the

@@ -72,6 +72,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         focus: int = 0,
         offset: int = 0,
         frames: bool = False,
+        selector: str = "",
         diff: bool = False,
     ) -> str:
         """Get page content as an accessibility tree with [N] element references.
@@ -102,6 +103,8 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             frames: Include iframe content in the snapshot. When true, child
                 frame AX trees are merged under [frame "name"] context nodes.
                 Opt-in to avoid performance penalty on simple pages.
+            selector: Scope to a main-document CSS selector such as `main`.
+                Cannot be combined with frames or DOM mode.
             diff: Compare with the previous snapshot and mark changes.
                 Added elements are prefixed with [+], changed with [~].
                 Removed interactive refs are listed at the bottom.
@@ -121,6 +124,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                 focus=focus,
                 offset=offset,
                 frames=frames,
+                selector=selector,
                 diff=diff,
                 # MCP omits selector_map by default to save tokens — agents
                 # work with [N] refs from the tree, not the raw map.

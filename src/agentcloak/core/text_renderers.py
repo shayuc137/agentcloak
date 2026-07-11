@@ -313,6 +313,11 @@ def render_navigate_text(data: dict[str, Any]) -> str:
     url = str(data.get("url", "") or "")
     title = _clip_title(str(data.get("title", "") or ""))
     header = f"{url} | {title}" if title else url
+    # Only surface the anchor miss — a successful scroll needs no callout.
+    if data.get("anchor") == "not_found":
+        header += (
+            "\n[anchor] #fragment element not found within timeout — page left at top"
+        )
     raw_snap = data.get("snapshot")
     if isinstance(raw_snap, dict):
         block = _render_snapshot_block(_as_dict(raw_snap))

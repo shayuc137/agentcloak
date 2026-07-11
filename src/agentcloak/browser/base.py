@@ -20,11 +20,13 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import json
 import re
 import time
 from abc import ABC, abstractmethod
 from collections import deque
 from typing import TYPE_CHECKING, Any, cast
+from urllib.parse import unquote, urlsplit
 
 import structlog
 
@@ -101,6 +103,9 @@ _BROWSER_CLOSED_HINTS: tuple[str, ...] = (
     "browser disconnected",
     "page closed",
 )
+
+_ANCHOR_SCROLL_POLL_INTERVAL = 0.2
+_ANCHOR_SCROLL_TIMEOUT = 3.0
 
 
 def _looks_like_browser_closed(exc: BaseException) -> bool:
@@ -876,6 +881,10 @@ class BrowserContextBase(ABC):
         self._page_valid = True
         await self._notify_managers_on_navigated()
 
+        anchor = await self._maybe_scroll_to_hash(url)
+        if anchor is not None:
+            result["anchor"] = anchor
+
         new_seq = self._seq_counter.increment_action()
         self._ring_buffer.append(
             SeqEvent(seq=new_seq, kind="navigate", data={"url": url})
@@ -886,6 +895,38 @@ class BrowserContextBase(ABC):
         if self._browser_config.auto_stream_monitor:
             await self.streaming_monitor.ensure_listening()
         return result
+
+    async def _maybe_scroll_to_hash(self, url: str) -> str | None:
+        """Restore native anchor behavior for asynchronously rendered targets."""
+        try:
+            fragment = unquote(urlsplit(url).fragment)
+            # Skip hashbang routes (#!/app) and param-style fragments
+            # (#access_token=...&state=...) — neither is an element anchor.
+            if (
+                not fragment
+                or fragment.startswith("!")
+                or any(ch in fragment for ch in "/=&")
+            ):
+                return None
+
+            fragment_json = json.dumps(fragment)
+            js = (
+                "(() => {"
+                f"const el=document.getElementById({fragment_json});"
+                "if(!el)return false;"
+                "el.scrollIntoView({block:'start'});"
+                "return true;"
+                "})()"
+            )
+            deadline = asyncio.get_running_loop().time() + _ANCHOR_SCROLL_TIMEOUT
+            while True:
+                if await self._evaluate_impl(js, world="main"):
+                    return "scrolled"
+                if asyncio.get_running_loop().time() >= deadline:
+                    return "not_found"
+                await asyncio.sleep(_ANCHOR_SCROLL_POLL_INTERVAL)
+        except Exception:
+            return "not_found"
 
     # ------------------------------------------------------------------
     # Resume snapshot — backend-agnostic session state probe
@@ -1961,13 +2002,22 @@ class BrowserContextBase(ABC):
 
     async def _run_action(self, kind: str, target: str, **kw: Any) -> dict[str, Any]:
         if kind == "click":
+            button = kw.get("button", "left")
+            click_count = int(kw.get("click_count", 1))
+            force = bool(kw.get("force", False))
+            if force and (button != "left" or click_count != 1):
+                raise AgentBrowserError(
+                    error="invalid_argument",
+                    hint="force click only supports a single left click",
+                    action="remove --force or use a coordinate click",
+                )
             return await self._click_impl(
                 target=target,
                 x=kw.get("x"),
                 y=kw.get("y"),
-                button=kw.get("button", "left"),
-                click_count=int(kw.get("click_count", 1)),
-                force=bool(kw.get("force", False)),
+                button=button,
+                click_count=click_count,
+                force=force,
             )
         if kind == "fill":
             return await self._fill_impl(target=target, text=str(kw.get("text", "")))

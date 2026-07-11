@@ -574,7 +574,7 @@ class RemoteBridgeContext(BrowserContextBase):
                     },
                 },
             )
-            return {"clicked": True}
+            return {"clicked": True, "index": ref, "element": self._get_ref(ref)}
         else:
             cx, cy = await self._resolve_element_center(int(target))
         await self._dispatch_click(cx, cy)

@@ -8,7 +8,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from agentcloak.browser.playwright_ctx import PlaywrightContext
-from agentcloak.core.errors import BackendError, BrowserTimeoutError, NavigationError
+from agentcloak.core.errors import (
+    AgentBrowserError,
+    BackendError,
+    BrowserTimeoutError,
+    NavigationError,
+)
 from agentcloak.core.seq import RingBuffer, SeqCounter
 
 _NODE_ID_COUNTER = 0
@@ -163,6 +168,61 @@ class TestNavigate:
         ctx = _make_ctx(page=page)
         with pytest.raises(NavigationError):
             await ctx.navigate("https://bad.example.com")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://example.com#",
+            "https://example.com#!/app",
+            "https://example.com#app/route",
+            "https://example.com#app%2Froute",
+            "https://example.com#access_token=abc123",
+            "https://example.com#state=x&code=y",
+        ],
+    )
+    async def test_navigate_skips_non_anchor_fragments(self, url: str) -> None:
+        ctx = _make_ctx()
+        ctx._evaluate_impl = AsyncMock()  # type: ignore[method-assign]
+
+        result = await ctx.navigate(url)
+
+        assert "anchor" not in result
+        ctx._evaluate_impl.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_navigate_scrolls_to_decoded_special_character_anchor(self) -> None:
+        ctx = _make_ctx()
+        ctx._evaluate_impl = AsyncMock(return_value=True)  # type: ignore[method-assign]
+
+        result = await ctx.navigate("https://example.com#price%20%22quoted%22")
+
+        assert result["anchor"] == "scrolled"
+        js = ctx._evaluate_impl.await_args.args[0]
+        assert 'getElementById("price \\"quoted\\"")' in js
+        assert "scrollIntoView({block:'start'})" in js
+
+    @pytest.mark.asyncio
+    async def test_navigate_reports_anchor_not_found(self, monkeypatch: Any) -> None:
+        monkeypatch.setattr("agentcloak.browser.base._ANCHOR_SCROLL_TIMEOUT", 0)
+        ctx = _make_ctx()
+        ctx._evaluate_impl = AsyncMock(return_value=False)  # type: ignore[method-assign]
+
+        result = await ctx.navigate("https://example.com#missing")
+
+        assert result["anchor"] == "not_found"
+        ctx._evaluate_impl.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_navigate_anchor_evaluate_failure_degrades_to_not_found(self) -> None:
+        ctx = _make_ctx()
+        ctx._evaluate_impl = AsyncMock(  # type: ignore[method-assign]
+            side_effect=RuntimeError("execution context destroyed")
+        )
+
+        result = await ctx.navigate("https://example.com#late")
+
+        assert result["anchor"] == "not_found"
 
 
 class TestSnapshot:
@@ -562,6 +622,53 @@ class TestEvaluate:
 
 
 class TestClick:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("button", "click_count"),
+        [("right", 1), ("left", 2)],
+    )
+    async def test_force_click_rejects_non_single_left_click(
+        self, button: str, click_count: int
+    ) -> None:
+        ctx = _make_ctx()
+        ctx._click_impl = AsyncMock()  # type: ignore[method-assign]
+
+        with pytest.raises(AgentBrowserError) as exc_info:
+            await ctx.action(
+                "click",
+                "1",
+                button=button,
+                click_count=click_count,
+                force=True,
+            )
+
+        assert exc_info.value.to_dict() == {
+            "ok": False,
+            "error": "invalid_argument",
+            "hint": "force click only supports a single left click",
+            "action": "remove --force or use a coordinate click",
+        }
+        ctx._click_impl.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_force_click_accepts_single_left_click(self) -> None:
+        ctx = _make_ctx()
+        ctx._click_impl = AsyncMock(  # type: ignore[method-assign]
+            return_value={"clicked": True}
+        )
+
+        result = await ctx.action("click", "1", force=True)
+
+        assert result["clicked"] is True
+        ctx._click_impl.assert_awaited_once_with(
+            target="1",
+            x=None,
+            y=None,
+            button="left",
+            click_count=1,
+            force=True,
+        )
+
     @pytest.mark.asyncio
     async def test_force_click_invokes_dom_click(self) -> None:
         ctx = _make_ctx()

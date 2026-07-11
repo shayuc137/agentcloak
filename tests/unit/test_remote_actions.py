@@ -278,7 +278,7 @@ class TestClickImpl:
             target="7", x=None, y=None, button="left", click_count=1, force=True
         )
 
-        assert result == {"clicked": True}
+        assert result == {"clicked": True, "index": 7, "element": "[7]"}
         calls = ctx._send.call_args_list
         assert [call.args[1]["method"] for call in calls] == [
             "DOM.resolveNode",

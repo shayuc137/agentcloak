@@ -192,7 +192,13 @@ class ProfileService:
         profile_dir.mkdir(parents=True, exist_ok=True)
 
         exec_path = self._maybe_cloakbrowser_binary()
-        await self._run_profile_writer(profile_dir, cookies, exec_path)
+        try:
+            await self._run_profile_writer(profile_dir, cookies, exec_path)
+        except ProfileError:
+            # Clean up the empty directory so it doesn't linger as a ghost profile.
+            with contextlib.suppress(OSError):
+                shutil.rmtree(profile_dir)
+            raise
 
         return {
             "profile": actual_name,
@@ -247,9 +253,9 @@ class ProfileService:
                 _os.unlink(cookies_file)
 
         if proc.returncode != 0:
-            err_msg = stderr_bytes.decode(errors="replace")[:300]
+            err_msg = stderr_bytes.decode(errors="replace").strip()[-500:]
             raise ProfileError(
                 error="profile_writer_failed",
-                hint=err_msg,
+                hint=err_msg or "profile writer exited with no output",
                 action="check daemon logs for the profile writer subprocess",
             )

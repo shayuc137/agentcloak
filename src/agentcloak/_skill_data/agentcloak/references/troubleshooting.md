@@ -89,6 +89,8 @@ cloak click N                             # normal hit-testing now reaches the t
 
 Use `--hide ".feedback-toolbar,.toast"` for one snapshot or screenshot. A page can mark its own automation-only UI with `[data-cloak-hide]`. Use `--keep-overlays` when the real obstruction must remain visible. `cloak click N --force` is the fallback for an unknown one-off overlay and only supports a single left click; combining it with a non-default button or click count returns `invalid_argument`.
 
+**Portal gotcha:** React portal components (modals, tooltips, floating toolbars) render outside their parent's DOM subtree — typically directly on `<body>`. A `[data-cloak-hide]` attribute on the component root won't cover portal-rendered DOM. Add selectors targeting the actual rendered elements (e.g. `[class*=toolbar]`, `[data-feedback-toolbar]`) via `cloak hide add`.
+
 ### Login state disappeared
 
 `cookies export` without `--output` refreshes the active profile's `cookies-snapshot.json` (or `~/.agentcloak/cookies-snapshot.json` without a profile). Restore it, then reload the page:

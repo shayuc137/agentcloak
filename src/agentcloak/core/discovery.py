@@ -107,7 +107,7 @@ def discover_daemon(timeout: float = 3.0) -> str | None:
 
         # zeroconf >= 0.150 requires listeners to subclass ServiceListener;
         # duck-typed classes are rejected at ServiceBrowser construction.
-        class Listener(ServiceListener):
+        class Listener(ServiceListener):  # type: ignore[misc]
             def add_service(self, zc: Zeroconf, type_: str, name: str) -> None:
                 info = zc.get_service_info(type_, name)
                 if info and info.port:

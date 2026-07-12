@@ -44,7 +44,10 @@ def test_snapshot_round_trip_preserves_export_payload(tmp_path: Path) -> None:
 
     assert orjson.loads(path.read_bytes()) == data
     assert read_cookie_snapshot(path) == data["cookies"]
-    assert path.stat().st_mode & 0o777 == 0o600
+    import sys
+
+    if sys.platform != "win32":
+        assert path.stat().st_mode & 0o777 == 0o600
 
 
 def test_missing_snapshot_has_actionable_three_field_error(tmp_path: Path) -> None:

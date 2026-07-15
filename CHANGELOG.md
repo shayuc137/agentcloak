@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.4 (2026-07-15)
 
 Follow-up polish to the profile subsystem after real-world usage: SPAs that stash auth in localStorage now survive profile relaunch, per-profile config overrides land, and a couple of surprising cross-cutting bugs get fixed.
 

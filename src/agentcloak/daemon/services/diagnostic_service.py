@@ -776,9 +776,10 @@ class DiagnosticService:
             # second line. ``headless``/``humanize`` are bool — doctor decides
             # the textual rendering. ``proxy`` is the user-configured upstream
             # proxy (browser-level), not the httpcloak local proxy.
-            data["headless"] = bool(getattr(config, "headless", True))
-            data["humanize"] = bool(getattr(config, "humanize", True))
-            data["proxy"] = str(getattr(config, "proxy", "") or "")
+            browser_cfg = getattr(config, "browser", config)
+            data["headless"] = bool(getattr(browser_cfg, "headless", True))
+            data["humanize"] = bool(getattr(browser_cfg, "humanize", True))
+            data["proxy"] = str(getattr(browser_cfg, "proxy", "") or "")
         # ``active_profile`` is None for ephemeral sessions; doctor renders
         # the difference (``profile: name`` vs ``no profile (ephemeral)``).
         data["active_profile"] = active_profile or ""

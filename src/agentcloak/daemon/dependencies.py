@@ -280,11 +280,18 @@ def get_config(request: Request) -> AgentcloakConfig:
 
     Production startup records ``config_root``; tests that inject only
     ``app.state.config`` retain a deterministic snapshot and never touch the
-    user's real config file.
+    user's real config file. When a profile is active the per-profile
+    ``config.toml`` overlay is re-applied after every reload so ``/health``
+    and other config-dependent routes see the merged view.
     """
     config_root = getattr(request.app.state, "config_root", None)
     if config_root is not None:
-        _, cfg = load_config(root=config_root)
+        from agentcloak.core.config import apply_profile_config
+
+        paths, cfg = load_config(root=config_root)
+        local_profile = getattr(request.app.state, "local_profile", None)
+        if local_profile:
+            apply_profile_config(cfg, paths.profiles_dir / str(local_profile))
         return cfg
     cfg: AgentcloakConfig | None = getattr(request.app.state, "config", None)
     if cfg is not None:

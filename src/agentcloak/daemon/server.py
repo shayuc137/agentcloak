@@ -326,6 +326,13 @@ async def start(
     """Start the daemon server (blocking)."""
     paths, cfg = load_config()
 
+    # Profile config overlay must run before CLI overrides so the priority
+    # chain is: CLI args > profile config > global config > env > defaults.
+    if profile:
+        profile_dir_early = paths.profiles_dir / profile
+        profile_dir_early.mkdir(parents=True, exist_ok=True)
+        apply_profile_config(cfg, profile_dir_early)
+
     actual_host = host or cfg.daemon.host
     actual_port = port or cfg.daemon.port
 
@@ -442,7 +449,6 @@ async def start(
     if profile:
         profile_dir = paths.profiles_dir / profile
         profile_dir.mkdir(parents=True, exist_ok=True)
-        apply_profile_config(cfg, profile_dir)
 
     # Assemble the Chromium command-line flags from user config. The
     # ``--disable-features=DnsOverHttps`` default keeps split-horizon DNS

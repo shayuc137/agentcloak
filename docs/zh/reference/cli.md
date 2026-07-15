@@ -513,6 +513,10 @@ cloak profile launch NAME
 cloak profile delete NAME
 ```
 
+`--from-current` 从活动浏览器抓种子数据：cookies 落到 `cookies-snapshot.json`，当前 origin 的 localStorage 落到 `localStorage-snapshot.json`——两份文件与活动 session 自己维护的快照同名同构，下次 `cloak profile launch NAME` 首次导航到对应 origin 时会自动恢复。
+
+Profile 目录还可以放一份 `config.toml` overlay，为该 profile 单独覆盖 `[browser]` / `[security]` 配置——详见[配置参考](config.md#profile-级-config-overlay)。
+
 ## 标签页管理
 
 ```bash
@@ -587,10 +591,10 @@ cloak daemon status                # tier | browser status | seq（含 metrics �
 
 ```bash
 cloak session list                 # 命名 session：id | 状态（active/suspended）| tier | 闲置秒数
-cloak session close SESSION_ID     # 关闭某个 session 并立即释放其浏览器
+cloak session close [SESSION_ID]   # 关闭某个 session 并立即释放其浏览器
 ```
 
-无 header 的调用（所有普通 CLI 调用）使用 `default` session（由 daemon 主浏览器支撑），它不在此列表中——其状态通过 `cloak status` / `/health` 查看。
+无 header 的调用（所有普通 CLI 调用）使用 `default` session（由 daemon 主浏览器支撑），它不在此列表中——其状态通过 `cloak status` / `/health` 查看。省略 `SESSION_ID` 时关闭的就是这个默认 session（等同于把所有普通 `cloak` 调用当前挂着的浏览器一起关掉），daemon 本身不停。
 
 ## 配置
 

@@ -6,9 +6,11 @@ agentcloak works with zero configuration out of the box. All settings have sensi
 
 Settings are resolved in this order (highest wins):
 
-1. **Environment variables** (`AGENTCLOAK_*`)
-2. **Config file** (`~/.agentcloak/config.toml`)
-3. **Built-in defaults**
+1. **CLI arguments** (per-command flags like `--headed`, `--port`)
+2. **Per-profile config** (`~/.agentcloak/profiles/<name>/config.toml`, only when a profile is active — merges `[browser]` and `[security]` on top of the layers below; see [Per-profile config overlay](#per-profile-config-overlay))
+3. **Global config file** (`~/.agentcloak/config.toml`)
+4. **Environment variables** (`AGENTCLOAK_*`)
+5. **Built-in defaults**
 
 ## Config file
 
@@ -63,6 +65,36 @@ local_idle_timeout = 1800
 
 > [!NOTE]
 > Invalid values (out-of-range port, unknown tier, bad log level) are caught at startup with a clear error message.
+
+## Per-profile config overlay
+
+A profile directory (`~/.agentcloak/profiles/<name>/`) may hold its own
+`config.toml`. When the daemon launches with `--profile NAME` (or a
+`default_profile` is set), agentcloak reads that file and overlays it on top of
+the already-resolved global config just before the browser starts, so per-site
+tweaks live next to the profile they belong to instead of leaking into
+`~/.agentcloak/config.toml`.
+
+The format is identical to the global config. **Only the `[browser]` and
+`[security]` sections are merged**: `[daemon]` and `[bridge]` are
+process-scoped and never vary per profile — put them in the global file.
+Unknown keys are ignored silently, and a missing `config.toml` (or a missing
+section) is a no-op.
+
+```toml
+# ~/.agentcloak/profiles/work/config.toml
+[browser]
+humanize = false          # this profile handles its own cadence
+viewport_width = 1920
+viewport_height = 1080
+
+[security]
+domain_whitelist = ["*.mycompany.com", "auth.oktapreview.com"]
+```
+
+Effective precedence for `[browser]` / `[security]` keys: **CLI args > profile
+config > global config > env vars > defaults**. Keys outside those two
+sections fall back to the global precedence in [Precedence](#precedence).
 
 ## Related state files
 

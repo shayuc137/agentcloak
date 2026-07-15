@@ -14,7 +14,7 @@ agentcloak 在本机使用两个目录存储数据。本文档说明每个文件
 | `resume.json` | 上次操作摘要，用于 session 恢复 | < 1 KB | 每次操作覆盖，daemon 停止后保留 |
 | `cookies-snapshot.json` | 无活动 profile 时的 cookie 恢复 fallback | 通常 < 100 KB | `cloak cookies export` 不带 `--output` 时覆盖 |
 | `logs/` | 预留的日志文件目录 | 空 | daemon 日志输出到 stderr，不写文件 |
-| `profiles/` | 保存的浏览器 session，以及 `hide.json` 和 cookie 恢复快照 | 每个 1-50 MB | 永久保留，`cloak profile delete` 删除 |
+| `profiles/` | 保存的浏览器 session，附带 `hide.json`、`cookies-snapshot.json` 和 `localStorage-snapshot.json` | 每个 1-50 MB | 永久保留，`cloak profile delete` 删除 |
 
 ### Profile
 
@@ -29,6 +29,8 @@ cloak profile delete NAME   # 删除指定 profile
 ```
 
 Profile 没有自动过期或空间限制。
+
+Profile 目录里除了 Chromium user data，daemon 还会自动维护三份辅助文件：`hide.json`（overlay 选择器）、`cookies-snapshot.json`（cookie 快照）和 `localStorage-snapshot.json`（按 origin 分组的 localStorage 快照，版本化 JSON）。以 profile 模式运行时，每次 navigate 会先 dump 当前 origin 的 localStorage、再按目标 origin 恢复，token 刷新和 SPA 登录态因此能跨 daemon 重启保留下来。`cloak profile create --from-current` 也会把 cookies + 当前 origin 的 localStorage 一并写入这两份快照。可选的 `config.toml` overlay 见[配置参考](config.md#profile-级-config-overlay)。
 
 ### 日志
 

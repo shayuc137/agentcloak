@@ -523,6 +523,14 @@ cloak profile launch NAME
 cloak profile delete NAME
 ```
 
+`--from-current` seeds the new profile from the active browser: cookies land in
+`cookies-snapshot.json` and each origin's `localStorage` lands in
+`localStorage-snapshot.json` — the same snapshot files a live session would
+maintain, so `cloak profile launch NAME` restores both on first navigation.
+
+A profile directory may also hold a `config.toml` overlay — see [config
+reference](config.md#per-profile-config-overlay).
+
 ## Tab management
 
 ```bash
@@ -602,11 +610,11 @@ daemon predates the metrics fields.
 A single daemon serves several callers concurrently (two Claude Code sessions, an MCP client, plain CLI runs). Each caller is routed to its own isolated browser by the `X-Agentcloak-Session` header. The session id is auto-detected — `AGENTCLOAK_SESSION` > `CLAUDE_CODE_SESSION_ID` > `default` — so concurrent agents get separate browsers with zero configuration. A named session's browser is suspended after `daemon.session_idle_timeout` seconds of inactivity (default 300s) and transparently rebuilt on the next request.
 
 ```bash
-cloak session list                 # named sessions: id | state (active/suspended) | tier | idle
-cloak session close SESSION_ID     # close a session and free its browser now
+cloak session list                     # named sessions: id | state (active/suspended) | tier | idle
+cloak session close [SESSION_ID]       # close a session and free its browser now
 ```
 
-Header-less calls (every plain CLI invocation) use the `default` session backed by the daemon's primary browser, which is not listed here — its state shows up in `cloak status` / `/health`.
+Header-less calls (every plain CLI invocation) use the `default` session backed by the daemon's primary browser, which is not listed here — its state shows up in `cloak status` / `/health`. Omit `SESSION_ID` to close that default session (equivalent to closing whatever caller-less `cloak` runs are currently attached to).
 
 ## Configuration
 

@@ -22,7 +22,7 @@ Agent 原生隐身浏览器 -- 看见、交互、自动化。
 - **页面即结构化文本** -- 页面转化为无障碍树，每个可交互元素带有 `[N]` 索引，agent 通过索引操作而非脆弱的 CSS 选择器
 - **CLI + Skill 按需加载** -- agent 通过 Bash 调用 `cloak` 命令，Skill 按需加载仅占 ~300 tokens（MCP 工具定义常驻 ~6,000 tokens）
 - **CloakBrowser 内置隐身** -- 基于 57 个 C++ 补丁的 Chromium，呈现真实浏览器指纹，让 agent 浏览时不会被误判为机器人
-- **登录态复用** -- 保存/恢复登录 profile，通过 RemoteBridge 操控真实 Chrome 浏览器
+- **登录态复用** -- 保存/恢复登录 profile（cookies + localStorage 跨启动自动持久化，把 auth token 塞在客户端存储的 SPA 也能保持登录状态），或通过 RemoteBridge 操控真实 Chrome 浏览器
 - **网络配置** -- 代理（SOCKS5/HTTP）、DNS-over-HTTPS 控制、自定义 Chromium 参数，通过 `cloak config set` 管理
 - **Daemon 架构** -- 首次命令自动启动，管理浏览器生命周期，单调递增的 seq 计数器追踪状态
 - **Spell + API 流量捕获** -- 常见站点操作封装为一行命令；捕获流量，分析模式，自动生成 spell
@@ -230,7 +230,7 @@ dns_over_https = false                    # 默认禁用，尊重系统 DNS
 extra_args = ["--disable-background-networking"]
 ```
 
-所有配置项支持环境变量（`AGENTCLOAK_PROXY`、`AGENTCLOAK_DNS_OVER_HTTPS`、`AGENTCLOAK_EXTRA_ARGS`）。完整列表参见[配置参考](docs/zh/reference/config.md)。
+所有配置项支持环境变量（`AGENTCLOAK_PROXY`、`AGENTCLOAK_DNS_OVER_HTTPS`、`AGENTCLOAK_EXTRA_ARGS`）。也可以在 `~/.agentcloak/profiles/<name>/config.toml` 放 per-profile 覆盖（相同 schema，只写要覆盖的字段——启动该 profile 时自动加载）。完整列表参见[配置参考](docs/zh/reference/config.md)。
 
 ## 架构
 

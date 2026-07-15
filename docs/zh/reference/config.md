@@ -68,6 +68,26 @@ local_idle_timeout = 1800
 
 Overlay 选择器和 cookie 恢复快照属于运行状态，并非配置项。活动 profile 会把它们分别存为 `~/.agentcloak/profiles/<name>/hide.json` 和 `cookies-snapshot.json`。无 profile 时，隐藏选择器仅在当前 session 生效，cookie fallback 为 `~/.agentcloak/cookies-snapshot.json`。使用 `cloak hide add/remove/list` 与 `cloak cookies export/restore` 管理，不要把它们写进 `config.toml`。
 
+## Profile 级 config overlay
+
+某个 profile 需要独立的 browser / security 配置时，把 `config.toml` 直接放到该 profile 目录里：
+
+```
+~/.agentcloak/profiles/<name>/config.toml
+```
+
+daemon 每次以该 profile 启动（`cloak daemon start --profile <name>`、`cloak profile launch <name>` 或 `AGENTCLOAK_PROFILE=<name>`）时会读这份文件，**只覆盖** `[browser]` 与 `[security]` 两段；其余段（`[daemon]`、`[bridge]` 里的端口、bridge token 等属于进程级/主机级设置）仍走全局配置，避免不同 profile 抢端口。缺文件或缺段都会静默跳过。
+
+```toml
+# ~/.agentcloak/profiles/scraper/config.toml
+[browser]
+humanize = false
+proxy = "socks5://scraper-egress:1080"
+
+[security]
+domain_whitelist = ["*.target.com"]
+```
+
 ## 环境变量
 
 所有环境变量使用 `AGENTCLOAK_` 前缀。

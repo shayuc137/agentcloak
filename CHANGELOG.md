@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+Follow-up polish to the profile subsystem after real-world usage: SPAs that stash auth in localStorage now survive profile relaunch, per-profile config overrides land, and a couple of surprising cross-cutting bugs get fixed.
+
+### Features
+
+- **localStorage auto dump/restore in profile mode** — launching a profile now hydrates localStorage from the profile directory, and changes are dumped back on shutdown. SPAs that keep JWT/session tokens in `localStorage` (Supabase, Firebase, most modern auth flows) stay logged in across restarts without extra work; previously only cookies persisted, so token-in-localStorage apps redirected back to `/login`
+- **`profile create --from-current` snapshots localStorage** — the snapshot taken from the live session now captures cookies **and** localStorage, so the seeded profile matches what the browser was actually holding
+- **Per-profile `config.toml` overrides** — drop a `config.toml` inside `~/.agentcloak/profiles/<name>/` to override any subset of global config for that profile only (same schema as the global file). Useful for per-profile proxy, humanize, headless, or Chromium `extra_args`
+- **`session close` default target** — omit `SESSION_ID` (`cloak session close`) to close the current session; previously an explicit ID was required, which was awkward from single-session shells
+
+### Bug Fixes
+
+- **Profile mode session routing** — every request in profile mode is now pinned to the profile browser instead of falling through to the auto-created session for the caller's `CLAUDE_CODE_SESSION_ID` / `mcp-{pid}`. Before, launching a profile then running a command from Claude Code would silently operate on the auto-session browser, so cookies/localStorage/tabs from the profile were invisible
+- **`storage` on `about:blank`** — returns a structured `storage_origin_error` (with a hint to navigate somewhere first) instead of surfacing a raw browser `SecurityError`. Agents can now branch on the error kind rather than parse a JS stack trace
+
 ## 0.3.3 (2026-07-11)
 
 Driven by real-world agent feedback from a frontend-acceptance project (DOS): overlay hiding, richer JS error diagnostics, login-state restore, and a batch of observe-act ergonomics.

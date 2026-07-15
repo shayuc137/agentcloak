@@ -14,7 +14,7 @@ The main data directory. Created on first run. Typical size: **< 1 MB** (excludi
 | `resume.json` | Last action summary for session resume | < 1 KB | Overwritten on each action, persists after daemon stop |
 | `cookies-snapshot.json` | Cookie recovery fallback when no profile is active | Usually < 100 KB | Overwritten by `cloak cookies export` without `--output` |
 | `logs/` | Reserved for future log file output | Empty | Daemon logs go to stderr, not to files |
-| `profiles/` | Saved browser sessions plus `hide.json` and cookie recovery snapshots | 1-50 MB each | Permanent until `cloak profile delete` |
+| `profiles/` | Saved browser sessions plus `hide.json`, `config.toml` overlay, `cookies-snapshot.json`, and `localStorage-snapshot.json` | 1-50 MB each | Permanent until `cloak profile delete` |
 
 ### Profiles
 
@@ -29,6 +29,15 @@ cloak profile delete NAME   # remove a specific profile
 ```
 
 There is no automatic expiry or size limit for profiles.
+
+Alongside the Chromium user-data directory, each profile may hold agentcloak-managed sidecar files:
+
+| File | Purpose | Written by |
+|------|---------|-----------|
+| `config.toml` | Per-profile `[browser]` / `[security]` overlay — see [config reference](config.md#per-profile-config-overlay) | You (editor or `cloak config` targeted at profile paths) |
+| `hide.json` | Persistent snapshot / screenshot / click hide selectors | `cloak hide add/remove` |
+| `cookies-snapshot.json` | Cookie recovery snapshot | `cloak cookies export` (no `--output`), `cloak profile create --from-current` |
+| `localStorage-snapshot.json` | Per-origin `localStorage` recovery snapshot; dumped on navigate-away / daemon close and replayed on next matching-origin navigation | Automatic in profile mode; also seeded by `cloak profile create --from-current` |
 
 ### Logs
 

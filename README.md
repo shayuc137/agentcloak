@@ -22,7 +22,7 @@ You need a browser. Your agents do too.
 - **Pages as structured text** -- every page becomes an accessibility tree with `[N]` indexed elements; agents interact by index, not fragile CSS selectors
 - **CLI + Skill on-demand loading** -- agents call `cloak` via Bash; the Skill lazy-loads at ~300 tokens (vs ~6,000 for MCP tool definitions)
 - **CloakBrowser built-in stealth** -- 57 C++ patches on Chromium for realistic browser fingerprinting; agents browse without being misidentified as bots
-- **Session reuse** -- save/restore login profiles + RemoteBridge to operate your real Chrome browser
+- **Session reuse** -- save/restore login profiles (cookies + localStorage auto-persisted across launches, so SPAs that stash auth tokens client-side stay logged in) + RemoteBridge to operate your real Chrome browser
 - **Network config** -- proxy (SOCKS5/HTTP), DNS-over-HTTPS control, and custom Chromium args via `cloak config set`
 - **Daemon architecture** -- auto-starts on first command, manages browser lifecycle with a monotonic seq counter
 - **Spells + API capture** -- wrap common site operations as one-liners; capture traffic, analyze patterns, generate spells automatically
@@ -234,7 +234,7 @@ dns_over_https = false                    # default: disabled, respects system D
 extra_args = ["--disable-background-networking"]
 ```
 
-All settings also accept environment variables (`AGENTCLOAK_PROXY`, `AGENTCLOAK_DNS_OVER_HTTPS`, `AGENTCLOAK_EXTRA_ARGS`). See the [config reference](docs/en/reference/config.md) for the full list.
+All settings also accept environment variables (`AGENTCLOAK_PROXY`, `AGENTCLOAK_DNS_OVER_HTTPS`, `AGENTCLOAK_EXTRA_ARGS`). Per-profile overrides can live at `~/.agentcloak/profiles/<name>/config.toml` (same schema, only the fields you set — loaded when that profile is launched). See the [config reference](docs/en/reference/config.md) for the full list.
 
 ## Architecture
 

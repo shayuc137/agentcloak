@@ -13,7 +13,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from agentcloak.core.errors import AgentBrowserError
+from agentcloak.core.errors import StorageOriginError
 from agentcloak.core.storage_helpers import (
     build_storage_clear_js,
     build_storage_delete_js,
@@ -60,7 +60,7 @@ async def _check_storage_origin(ctx: Any) -> None:
     except Exception:
         href = ""
     if not isinstance(href, str) or not href.startswith(("http://", "https://")):
-        raise AgentBrowserError(
+        raise StorageOriginError(
             error="storage_origin_error",
             hint="localStorage/sessionStorage is not available on this page",
             action="navigate to the target website first, then retry",

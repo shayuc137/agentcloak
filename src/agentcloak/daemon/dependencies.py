@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from agentcloak.daemon.services.bridge_service import BridgeService
 
 __all__ = [
+    "DEFAULT_SESSION_ID",
     "ActiveTierDep",
     "BridgeServiceDep",
     "BridgeTokenDep",
@@ -90,7 +91,7 @@ class SnapshotCache:
 # legacy CLI invocation, curl, etc.) maps to the default session so the
 # multi-session change is fully backward compatible.
 _SESSION_HEADER = "x-agentcloak-session"
-_DEFAULT_SESSION_ID = "default"
+DEFAULT_SESSION_ID = "default"
 
 
 def _session_id_of(request: Request) -> str:
@@ -99,7 +100,7 @@ def _session_id_of(request: Request) -> str:
     Header names are case-insensitive in Starlette; we read the lower-cased
     form for clarity.
     """
-    return request.headers.get(_SESSION_HEADER, _DEFAULT_SESSION_ID)
+    return request.headers.get(_SESSION_HEADER, DEFAULT_SESSION_ID)
 
 
 def session_id_of(request: Request) -> str:
@@ -126,7 +127,7 @@ def _routes_to_remote(request: Request) -> bool:
     state = request.app.state
     if getattr(state, "active_tier", None) != StealthTier.REMOTE_BRIDGE:
         return False
-    launching_session = getattr(state, "remote_session_id", None) or _DEFAULT_SESSION_ID
+    launching_session = getattr(state, "remote_session_id", None) or DEFAULT_SESSION_ID
     return _session_id_of(request) == launching_session
 
 
@@ -197,7 +198,7 @@ async def get_browser_ctx(request: Request) -> Any:
 
     session_mgr = getattr(request.app.state, "session_manager", None)
     session_id = _session_id_of(request)
-    if session_mgr is not None and session_id != _DEFAULT_SESSION_ID:
+    if session_mgr is not None and session_id != DEFAULT_SESSION_ID:
         return await session_mgr.get_or_create(session_id)
 
     # Default session, or a daemon/test app with no SessionManager wired —
@@ -226,7 +227,7 @@ async def get_optional_browser_ctx(request: Request) -> Any:
 
     session_mgr = getattr(request.app.state, "session_manager", None)
     session_id = _session_id_of(request)
-    if session_mgr is not None and session_id != _DEFAULT_SESSION_ID:
+    if session_mgr is not None and session_id != DEFAULT_SESSION_ID:
         return await session_mgr.get_or_create(session_id)
     return getattr(request.app.state, "browser_ctx", None)
 

@@ -899,6 +899,11 @@ class BrowserContextBase(ABC):
                 if current_origin and current_origin != target_origin:
                     await self._dump_localstorage_for_origin()
 
+        # Pre-register an init script that restores localStorage before the
+        # new page's JS runs. This ensures SPA initial scripts see the saved
+        # JWT/tokens immediately, without requiring a page reload.
+        ls_restore_id = await self._prepare_localstorage_restore(url)
+
         # Flag flips on the failure / success edge, not on entry. If we
         # invalidated *before* awaiting ``_navigate_impl``, a concurrent
         # ``screenshot`` request could observe ``_page_valid = False`` mid-
@@ -912,12 +917,14 @@ class BrowserContextBase(ABC):
         except Exception as exc:
             self._page_valid = False
             self._maybe_mark_browser_closed(exc)
+            await self._cleanup_localstorage_restore(ls_restore_id)
             raise
         self._page_valid = True
         await self._notify_managers_on_navigated()
 
-        # Restore localStorage for the new origin after navigation succeeds.
-        await self._restore_localstorage()
+        # Remove the one-shot restore script so it doesn't re-fire on
+        # subsequent in-page navigations or reloads.
+        await self._cleanup_localstorage_restore(ls_restore_id)
 
         anchor = await self._maybe_scroll_to_hash(url)
         if anchor is not None:
@@ -1684,21 +1691,36 @@ class BrowserContextBase(ABC):
             with contextlib.suppress(Exception):
                 await self.tab_switch(active_tab)
 
-    async def _restore_localstorage(self) -> None:
+    async def _prepare_localstorage_restore(self, url: str) -> str | None:
+        """Register an init script that writes saved localStorage before page JS runs.
+
+        Returns the script identifier so the caller can remove it after
+        navigation completes (the script should only fire once, not on every
+        subsequent document load).
+        """
         if self._profile_dir is None:
-            return
+            return None
         try:
-            origin = await self.evaluate("location.origin")
-            if not isinstance(origin, str) or not origin or origin == "null":
-                return
+            target_origin = self._extract_origin(url)
+            if not target_origin:
+                return None
             path = resolve_storage_snapshot_path(self._profile_dir)
             snapshot = read_storage_snapshot(path)
-            entries = snapshot.get(origin)
+            entries = snapshot.get(target_origin)
             if not entries:
-                return
-            await self.evaluate(build_localstorage_restore_js(entries))
+                return None
+            js = build_localstorage_restore_js(entries)
+            identifier = await self.script_manager.add(js)
+            return identifier
         except Exception as exc:
-            logger.debug("ls_restore_error", error=str(exc))
+            logger.debug("ls_restore_prepare_error", error=str(exc))
+            return None
+
+    async def _cleanup_localstorage_restore(self, identifier: str | None) -> None:
+        if identifier is None:
+            return
+        with contextlib.suppress(Exception):
+            await self.script_manager.remove(identifier)
 
     def _extract_origin(self, url: str) -> str:
         """Extract origin from a URL string for comparison."""

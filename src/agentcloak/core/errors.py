@@ -102,6 +102,10 @@ class DialogBlockedError(AgentBrowserError):
         return payload
 
 
+class StorageOriginError(AgentBrowserError):
+    """Storage operation attempted on a page without a usable origin."""
+
+
 class DebuggerPausedError(AgentBrowserError):
     """Page execution is paused at a breakpoint, blocking new page actions.
 

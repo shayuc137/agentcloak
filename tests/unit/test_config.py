@@ -9,6 +9,7 @@ from agentcloak.core.config import (
     AgentcloakConfig,
     ConfigError,
     Paths,
+    apply_profile_config,
     dump_config,
     load_config,
     write_example_config,
@@ -199,3 +200,105 @@ class TestDumpConfig:
         result = dump_config(cfg, paths)
         assert result["daemon.port"]["source"] == "env:AGENTCLOAK_PORT"
         assert result["daemon.port"]["value"] == 7777
+
+
+class TestApplyProfileConfig:
+    """Per-profile config overlay — bool/list coercion, typos, validation."""
+
+    def test_no_config_file_is_noop(self, tmp_path: Path) -> None:
+        cfg = AgentcloakConfig()
+        original_width = cfg.browser.viewport_width
+        apply_profile_config(cfg, tmp_path)
+        assert cfg.browser.viewport_width == original_width
+
+    def test_valid_browser_overlay_applied(self, tmp_path: Path) -> None:
+        (tmp_path / "config.toml").write_text(
+            "[browser]\nviewport_width = 1920\nheadless = false\n"
+        )
+        cfg = AgentcloakConfig()
+        apply_profile_config(cfg, tmp_path)
+        assert cfg.browser.viewport_width == 1920
+        assert cfg.browser.headless is False
+
+    def test_valid_security_overlay_applied(self, tmp_path: Path) -> None:
+        (tmp_path / "config.toml").write_text(
+            '[security]\ndomain_whitelist = ["example.com", "trusted.io"]\n'
+        )
+        cfg = AgentcloakConfig()
+        apply_profile_config(cfg, tmp_path)
+        assert cfg.security.domain_whitelist == ["example.com", "trusted.io"]
+
+    def test_daemon_section_ignored(self, tmp_path: Path) -> None:
+        """Profile config must not affect daemon-scoped settings."""
+        (tmp_path / "config.toml").write_text("[daemon]\nport = 9999\n")
+        cfg = AgentcloakConfig()
+        original_port = cfg.daemon.port
+        apply_profile_config(cfg, tmp_path)
+        assert cfg.daemon.port == original_port
+
+    def test_unknown_key_ignored_and_logged(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A typo like ``headles = true`` must not silently no-op — log it."""
+        (tmp_path / "config.toml").write_text("[browser]\nheadles = true\n")
+        cfg = AgentcloakConfig()
+        with caplog.at_level("WARNING"):
+            apply_profile_config(cfg, tmp_path)
+        assert cfg.browser.headless is True  # default preserved
+        assert any(
+            "profile_config_unknown_key" in rec.message for rec in caplog.records
+        )
+
+    def test_string_bool_rejected_correctly(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """``bool("false")`` in Python is ``True``; overlay must handle strings."""
+        (tmp_path / "config.toml").write_text('[browser]\nheadless = "false"\n')
+        cfg = AgentcloakConfig()
+        apply_profile_config(cfg, tmp_path)
+        # String "false" must be coerced to Python False, not True.
+        assert cfg.browser.headless is False
+
+    def test_string_list_rejected_not_char_exploded(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """``list("--flag")`` would produce per-char list — must be skipped."""
+        (tmp_path / "config.toml").write_text('[browser]\nextra_args = "--flag"\n')
+        cfg = AgentcloakConfig()
+        with caplog.at_level("WARNING"):
+            apply_profile_config(cfg, tmp_path)
+        # Default (empty list) preserved, not char-exploded per-character.
+        assert cfg.browser.extra_args == []
+        assert any(
+            "profile_config_type_mismatch" in rec.message for rec in caplog.records
+        )
+
+    def test_invalid_int_string_skipped(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Garbage int value must not crash daemon startup."""
+        (tmp_path / "config.toml").write_text(
+            '[browser]\nviewport_width = "not_a_number"\n'
+        )
+        cfg = AgentcloakConfig()
+        default_width = cfg.browser.viewport_width
+        with caplog.at_level("WARNING"):
+            apply_profile_config(cfg, tmp_path)
+        assert cfg.browser.viewport_width == default_width
+
+    def test_validation_failure_rolls_back(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Invalid tier passes coercion but fails _validate — must roll back."""
+        (tmp_path / "config.toml").write_text(
+            '[browser]\ndefault_tier = "banana"\nviewport_width = 1920\n'
+        )
+        cfg = AgentcloakConfig()
+        with caplog.at_level("WARNING"):
+            apply_profile_config(cfg, tmp_path)
+        # Rollback: no field survives when validation fails.
+        assert cfg.browser.default_tier == "auto"
+        assert cfg.browser.viewport_width == 1280
+        assert any(
+            "profile_config_validation_failed" in rec.message for rec in caplog.records
+        )

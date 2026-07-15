@@ -52,6 +52,8 @@ from agentcloak.core.errors import (
 )
 from agentcloak.core.seq import RingBuffer, SeqCounter, SeqEvent
 from agentcloak.core.storage_snapshot import (
+    LOCALSTORAGE_DUMP_JS,
+    build_localstorage_restore_js,
     read_storage_snapshot,
     resolve_storage_snapshot_path,
     write_storage_snapshot,
@@ -1630,23 +1632,15 @@ class BrowserContextBase(ABC):
     # ------------------------------------------------------------------
     # localStorage persistence (profile mode only)
     # ------------------------------------------------------------------
-
-    _LS_DUMP_JS = (
-        "JSON.stringify({o:location.origin,"
-        "d:Object.fromEntries(Object.keys(localStorage)"
-        ".map(k=>[k,localStorage.getItem(k)]))})"
-    )
-
-    _LS_RESTORE_JS_TEMPLATE = (
-        "(()=>{{const d={entries_json};"
-        "Object.keys(d).forEach(k=>localStorage.setItem(k,d[k]))}})()"
-    )
+    # Dump/restore JS payloads live in ``core.storage_snapshot`` so the
+    # daemon profile-create route can share the exact same schema without
+    # crossing the browser layer boundary.
 
     async def _dump_localstorage_for_origin(self) -> None:
         if self._profile_dir is None:
             return
         try:
-            raw = await self.evaluate(self._LS_DUMP_JS)
+            raw = await self.evaluate(LOCALSTORAGE_DUMP_JS)
             if not isinstance(raw, str):
                 logger.debug("ls_dump_skip", reason="evaluate returned non-string")
                 return
@@ -1702,10 +1696,9 @@ class BrowserContextBase(ABC):
             entries = snapshot.get(origin)
             if not entries:
                 return
-            js = self._LS_RESTORE_JS_TEMPLATE.format(entries_json=json.dumps(entries))
-            await self.evaluate(js)
-        except Exception:
-            pass
+            await self.evaluate(build_localstorage_restore_js(entries))
+        except Exception as exc:
+            logger.debug("ls_restore_error", error=str(exc))
 
     def _extract_origin(self, url: str) -> str:
         """Extract origin from a URL string for comparison."""

@@ -7,11 +7,19 @@ through service-layer code so the HTTP handlers remain thin.
 
 from __future__ import annotations
 
+import contextlib
+import json as _json
+import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
 from agentcloak.core.errors import ProfileError
+from agentcloak.core.storage_snapshot import (
+    LOCALSTORAGE_DUMP_JS,
+    resolve_storage_snapshot_path,
+    write_storage_snapshot,
+)
 from agentcloak.daemon.dependencies import (  # noqa: TC001
     BrowserCtxDep,
     RemoteCtxDep,
@@ -30,6 +38,8 @@ from agentcloak.daemon.models import (
 )
 from agentcloak.daemon.routes._helpers import _ok
 from agentcloak.daemon.services import ProfileService
+
+_log = logging.getLogger(__name__)
 
 __all__ = ["router"]
 
@@ -136,14 +146,6 @@ async def handle_profile_create_from_current(
     remote_ctx: RemoteCtxDep,
 ) -> dict[str, Any]:
     """Create a profile from the current browser session's cookies + localStorage."""
-    import contextlib
-    import json as _json
-
-    from agentcloak.core.storage_snapshot import (
-        resolve_storage_snapshot_path,
-        write_storage_snapshot,
-    )
-
     service = ProfileService(_profiles_dir())
 
     try:
@@ -169,19 +171,21 @@ async def handle_profile_create_from_current(
         browser_context = ctx._get_browser_context()
         cookies = await browser_context.cookies()
 
-    # Capture localStorage for the current origin alongside cookies.
+    # Capture localStorage for the current origin alongside cookies. We log
+    # (rather than suppress) so a broken page still tells the operator why the
+    # snapshot piece is missing instead of silently dropping tokens.
     ls_origin = ""
     ls_data: dict[str, str] = {}
-    with contextlib.suppress(Exception):
-        raw = await ctx.evaluate(
-            "JSON.stringify({o:location.origin,"
-            "d:Object.fromEntries(Object.keys(localStorage)"
-            ".map(k=>[k,localStorage.getItem(k)]))})"
-        )
+    try:
+        raw = await ctx.evaluate(LOCALSTORAGE_DUMP_JS)
         if isinstance(raw, str):
             parsed = _json.loads(raw)
             ls_origin = parsed.get("o", "")
-            ls_data = parsed.get("d", {})
+            data_val = parsed.get("d", {})
+            if isinstance(data_val, dict):
+                ls_data = {str(k): str(v) for k, v in data_val.items()}  # type: ignore[arg-type]
+    except Exception as exc:
+        _log.info("profile_create_ls_capture_failed", extra={"error": str(exc)})
 
     try:
         result = await service.create_from_cookies(body.name, cookies)

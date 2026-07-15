@@ -1,12 +1,15 @@
 """Paths, configuration loading, and defaults."""
 
 import contextlib
+import logging
 import os
 import secrets
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
+
+_log = logging.getLogger(__name__)
 
 __all__ = [
     "FIELD_SCHEMA",
@@ -433,26 +436,118 @@ def load_config(*, root: Path | None = None) -> tuple[Paths, AgentcloakConfig]:
     return paths, cfg
 
 
+_COERCE_SKIP = object()
+
+
+def _log_type_mismatch(section: str, key: str, expected: str, incoming: Any) -> None:
+    _log.warning(
+        "profile_config_type_mismatch",
+        extra={
+            "section": section,
+            "key": key,
+            "expected": expected,
+            "got": type(incoming).__name__,
+            "value": repr(incoming),
+        },
+    )
+
+
+def _coerce_profile_value(current: Any, incoming: Any, section: str, key: str) -> Any:
+    """Coerce a profile TOML value to match ``current``'s type.
+
+    Returns the coerced value on success or a sentinel ``_COERCE_SKIP`` when
+    the incoming value cannot be safely converted — the caller then skips the
+    setattr instead of writing garbage. Naive ``type(current)(incoming)`` would
+    turn ``bool("false")`` into ``True`` and ``list("--flag")`` into a per-char
+    list, silently poisoning downstream config.
+    """
+    # bool is a subclass of int, so check it first to avoid ``int(True)`` false
+    # positives.
+    if isinstance(current, bool):
+        if isinstance(incoming, bool):
+            return incoming
+        if isinstance(incoming, str):
+            lowered = incoming.strip().lower()
+            if lowered in ("true", "1", "yes"):
+                return True
+            if lowered in ("false", "0", "no"):
+                return False
+        _log_type_mismatch(section, key, "bool", incoming)
+        return _COERCE_SKIP
+    if isinstance(current, list):
+        if isinstance(incoming, list):
+            return list(cast("list[Any]", incoming))
+        _log_type_mismatch(section, key, "list", incoming)
+        return _COERCE_SKIP
+    if isinstance(current, int):
+        try:
+            return int(incoming)
+        except (TypeError, ValueError):
+            _log_type_mismatch(section, key, "int", incoming)
+            return _COERCE_SKIP
+    if isinstance(current, float):
+        try:
+            return float(incoming)
+        except (TypeError, ValueError):
+            _log_type_mismatch(section, key, "float", incoming)
+            return _COERCE_SKIP
+    if isinstance(current, str):
+        if isinstance(incoming, str):
+            return incoming
+        _log_type_mismatch(section, key, "str", incoming)
+        return _COERCE_SKIP
+    # Unknown type — refuse to touch it rather than risk a corrupt config.
+    return _COERCE_SKIP
+
+
 def apply_profile_config(cfg: AgentcloakConfig, profile_dir: Path) -> None:
     """Overlay a profile's ``config.toml`` onto *cfg* in place.
 
     Only ``[browser]`` and ``[security]`` sections are merged — daemon and
     bridge settings are process-scoped and must not vary per profile.
+    Type-mismatched values are logged and skipped (never written). Unknown
+    keys are logged so typos surface instead of silently no-oping. The
+    aggregate config is re-validated at the end; on validation failure the
+    profile overlay is rolled back to keep the daemon startable.
+
     Missing file or missing sections are silently skipped.
     """
     raw = _read_toml(profile_dir / "config.toml")
     if not raw:
         return
 
-    browser_tbl: dict[str, Any] = raw.get("browser", {})
-    for key, value in browser_tbl.items():
-        if hasattr(cfg.browser, key):
-            setattr(cfg.browser, key, type(getattr(cfg.browser, key))(value))
+    # Snapshot the fields we may touch so a validation failure downstream can
+    # be rolled back cleanly — a bad profile shouldn't wedge daemon startup.
+    browser_before = {f: getattr(cfg.browser, f) for f in vars(cfg.browser)}
+    security_before = {f: getattr(cfg.security, f) for f in vars(cfg.security)}
 
-    security_tbl: dict[str, Any] = raw.get("security", {})
-    for key, value in security_tbl.items():
-        if hasattr(cfg.security, key):
-            setattr(cfg.security, key, type(getattr(cfg.security, key))(value))
+    def _merge_section(subcfg: Any, section: str, table: dict[str, Any]) -> None:
+        for key, value in table.items():
+            if not hasattr(subcfg, key):
+                _log.warning(
+                    "profile_config_unknown_key",
+                    extra={"section": section, "key": key},
+                )
+                continue
+            coerced = _coerce_profile_value(getattr(subcfg, key), value, section, key)
+            if coerced is _COERCE_SKIP:
+                continue
+            setattr(subcfg, key, coerced)
+
+    _merge_section(cfg.browser, "browser", raw.get("browser", {}))
+    _merge_section(cfg.security, "security", raw.get("security", {}))
+
+    try:
+        _validate(cfg)
+    except ConfigError as exc:
+        _log.warning(
+            "profile_config_validation_failed",
+            extra={"profile_dir": str(profile_dir), "error": str(exc)},
+        )
+        for k, v in browser_before.items():
+            setattr(cfg.browser, k, v)
+        for k, v in security_before.items():
+            setattr(cfg.security, k, v)
 
 
 class ConfigError(ValueError):

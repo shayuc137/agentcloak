@@ -17,6 +17,7 @@ __all__ = [
     "DaemonConfig",
     "Paths",
     "SecurityConfig",
+    "apply_profile_config",
     "dump_config",
     "ensure_bridge_token",
     "load_config",
@@ -430,6 +431,28 @@ def load_config(*, root: Path | None = None) -> tuple[Paths, AgentcloakConfig]:
 
     _validate(cfg)
     return paths, cfg
+
+
+def apply_profile_config(cfg: AgentcloakConfig, profile_dir: Path) -> None:
+    """Overlay a profile's ``config.toml`` onto *cfg* in place.
+
+    Only ``[browser]`` and ``[security]`` sections are merged — daemon and
+    bridge settings are process-scoped and must not vary per profile.
+    Missing file or missing sections are silently skipped.
+    """
+    raw = _read_toml(profile_dir / "config.toml")
+    if not raw:
+        return
+
+    browser_tbl: dict[str, Any] = raw.get("browser", {})
+    for key, value in browser_tbl.items():
+        if hasattr(cfg.browser, key):
+            setattr(cfg.browser, key, type(getattr(cfg.browser, key))(value))
+
+    security_tbl: dict[str, Any] = raw.get("security", {})
+    for key, value in security_tbl.items():
+        if hasattr(cfg.security, key):
+            setattr(cfg.security, key, type(getattr(cfg.security, key))(value))
 
 
 class ConfigError(ValueError):

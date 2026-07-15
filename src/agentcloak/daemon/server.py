@@ -34,6 +34,7 @@ from agentcloak.browser.cloak_ctx import TURNSTILE_PATCH_DIR
 from agentcloak.browser.xvfb import XvfbManager
 from agentcloak.core.config import (
     Paths,
+    apply_profile_config,
     ensure_bridge_token,
     load_config,
     write_example_config,
@@ -441,6 +442,7 @@ async def start(
     if profile:
         profile_dir = paths.profiles_dir / profile
         profile_dir.mkdir(parents=True, exist_ok=True)
+        apply_profile_config(cfg, profile_dir)
 
     # Assemble the Chromium command-line flags from user config. The
     # ``--disable-features=DnsOverHttps`` default keeps split-horizon DNS

@@ -186,6 +186,15 @@ async def get_browser_ctx(request: Request) -> Any:
             raise _browser_not_ready(request)
         return ctx
 
+    # Profile mode: route all requests to the profile browser. A named
+    # session would create a separate ephemeral browser that lacks the
+    # profile's cookies, localStorage, and httpcloak proxy.
+    if getattr(request.app.state, "local_profile", None):
+        ctx = request.app.state.browser_ctx
+        if ctx is None:
+            raise _browser_not_ready(request)
+        return ctx
+
     session_mgr = getattr(request.app.state, "session_manager", None)
     session_id = _session_id_of(request)
     if session_mgr is not None and session_id != _DEFAULT_SESSION_ID:

@@ -135,7 +135,15 @@ async def handle_profile_create_from_current(
     ctx: BrowserCtxDep,
     remote_ctx: RemoteCtxDep,
 ) -> dict[str, Any]:
-    """Create a profile from the current browser session's cookies."""
+    """Create a profile from the current browser session's cookies + localStorage."""
+    import contextlib
+    import json as _json
+
+    from agentcloak.core.storage_snapshot import (
+        resolve_storage_snapshot_path,
+        write_storage_snapshot,
+    )
+
     service = ProfileService(_profiles_dir())
 
     try:
@@ -149,9 +157,6 @@ async def handle_profile_create_from_current(
 
         if not isinstance(remote_ctx, RemoteBridgeContext):
             raise RuntimeError("remote_ctx is not a RemoteBridgeContext instance")
-        # The bridge ``cookies`` command returns either a list of cookie dicts
-        # directly or a ``{"cookies": [...]}`` envelope depending on extension
-        # version. Normalise to a list either way.
         raw_response: Any = await remote_ctx.send_command("cookies", {})
         cookies = []
         if isinstance(raw_response, list):
@@ -164,10 +169,35 @@ async def handle_profile_create_from_current(
         browser_context = ctx._get_browser_context()
         cookies = await browser_context.cookies()
 
+    # Capture localStorage for the current origin alongside cookies.
+    ls_origin = ""
+    ls_data: dict[str, str] = {}
+    with contextlib.suppress(Exception):
+        raw = await ctx.evaluate(
+            "JSON.stringify({o:location.origin,"
+            "d:Object.fromEntries(Object.keys(localStorage)"
+            ".map(k=>[k,localStorage.getItem(k)]))})"
+        )
+        if isinstance(raw, str):
+            parsed = _json.loads(raw)
+            ls_origin = parsed.get("o", "")
+            ls_data = parsed.get("d", {})
+
     try:
         result = await service.create_from_cookies(body.name, cookies)
     except ProfileError as exc:
         raise _profile_error_to_http(exc) from exc
+
+    # Write localStorage snapshot into the newly created profile directory.
+    if ls_origin and ls_data:
+        actual_name = result.get("profile", body.name)
+        profile_dir = _profiles_dir() / actual_name
+        with contextlib.suppress(Exception):
+            snap_path = resolve_storage_snapshot_path(profile_dir)
+            write_storage_snapshot(snap_path, ls_origin, ls_data)
+        result["localstorage_origin"] = ls_origin
+        result["localstorage_count"] = len(ls_data)
+
     return _ok(result, seq=ctx.seq)
 
 

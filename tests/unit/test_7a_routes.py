@@ -206,7 +206,7 @@ class TestCookieCrudRoutes:
 class TestStorageRoutes:
     def test_storage_get_single_key(self) -> None:
         ctx = _ctx()
-        ctx.evaluate = AsyncMock(return_value="tok")
+        ctx.evaluate = AsyncMock(side_effect=["https://example.com/page", "tok"])
         resp = _client(ctx).post("/storage/get", json={"type": "local", "key": "token"})
         assert resp.status_code == 200
         assert resp.json()["data"]["value"] == "tok"
@@ -215,7 +215,7 @@ class TestStorageRoutes:
 
     def test_storage_set(self) -> None:
         ctx = _ctx()
-        ctx.evaluate = AsyncMock(return_value=None)
+        ctx.evaluate = AsyncMock(side_effect=["https://example.com/", None])
         resp = _client(ctx).post(
             "/storage/set", json={"type": "session", "key": "k", "value": "v"}
         )
@@ -225,25 +225,31 @@ class TestStorageRoutes:
 
     def test_storage_delete(self) -> None:
         ctx = _ctx()
-        ctx.evaluate = AsyncMock(return_value=None)
+        ctx.evaluate = AsyncMock(side_effect=["https://example.com/", None])
         resp = _client(ctx).post("/storage/delete", json={"key": "k"})
         assert resp.status_code == 200
         assert resp.json()["data"]["deleted"] is True
 
     def test_storage_clear(self) -> None:
         ctx = _ctx()
-        ctx.evaluate = AsyncMock(return_value=None)
+        ctx.evaluate = AsyncMock(side_effect=["https://example.com/", None])
         resp = _client(ctx).post("/storage/clear", json={"type": "local"})
         assert resp.status_code == 200
         assert resp.json()["data"]["cleared"] is True
 
     def test_storage_invalid_type_is_400(self) -> None:
         ctx = _ctx()
-        ctx.evaluate = AsyncMock()
+        ctx.evaluate = AsyncMock(side_effect=["https://example.com/", None])
         resp = _client(ctx).post("/storage/get", json={"type": "cookies"})
         assert resp.status_code == 400
         assert resp.json()["error"] == "invalid_storage_type"
-        ctx.evaluate.assert_not_awaited()
+
+    def test_storage_origin_error_on_about_blank(self) -> None:
+        ctx = _ctx()
+        ctx.evaluate = AsyncMock(return_value="about:blank")
+        resp = _client(ctx).post("/storage/get", json={"type": "local"})
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "storage_origin_error"
 
 
 # ---------------------------------------------------------------------------

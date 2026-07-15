@@ -137,12 +137,14 @@ class PlaywrightContext(BrowserContextBase):
         capture_store: CaptureStore | None = None,
         cdp_port: int | None = None,
         browser_config: BrowserConfig | None = None,
+        profile_dir: Path | None = None,
     ) -> None:
         super().__init__(
             seq_counter=seq_counter,
             ring_buffer=ring_buffer,
             capture_store=capture_store,
             browser_config=browser_config,
+            profile_dir=profile_dir,
         )
 
         # Multi-tab state: map tab_id -> Page, initial page is tab 0
@@ -1919,6 +1921,7 @@ async def launch_playwright(
             proxy_url=proxy_url,
             cdp_port=cdp_port,
             browser_config=browser_config,
+            profile_dir=profile_dir,
         )
 
     launch_args: dict[str, Any] = {

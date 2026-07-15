@@ -51,9 +51,15 @@ from agentcloak.core.errors import (
     NavigationError,
 )
 from agentcloak.core.seq import RingBuffer, SeqCounter, SeqEvent
+from agentcloak.core.storage_snapshot import (
+    read_storage_snapshot,
+    resolve_storage_snapshot_path,
+    write_storage_snapshot,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from pathlib import Path
 
     from agentcloak.browser.managers import (
         DebuggerManager,
@@ -198,6 +204,7 @@ class BrowserContextBase(ABC):
         ring_buffer: RingBuffer | None = None,
         capture_store: CaptureStore | None = None,
         browser_config: BrowserConfig | None = None,
+        profile_dir: Path | None = None,
     ) -> None:
         # --- Shared state ---
         self._seq_counter: SeqCounter = seq_counter or SeqCounter()
@@ -302,6 +309,11 @@ class BrowserContextBase(ABC):
         # ``emulation headers`` can report the active set; the backend applies
         # them via ``_set_extra_headers_impl``.
         self._extra_headers: dict[str, str] = {}
+
+        # localStorage persistence: profile directory for snapshot dump/restore.
+        # None in ephemeral mode or RemoteBridge — all localStorage logic is
+        # skipped when this is unset.
+        self._profile_dir: Path | None = profile_dir
 
     # ------------------------------------------------------------------
     # Public properties
@@ -875,6 +887,16 @@ class BrowserContextBase(ABC):
         self._check_browser_alive()
         if timeout is None:
             timeout = float(self._browser_config.navigation_timeout)
+
+        # Dump localStorage before navigating away from the current origin so
+        # token refreshes that happened since the last dump are captured.
+        if self._profile_dir is not None:
+            target_origin = self._extract_origin(url)
+            if target_origin:
+                current_origin = await self._get_current_origin()
+                if current_origin and current_origin != target_origin:
+                    await self._dump_localstorage_for_origin()
+
         # Flag flips on the failure / success edge, not on entry. If we
         # invalidated *before* awaiting ``_navigate_impl``, a concurrent
         # ``screenshot`` request could observe ``_page_valid = False`` mid-
@@ -891,6 +913,9 @@ class BrowserContextBase(ABC):
             raise
         self._page_valid = True
         await self._notify_managers_on_navigated()
+
+        # Restore localStorage for the new origin after navigation succeeds.
+        await self._restore_localstorage()
 
         anchor = await self._maybe_scroll_to_hash(url)
         if anchor is not None:
@@ -1602,7 +1627,109 @@ class BrowserContextBase(ABC):
         )
         return result
 
+    # ------------------------------------------------------------------
+    # localStorage persistence (profile mode only)
+    # ------------------------------------------------------------------
+
+    _LS_DUMP_JS = (
+        "JSON.stringify({o:location.origin,"
+        "d:Object.fromEntries(Object.keys(localStorage)"
+        ".map(k=>[k,localStorage.getItem(k)]))})"
+    )
+
+    _LS_RESTORE_JS_TEMPLATE = (
+        "(()=>{{const d={entries_json};"
+        "Object.keys(d).forEach(k=>localStorage.setItem(k,d[k]))}})()"
+    )
+
+    async def _dump_localstorage_for_origin(self) -> None:
+        if self._profile_dir is None:
+            return
+        try:
+            raw = await self.evaluate(self._LS_DUMP_JS)
+            if not isinstance(raw, str):
+                logger.debug("ls_dump_skip", reason="evaluate returned non-string")
+                return
+            parsed = json.loads(raw)
+            origin = parsed.get("o", "")
+            data = parsed.get("d", {})
+            if not origin or not isinstance(data, dict):
+                logger.debug("ls_dump_skip", reason="invalid origin or data")
+                return
+            path = resolve_storage_snapshot_path(self._profile_dir)
+            write_storage_snapshot(path, origin, cast("dict[str, str]", data))
+            logger.info(
+                "ls_dump_ok", origin=origin, keys=len(cast("dict[str, str]", data))
+            )
+        except Exception as exc:
+            logger.debug("ls_dump_error", error=str(exc))
+
+    async def _dump_localstorage_all_tabs(self) -> None:
+        if self._profile_dir is None:
+            return
+        try:
+            tabs = await self.tab_list()
+        except Exception:
+            return
+        if len(tabs) <= 1:
+            await self._dump_localstorage_for_origin()
+            return
+        active_tab: int | None = None
+        for tab in tabs:
+            if tab.active:
+                active_tab = tab.tab_id
+                break
+        for tab in tabs:
+            try:
+                if not tab.active:
+                    await self.tab_switch(tab.tab_id)
+                await self._dump_localstorage_for_origin()
+            except Exception:
+                continue
+        if active_tab is not None:
+            with contextlib.suppress(Exception):
+                await self.tab_switch(active_tab)
+
+    async def _restore_localstorage(self) -> None:
+        if self._profile_dir is None:
+            return
+        try:
+            origin = await self.evaluate("location.origin")
+            if not isinstance(origin, str) or not origin or origin == "null":
+                return
+            path = resolve_storage_snapshot_path(self._profile_dir)
+            snapshot = read_storage_snapshot(path)
+            entries = snapshot.get(origin)
+            if not entries:
+                return
+            js = self._LS_RESTORE_JS_TEMPLATE.format(entries_json=json.dumps(entries))
+            await self.evaluate(js)
+        except Exception:
+            pass
+
+    def _extract_origin(self, url: str) -> str:
+        """Extract origin from a URL string for comparison."""
+        try:
+            parts = urlsplit(url)
+            if parts.scheme not in ("http", "https"):
+                return ""
+            port = f":{parts.port}" if parts.port else ""
+            return f"{parts.scheme}://{parts.hostname}{port}"
+        except Exception:
+            return ""
+
+    async def _get_current_origin(self) -> str:
+        try:
+            origin = await self.evaluate("location.origin")
+            if isinstance(origin, str) and origin and origin != "null":
+                return origin
+        except Exception:
+            pass
+        return ""
+
     async def close(self) -> None:
+        with contextlib.suppress(Exception):
+            await self._dump_localstorage_all_tabs()
         with contextlib.suppress(Exception):
             await self._close_impl()
 

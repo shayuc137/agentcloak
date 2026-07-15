@@ -14,7 +14,9 @@ class SessionListResponse(BaseModel):
 
 
 class SessionCloseRequest(BaseModel):
-    session_id: str = Field(description="Session to close.")
+    session_id: str = Field(
+        default="", description="Session to close (empty = default)."
+    )
 
 
 class SessionCloseResponse(BaseModel):

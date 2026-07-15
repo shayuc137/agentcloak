@@ -57,7 +57,6 @@ from agentcloak.core.types import StealthTier
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
     from agentcloak.core.config import AgentcloakConfig
 
@@ -293,14 +292,12 @@ class SessionManager:
         if not self._config.browser.dns_over_https:
             chromium_args.append("--disable-features=DnsOverHttps")
 
-        profile_dir: Path | None = None  # named sessions are ephemeral
-
         raw_ctx = await create_context(
             tier=tier,
             headless=self._config.browser.headless,
             viewport_width=self._config.browser.viewport_width,
             viewport_height=self._config.browser.viewport_height,
-            profile_dir=profile_dir,
+            profile_dir=None,
             humanize=self._config.browser.humanize,
             extensions=extensions,
             proxy_url=None,

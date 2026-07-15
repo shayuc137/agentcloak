@@ -809,7 +809,7 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak session close SESSION_ID`
 - MCP: `(session management — CLI only)`
 - Body:
-  - `session_id` (string, default: *required*) — Session to close.
+  - `session_id` (string, default: "") — Session to close (empty = default).
 
 
 _End of generated content. Updates flow from `daemon/models/` + `daemon/routes/`; run `python scripts/generate_skill.py --write` after changing routes._

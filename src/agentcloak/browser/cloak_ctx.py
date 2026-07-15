@@ -137,6 +137,7 @@ async def launch_cloak(
             proxy_url=proxy_url,
             cdp_port=cdp_port,
             browser_config=browser_config,
+            profile_dir=profile_dir,
         )
 
     browser = await cb.launch_async(

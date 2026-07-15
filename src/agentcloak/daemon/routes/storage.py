@@ -13,6 +13,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
+from agentcloak.core.errors import AgentBrowserError
 from agentcloak.core.storage_helpers import (
     build_storage_clear_js,
     build_storage_delete_js,
@@ -52,10 +53,25 @@ def _validate_type(storage_type: str) -> str:
         ) from exc
 
 
+async def _check_storage_origin(ctx: Any) -> None:
+    """Raise a structured error if the page has no usable storage origin."""
+    try:
+        href = await ctx.evaluate("location.href")
+    except Exception:
+        href = ""
+    if not isinstance(href, str) or not href.startswith(("http://", "https://")):
+        raise AgentBrowserError(
+            error="storage_origin_error",
+            hint="localStorage/sessionStorage is not available on this page",
+            action="navigate to the target website first, then retry",
+        )
+
+
 @router.post("/storage/get", response_model=OkEnvelope[StorageResponse])
 async def handle_storage_get(
     body: StorageGetRequest, ctx: BrowserCtxDep
 ) -> dict[str, Any]:
+    await _check_storage_origin(ctx)
     area = _validate_type(body.type)
     js = build_storage_get_js(area, body.key)
     value = await ctx.evaluate(js)
@@ -67,6 +83,7 @@ async def handle_storage_get(
 async def handle_storage_set(
     body: StorageSetRequest, ctx: BrowserCtxDep
 ) -> dict[str, Any]:
+    await _check_storage_origin(ctx)
     area = _validate_type(body.type)
     await ctx.evaluate(build_storage_set_js(area, body.key, body.value))
     data = {"type": area, "key": body.key, "set": True}
@@ -77,6 +94,7 @@ async def handle_storage_set(
 async def handle_storage_delete(
     body: StorageDeleteRequest, ctx: BrowserCtxDep
 ) -> dict[str, Any]:
+    await _check_storage_origin(ctx)
     area = _validate_type(body.type)
     await ctx.evaluate(build_storage_delete_js(area, body.key))
     data = {"type": area, "key": body.key, "deleted": True}
@@ -87,6 +105,7 @@ async def handle_storage_delete(
 async def handle_storage_clear(
     body: StorageClearRequest, ctx: BrowserCtxDep
 ) -> dict[str, Any]:
+    await _check_storage_origin(ctx)
     area = _validate_type(body.type)
     await ctx.evaluate(build_storage_clear_js(area))
     data = {"type": area, "key": None, "cleared": True}

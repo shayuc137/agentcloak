@@ -26,13 +26,22 @@ def session_list() -> None:
 
 @app.command("close")
 def session_close(
-    session_id: str = typer.Argument(..., help="Session id to close."),
+    session_id: str = typer.Argument(
+        None, help="Session id to close (omit to close the default session)."
+    ),
 ) -> None:
-    """Close a named session and release its browser."""
+    """Close a named session and release its browser.
+
+    When called without an argument, closes the default (unnamed) session's
+    browser without stopping the daemon.
+    """
+    body: dict[str, str] = {}
+    if session_id:
+        body["session_id"] = session_id
     dispatch_text_or_json(
         DaemonClient(),
         "POST",
         "/session/close",
-        json_body={"session_id": session_id},
+        json_body=body,
         renderer=render_session_list_text,
     )

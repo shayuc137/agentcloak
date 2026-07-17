@@ -157,14 +157,14 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 
 | Command | Purpose |
 |---------|---------|
-| `cloak launch --tier cloak\|playwright\|remote_bridge` | Hot-switch the daemon's browser tier (no restart) |
+| `cloak launch --tier cloak\|playwright\|remote_bridge` | Hot-switch the daemon's browser tier (no restart); omit `--profile` to keep the current profile, pass `--no-profile` to explicitly clear it (mutually exclusive with `--profile`) |
 | `cloak profile list` / `create` / `launch` / `delete` | Browser profile management (`create --from-current` snapshots cookies + localStorage; profile mode auto-saves/restores both on launch; profile dir may hold a `config.toml` override) |
 | `cloak tab list` / `new` / `close` / `switch` | Tab management |
 | `cloak spell list` / `info` / `run NAME` / `scaffold` | Spells (PUBLIC runs locally; browser strategies use daemon + caller session) |
 | `cloak cookies export [--url URL]` / `restore [--file PATH]` | Export prints cookies and refreshes the active profile snapshot; restore imports that snapshot (or the global fallback) |
 | `cloak cookies import -c '[...]'` | Import Chrome cookies API, CDP, or Playwright JSON; malformed entries are skipped and counted |
 | `cloak cookies set NAME VAL [--domain D]` / `set --curl '<copy-as-curl>'` / `clear` / `delete NAME` | Cookie CRUD; `--curl` seeds cookies from a DevTools Copy-as-cURL string |
-| `cloak hide add CSS` / `remove ID_OR_CSS` / `list` | Hide overlays across snapshot, screenshot, and click hit-testing; profile sessions persist selectors, other sessions are session-only |
+| `cloak hide add CSS` / `remove ID_OR_CSS` / `list` | Hide overlays across snapshot, screenshot, and click hit-testing; `list` tags each entry `[builtin]`/`[profile]`/`[session]` so you know where it came from; profile sessions persist selectors, other sessions are session-only |
 | `cloak pdf [-o file] [--format A4] [--landscape]` | Export the current page to PDF (headless only) |
 | `cloak serve start DIR [--port P]` / `stop` / `status` | Local http server for previewing local files (`file://` is blocked); navigate to the printed URL |
 | `cloak session list` / `close [SESSION_ID]` | Multi-session management: list named sessions; `close` without an ID closes the current session |

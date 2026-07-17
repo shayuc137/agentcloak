@@ -582,8 +582,21 @@ aborting the entire import.
 
 ```bash
 cloak hide add ".feedback-toolbar"       # profile-persistent, or session-only without a profile
-cloak hide list                           # stable id + selector + scope
+cloak hide list                           # stable id + selector + [source]
 cloak hide remove ID_OR_EXACT_SELECTOR
+```
+
+`hide list` output tags each selector with its origin — `[builtin]` for the
+immutable `[data-cloak-hide]` rule, `[profile]` for selectors persisted in the
+active profile's `hide.json`, `[session]` for ephemeral ones from the current
+session (including one-time `--hide` selectors):
+
+```text
+$ cloak hide list
+scope: work
+data-cloak-hide: [data-cloak-hide] [builtin]
+feedback-toolbar: .feedback-toolbar [profile]
+h1234abcd: .promo-modal [session]
 ```
 
 Persistent selectors, one-time `--hide` selectors, and the page-owned
@@ -591,6 +604,24 @@ Persistent selectors, one-time `--hide` selectors, and the page-owned
 screenshots, and click hit-testing. `--keep-overlays` reveals all three layers
 for one snapshot or screenshot. Profile selectors are stored in `hide.json`;
 the builtin `[data-cloak-hide]` rule cannot be removed.
+
+## Launch
+
+Hot-switch the daemon's active browser tier (and optionally its profile) without restarting the daemon.
+
+```bash
+cloak launch --tier cloak                 # hot-switch tier, keep current profile
+cloak launch --tier playwright --profile work   # switch tier and load a profile
+cloak launch --tier cloak --no-profile    # explicitly drop the current profile
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--tier` / `-t` | `auto` | Backend: `auto` (→ `cloak`), `cloak`, `playwright`, `remote_bridge` |
+| `--profile` / `-p` | keep current | Load a named profile (local tiers only; ignored for `remote_bridge`) |
+| `--no-profile` | off | Explicitly switch to no profile, discarding the current one |
+
+Omitting `--profile` keeps whatever profile the daemon is currently attached to — a plain `cloak launch --tier cloak` no longer silently drops it. Pass `--no-profile` when you want an ephemeral browser; `--profile` and `--no-profile` are mutually exclusive and passing both raises a usage error.
 
 ## Daemon management
 

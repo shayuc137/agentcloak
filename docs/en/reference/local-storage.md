@@ -10,6 +10,7 @@ The main data directory. Created on first run. Typical size: **< 1 MB** (excludi
 |---------------|---------|------|-----------|
 | `config.toml` | User configuration | < 1 KB | Permanent, user-managed |
 | `daemon.pid` | Running daemon process ID | < 1 KB | Created on daemon start, stale file removed on next start |
+| `daemon.json` | Daemon portfile: `pid`, `host`, `port`, `version`, `profile` | ~130 bytes, `0600` perms | Overwritten on daemon start; `DaemonClient` reads it to discover the live port + inherit the daemon's profile for auto-restart |
 | `active-session.json` | Current daemon session info (port, stealth tier, bridge token) | ~130 bytes | Overwritten on daemon start |
 | `resume.json` | Last action summary for session resume | < 1 KB | Overwritten on each action, persists after daemon stop |
 | `cookies-snapshot.json` | Cookie recovery fallback when no profile is active | Usually < 100 KB | Overwritten by `cloak cookies export` without `--output` |

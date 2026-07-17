@@ -566,14 +566,44 @@ cookie 结构，丢弃未知字段，转换 `sameSite` 和过期时间。坏条�
 
 ```bash
 cloak hide add ".feedback-toolbar"       # 有 profile 时持久保存，否则仅当前 session
-cloak hide list                           # 稳定 id + 选择器 + scope
+cloak hide list                           # 稳定 id + 选择器 + [source]
 cloak hide remove ID_OR_EXACT_SELECTOR
+```
+
+`hide list` 输出会为每条选择器打上来源标签——`[builtin]` 是不可删除的
+`[data-cloak-hide]` 内置规则，`[profile]` 来自当前 profile 的 `hide.json`
+持久化，`[session]` 是当前会话临时的规则（含一次性 `--hide`）：
+
+```text
+$ cloak hide list
+scope: work
+data-cloak-hide: [data-cloak-hide] [builtin]
+feedback-toolbar: .feedback-toolbar [profile]
+h1234abcd: .promo-modal [session]
 ```
 
 持久选择器、一次性 `--hide` 选择器和页面声明的 `[data-cloak-hide]` 属性都会让
 匹配元素退出 snapshot、截图和点击命中测试。`--keep-overlays` 可在一次 snapshot
 或截图中显示全部三层。Profile 选择器保存在 `hide.json`；内置的
 `[data-cloak-hide]` 规则无法删除。
+
+## Launch
+
+不重启 daemon 的前提下热切换 daemon 当前的浏览器 tier（以及可选的 profile）。
+
+```bash
+cloak launch --tier cloak                 # 只热切 tier，保留当前 profile
+cloak launch --tier playwright --profile work   # 切 tier 并加载 profile
+cloak launch --tier cloak --no-profile    # 显式清空当前 profile
+```
+
+| 参数 | 默认值 | 说明 |
+|------|-------|------|
+| `--tier` / `-t` | `auto` | 后端：`auto`（→ `cloak`）、`cloak`、`playwright`、`remote_bridge` |
+| `--profile` / `-p` | 保留当前 | 加载命名 profile（仅本地 tier 生效，`remote_bridge` 忽略此项） |
+| `--no-profile` | 关闭 | 显式切换到无 profile，丢弃当前 profile |
+
+省略 `--profile` 会保留 daemon 当前挂载的 profile——单独执行 `cloak launch --tier cloak` 不会再静默丢掉它。需要临时无 profile 浏览器时传 `--no-profile`；`--profile` 和 `--no-profile` 互斥，同时传会报用法错误。
 
 ## Daemon 管理
 

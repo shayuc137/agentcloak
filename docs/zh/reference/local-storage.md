@@ -10,6 +10,7 @@ agentcloak 在本机使用两个目录存储数据。本文档说明每个文件
 |----------|------|------|---------|
 | `config.toml` | 用户配置 | < 1 KB | 永久保留，用户管理 |
 | `daemon.pid` | 运行中的 daemon 进程 ID | < 1 KB | daemon 启动时创建，下次启动时清理残留 |
+| `daemon.json` | Daemon portfile：`pid`、`host`、`port`、`version`、`profile` | ~130 字节，`0600` 权限 | daemon 启动时覆盖；`DaemonClient` 用它发现活动端口并继承 daemon 的 profile 用于 auto-restart |
 | `active-session.json` | 当前 daemon session 信息（端口、隐身层级、bridge token） | ~130 字节 | daemon 启动时覆盖 |
 | `resume.json` | 上次操作摘要，用于 session 恢复 | < 1 KB | 每次操作覆盖，daemon 停止后保留 |
 | `cookies-snapshot.json` | 无活动 profile 时的 cookie 恢复 fallback | 通常 < 100 KB | `cloak cookies export` 不带 `--output` 时覆盖 |

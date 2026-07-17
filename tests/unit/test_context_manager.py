@@ -425,6 +425,31 @@ class TestLaunchRoute:
         assert resp.status_code in (400, 422)
 
 
+class TestLaunchProfileStickiness:
+    """Profile persists across tier switches unless explicitly cleared."""
+
+    def test_launch_without_profile_keeps_current(
+        self, launch_client: TestClient
+    ) -> None:
+        launch_client.app.state.local_profile = "dos"  # type: ignore[union-attr]
+        resp = launch_client.post("/launch", json={"tier": "cloak"})
+        assert resp.status_code == 200
+        assert resp.json()["data"]["profile"] == "dos"
+
+    def test_launch_no_profile_flag_clears(self, launch_client: TestClient) -> None:
+        launch_client.app.state.local_profile = "dos"  # type: ignore[union-attr]
+        new_local = _make_fake_local_ctx()
+        with patch(
+            "agentcloak.daemon.context_manager.create_context",
+            new=AsyncMock(return_value=new_local),
+        ):
+            resp = launch_client.post(
+                "/launch", json={"tier": "cloak", "no_profile": True}
+            )
+        assert resp.status_code == 200
+        assert resp.json()["data"]["profile"] is None
+
+
 class TestHealthInRemoteBridgeWaiting:
     """`/health` should answer even when no browser is wired up."""
 

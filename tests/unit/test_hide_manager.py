@@ -53,6 +53,7 @@ async def test_builtin_is_always_listed_and_cannot_be_removed() -> None:
         {
             "identifier": "builtin",
             "selector": "[data-cloak-hide]",
+            "source": "builtin",
             "builtin": True,
         }
     ]
@@ -96,3 +97,23 @@ async def test_navigation_reapplies_current_style_without_reregistering() -> Non
     ctx._cdp_send.assert_not_awaited()
     source = ctx._evaluate_impl.await_args.args[0]
     assert ".toolbar" in source
+
+
+@pytest.mark.asyncio
+async def test_load_sets_profile_source_add_sets_session_source() -> None:
+    manager, _ctx = _manager()
+    await manager.load([".overlay", ".banner"])
+    selectors = manager.list_selectors()
+
+    profile_entries = [s for s in selectors if s["source"] == "profile"]
+    assert len(profile_entries) == 2
+    assert {s["selector"] for s in profile_entries} == {".overlay", ".banner"}
+
+    builtin_entry = [s for s in selectors if s["source"] == "builtin"]
+    assert len(builtin_entry) == 1
+
+    await manager.add(".extra")
+    selectors = manager.list_selectors()
+    session_entries = [s for s in selectors if s["source"] == "session"]
+    assert len(session_entries) == 1
+    assert session_entries[0]["selector"] == ".extra"

@@ -1403,7 +1403,7 @@ def render_hide_op_text(data: dict[str, Any]) -> str:
 
 
 def render_hide_list_text(data: dict[str, Any]) -> str:
-    """Render active hide selectors, including the immutable builtin."""
+    """Render active hide selectors with source attribution."""
     scope = str(data.get("scope", "session-only") or "session-only")
     selectors: list[Any] = list(data.get("selectors") or [])
     lines = [f"scope: {scope}"]
@@ -1413,8 +1413,9 @@ def render_hide_list_text(data: dict[str, Any]) -> str:
         entry = _as_dict(raw)
         identifier = str(entry.get("identifier", "") or "")
         selector = str(entry.get("selector", "") or "")
-        suffix = " [builtin]" if entry.get("builtin") else ""
-        lines.append(f"{identifier}: {selector}{suffix}")
+        source = str(entry.get("source", "") or "")
+        tag = f" [{source}]" if source else ""
+        lines.append(f"{identifier}: {selector}{tag}")
     return "\n".join(lines)
 
 

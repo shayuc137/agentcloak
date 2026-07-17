@@ -128,6 +128,7 @@ class TestHide:
                         {
                             "identifier": "builtin",
                             "selector": "[data-cloak-hide]",
+                            "source": "builtin",
                             "builtin": True,
                         }
                     ],

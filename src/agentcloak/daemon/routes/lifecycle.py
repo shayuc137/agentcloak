@@ -121,7 +121,14 @@ async def handle_launch(
             },
         ) from exc
 
-    result = await manager.switch_tier(tier_enum, profile=body.profile)
+    profile_kwarg: dict[str, str | None] = {}
+    if body.no_profile:
+        profile_kwarg["profile"] = None
+    elif body.profile:
+        profile_kwarg["profile"] = body.profile
+    # else: omit → switch_tier keeps the current profile
+
+    result = await manager.switch_tier(tier_enum, **profile_kwarg)
 
     if tier_enum == StealthTier.REMOTE_BRIDGE:
         request.app.state.remote_session_id = session_id_of(request)

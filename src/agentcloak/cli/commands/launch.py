@@ -35,11 +35,18 @@ def launch(
             "applies to local tiers."
         ),
     ),
+    no_profile: bool = typer.Option(
+        False,
+        "--no-profile",
+        help="Explicitly switch to no profile, discarding the current one.",
+    ),
 ) -> None:
     """Hot-switch the daemon's active browser tier (no restart)."""
     body: dict[str, object] = {"tier": tier}
     if profile is not None:
         body["profile"] = profile
+    if no_profile:
+        body["no_profile"] = True
     dispatch_text_or_json(
         DaemonClient(), "POST", "/launch", json_body=body, renderer=render_launch_text
     )

@@ -48,6 +48,8 @@ if TYPE_CHECKING:
 
 __all__ = ["ContextManager"]
 
+_KEEP_PROFILE: object = object()
+
 logger = logging.getLogger(__name__)
 
 
@@ -137,23 +139,32 @@ class ContextManager:
         self,
         tier: StealthTier,
         *,
-        profile: str | None = None,
+        profile: str | None | object = _KEEP_PROFILE,
     ) -> dict[str, Any]:
         """Hot-switch the active browser context.
+
+        ``profile`` semantics:
+        - omitted / ``_KEEP_PROFILE`` → retain current profile
+        - ``None`` → explicitly switch to no profile (``--no-profile``)
+        - ``"name"`` → switch to the named profile
 
         Returns a small descriptor of the resulting state so the route
         handler can hand it straight to the caller.
         """
+        resolved_profile: str | None
+        if profile is _KEEP_PROFILE:
+            resolved_profile = self._state.local_profile
+        else:
+            resolved_profile = profile  # type: ignore[assignment]
+
         async with self._switching:
             if tier == StealthTier.AUTO:
-                # Mirror ``resolve_tier`` so 'auto' always lands on a
-                # concrete enum value the rest of the code understands.
                 tier = StealthTier.CLOAK
 
             if tier == StealthTier.REMOTE_BRIDGE:
                 await self._activate_remote()
             elif tier in (StealthTier.CLOAK, StealthTier.PLAYWRIGHT):
-                await self._activate_local(tier, profile)
+                await self._activate_local(tier, resolved_profile)
             else:
                 raise ValueError(f"Unsupported tier: {tier}")
 
@@ -162,7 +173,7 @@ class ContextManager:
                 "browser_ready": self._state.browser_ctx is not None,
                 "remote_connected": self._state.remote_ctx is not None,
                 "local_cached": self._state.local_ctx is not None,
-                "profile": profile,
+                "profile": resolved_profile,
             }
 
     async def _activate_remote(self) -> None:

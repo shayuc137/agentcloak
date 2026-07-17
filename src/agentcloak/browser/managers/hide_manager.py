@@ -17,6 +17,8 @@ if TYPE_CHECKING:
 
 __all__ = ["HideManager"]
 
+_SelectorEntry = tuple[str, str]  # (selector_text, source)
+
 
 class HideManager:
     """Manage persistent and observation-scoped CSS hiding."""
@@ -27,7 +29,9 @@ class HideManager:
 
     def __init__(self, ctx: BrowserContextBase) -> None:
         self._ctx = ctx
-        self._selectors: dict[str, str] = {self.BUILTIN_ID: self.BUILTIN}
+        self._selectors: dict[str, _SelectorEntry] = {
+            self.BUILTIN_ID: (self.BUILTIN, "builtin"),
+        }
         self._script_identifier: str | None = None
         self._lock = asyncio.Lock()
 
@@ -43,7 +47,7 @@ class HideManager:
             raise ValueError("hide selector must not be empty")
         identifier = self._selector_id(normalized)
         async with self._lock:
-            self._selectors[identifier] = normalized
+            self._selectors[identifier] = (normalized, "session")
             await self._apply_locked()
         return identifier
 
@@ -56,7 +60,7 @@ class HideManager:
                 identifier = next(
                     (
                         key
-                        for key, selector in self._selectors.items()
+                        for key, (selector, _source) in self._selectors.items()
                         if selector == value
                     ),
                     "",
@@ -68,31 +72,34 @@ class HideManager:
             return True
 
     def list_selectors(self) -> list[dict[str, object]]:
-        """Return active selectors with the immutable builtin marked."""
+        """Return active selectors with source attribution."""
         return [
             {
                 "identifier": identifier,
                 "selector": selector,
+                "source": source,
                 "builtin": identifier == self.BUILTIN_ID,
             }
-            for identifier, selector in self._selectors.items()
+            for identifier, (selector, source) in self._selectors.items()
         ]
 
     def persistent_selectors(self) -> list[str]:
         """Return selectors suitable for profile persistence."""
         return [
             selector
-            for identifier, selector in self._selectors.items()
+            for identifier, (selector, _source) in self._selectors.items()
             if identifier != self.BUILTIN_ID
         ]
 
     async def load(self, selectors: Iterable[str]) -> None:
         """Replace user selectors from profile state and apply once."""
-        loaded: dict[str, str] = {self.BUILTIN_ID: self.BUILTIN}
+        loaded: dict[str, _SelectorEntry] = {
+            self.BUILTIN_ID: (self.BUILTIN, "builtin"),
+        }
         for raw in selectors:
             selector = raw.strip()
             if selector and selector != self.BUILTIN:
-                loaded[self._selector_id(selector)] = selector
+                loaded[self._selector_id(selector)] = (selector, "profile")
         async with self._lock:
             self._selectors = loaded
             await self._apply_locked()
@@ -106,7 +113,7 @@ class HideManager:
         """Build the stylesheet, or ``None`` when hiding is disabled."""
         if keep_overlays:
             return None
-        selectors = list(self._selectors.values())
+        selectors = [entry[0] for entry in self._selectors.values()]
         if extra is not None:
             selectors.extend(selector.strip() for selector in extra if selector.strip())
         selectors = list(dict.fromkeys(selectors))

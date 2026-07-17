@@ -192,6 +192,10 @@ class DaemonClient:
         # don't repeatedly retry the spawn within a single client lifetime —
         # otherwise a tight loop of failing requests would fork many daemons.
         self._auto_started = False
+        # Profile learned from the daemon's /health response so auto-restart
+        # can re-spawn with the same --profile flag. Updated by every
+        # successful health probe; never set to empty string (only str|None).
+        self._learned_profile: str | None = None
         # Per-instance copies so users can tweak them on the fly (or via env)
         # without restarting the process.
         self._request_timeout_s = float(cfg.daemon.http_client_timeout)
@@ -494,11 +498,12 @@ class DaemonClient:
                 "daemon_gone_restarting",
                 host=self._host,
                 port=self._port,
+                profile=self._learned_profile or "(none)",
                 hint="previously started daemon is no longer reachable",
             )
             self._auto_started = False
 
-        started = self._ensure_daemon_sync()
+        started = self._ensure_daemon_sync(profile=self._learned_profile)
         if not started:
             raise DaemonConnectionError(
                 error="daemon_auto_start_failed",
@@ -564,11 +569,12 @@ class DaemonClient:
                 "daemon_gone_restarting",
                 host=self._host,
                 port=self._port,
+                profile=self._learned_profile or "(none)",
                 hint="previously started daemon is no longer reachable",
             )
             self._auto_started = False
 
-        started = await self._ensure_daemon_async()
+        started = await self._ensure_daemon_async(profile=self._learned_profile)
         if not started:
             raise DaemonConnectionError(
                 error="daemon_auto_start_failed",
@@ -608,7 +614,10 @@ class DaemonClient:
         try:
             with httpx.Client(timeout=_RECONNECT_PROBE_TIMEOUT_S) as client:
                 resp = client.get(f"{self._base}/health")
-                return resp.status_code == 200
+                if resp.status_code == 200:
+                    self._learn_profile(resp)
+                    return True
+                return False
         except Exception:
             return False
 
@@ -617,7 +626,10 @@ class DaemonClient:
         try:
             async with httpx.AsyncClient(timeout=_RECONNECT_PROBE_TIMEOUT_S) as client:
                 resp = await client.get(f"{self._base}/health")
-                return resp.status_code == 200
+                if resp.status_code == 200:
+                    self._learn_profile(resp)
+                    return True
+                return False
         except Exception:
             return False
 
@@ -714,13 +726,26 @@ class DaemonClient:
     def _spawn_lock_path() -> Path:
         return Path.home() / ".agentcloak" / "spawn.lock"
 
+    def _learn_profile(self, resp: httpx.Response) -> None:
+        """Extract ``active_profile`` from a /health response body."""
+        try:
+            profile = resp.json().get("active_profile")
+            if profile:
+                self._learned_profile = str(profile)
+        except Exception:
+            pass
+
     def _health_probe_sync(self) -> bool:
         """Single sync health check — True if daemon is reachable."""
         try:
             with httpx.Client(
                 base_url=self._base, timeout=_HEALTH_PROBE_TIMEOUT_S
             ) as client:
-                return client.get("/health").status_code == 200
+                resp = client.get("/health")
+                if resp.status_code == 200:
+                    self._learn_profile(resp)
+                    return True
+                return False
         except httpx.HTTPError:
             return False
 
@@ -730,7 +755,11 @@ class DaemonClient:
             async with httpx.AsyncClient(
                 base_url=self._base, timeout=_HEALTH_PROBE_TIMEOUT_S
             ) as client:
-                return (await client.get("/health")).status_code == 200
+                resp = await client.get("/health")
+                if resp.status_code == 200:
+                    self._learn_profile(resp)
+                    return True
+                return False
         except httpx.HTTPError:
             return False
 

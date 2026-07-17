@@ -17,6 +17,10 @@ __all__ = [
 class HideSelectorModel(BaseModel):
     identifier: str = Field(description="Stable identifier accepted by hide remove.")
     selector: str = Field(description="CSS selector hidden by the persistent style.")
+    source: str = Field(
+        default="session",
+        description="Origin of this selector: builtin, profile, or session.",
+    )
     builtin: bool = Field(description="Whether this immutable selector is built in.")
 
 

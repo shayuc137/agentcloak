@@ -99,6 +99,10 @@ class LaunchRequest(BaseModel):
         None,
         description="Profile to load; local tiers only, ignored for remote_bridge.",
     )
+    no_profile: bool = Field(
+        False,
+        description="Explicitly switch to no profile, discarding the current one.",
+    )
 
 
 class LaunchResponse(BaseModel):

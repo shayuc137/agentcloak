@@ -798,6 +798,7 @@ Read this file when you need full parameter detail. For the common path, the qui
 - Body:
   - `tier` (enum("auto" | "cloak" | "playwright" | "remote_bridge"), default: "auto") — Backend: cloak (stealth), playwright, remote_bridge, or auto.
   - `profile` (string | null, default: —) — Profile to load; local tiers only, ignored for remote_bridge.
+  - `no_profile` (boolean, default: false) — Explicitly switch to no profile, discarding the current one.
 
 ### `GET /session/list`
 

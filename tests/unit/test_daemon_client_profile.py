@@ -88,3 +88,10 @@ def test_learn_profile_from_data_ignores_non_health_payloads() -> None:
     # response path.
     client._learn_profile_from_data({"ok": True, "seq": 5, "data": {"clicked": 1}})
     assert client._learned_profile is None
+
+
+def test_learn_profile_resets_on_empty_active_profile() -> None:
+    client = _make_client()
+    client._learned_profile = "dos"
+    client._learn_profile_from_data({"active_profile": "", "version": "0.3.4"})
+    assert client._learned_profile is None

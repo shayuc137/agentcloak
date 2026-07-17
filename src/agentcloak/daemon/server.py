@@ -129,7 +129,9 @@ def _clear_session(paths: Paths) -> None:
         paths.active_session_file.unlink()
 
 
-def _write_daemon_file(paths: Paths, *, host: str, port: int) -> None:
+def _write_daemon_file(
+    paths: Paths, *, host: str, port: int, profile: str | None = None
+) -> None:
     from agentcloak import __version__
 
     data: dict[str, object] = {
@@ -137,6 +139,7 @@ def _write_daemon_file(paths: Paths, *, host: str, port: int) -> None:
         "port": port,
         "host": host,
         "version": __version__,
+        "profile": profile or "",
     }
     paths.ensure_dirs()
     paths.daemon_file.write_bytes(orjson.dumps(data))
@@ -650,7 +653,7 @@ async def start(
         profile=profile,
         bridge_token=bridge_token,
     )
-    _write_daemon_file(paths, host=actual_host, port=actual_port)
+    _write_daemon_file(paths, host=actual_host, port=actual_port, profile=profile)
 
     logger.info(
         "daemon_ready",

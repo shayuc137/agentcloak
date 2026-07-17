@@ -48,7 +48,12 @@ if TYPE_CHECKING:
 
 __all__ = ["ContextManager"]
 
-_KEEP_PROFILE: object = object()
+
+class _KeepProfile:
+    """Sentinel: retain the current profile on tier switch."""
+
+
+_KEEP_PROFILE = _KeepProfile()
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +144,7 @@ class ContextManager:
         self,
         tier: StealthTier,
         *,
-        profile: str | None | object = _KEEP_PROFILE,
+        profile: str | None | _KeepProfile = _KEEP_PROFILE,
     ) -> dict[str, Any]:
         """Hot-switch the active browser context.
 
@@ -152,10 +157,10 @@ class ContextManager:
         handler can hand it straight to the caller.
         """
         resolved_profile: str | None
-        if profile is _KEEP_PROFILE:
+        if isinstance(profile, _KeepProfile):
             resolved_profile = self._state.local_profile
         else:
-            resolved_profile = profile  # type: ignore[assignment]
+            resolved_profile = profile
 
         async with self._switching:
             if tier == StealthTier.AUTO:

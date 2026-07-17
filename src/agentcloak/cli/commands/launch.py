@@ -42,6 +42,8 @@ def launch(
     ),
 ) -> None:
     """Hot-switch the daemon's active browser tier (no restart)."""
+    if profile is not None and no_profile:
+        raise typer.BadParameter("--profile and --no-profile are mutually exclusive")
     body: dict[str, object] = {"tier": tier}
     if profile is not None:
         body["profile"] = profile

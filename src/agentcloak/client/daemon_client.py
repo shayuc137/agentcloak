@@ -110,8 +110,8 @@ _RECONNECT_PROBE_TIMEOUT_S = 1.0
 _WILDCARD_HOSTS = frozenset({"0.0.0.0", "::", ""})
 
 
-def _read_daemon_file(paths: Any) -> tuple[str | None, int | None]:
-    """Read host/port from the daemon portfile, if it exists and is fresh."""
+def _read_daemon_file(paths: Any) -> tuple[str | None, int | None, str | None]:
+    """Read host/port/profile from the daemon portfile, if it exists and is fresh."""
     from agentcloak.core.process import pid_alive
 
     try:
@@ -119,13 +119,14 @@ def _read_daemon_file(paths: Any) -> tuple[str | None, int | None]:
         pid = data.get("pid")
         if pid is not None and not pid_alive(pid):
             paths.daemon_file.unlink(missing_ok=True)
-            return None, None
+            return None, None, None
         host = data.get("host")
         if host in _WILDCARD_HOSTS:
             host = "127.0.0.1"
-        return host, data.get("port")
+        profile = data.get("profile") or None
+        return host, data.get("port"), profile
     except (FileNotFoundError, orjson.JSONDecodeError, KeyError):
-        return None, None
+        return None, None, None
 
 
 class DaemonClient:
@@ -180,8 +181,9 @@ class DaemonClient:
         paths, cfg = load_config()
         self._cfg: AgentcloakConfig = cfg
         resolved_host, resolved_port = host, port
+        portfile_profile: str | None = None
         if resolved_host is None or resolved_port is None:
-            dh, dp = _read_daemon_file(paths)
+            dh, dp, portfile_profile = _read_daemon_file(paths)
             resolved_host = resolved_host or dh or cfg.daemon.host
             resolved_port = resolved_port or dp or cfg.daemon.port
         self._host = resolved_host
@@ -193,10 +195,11 @@ class DaemonClient:
         # don't repeatedly retry the spawn within a single client lifetime —
         # otherwise a tight loop of failing requests would fork many daemons.
         self._auto_started = False
-        # Profile learned from the daemon's /health response so auto-restart
-        # can re-spawn with the same --profile flag. Updated by every
-        # successful health probe; never set to empty string (only str|None).
-        self._learned_profile: str | None = None
+        # Profile learned from the daemon portfile or /health response so
+        # auto-restart can re-spawn with the same --profile flag. Portfile
+        # seeds the value at construction (covers single-shot CLI invocations);
+        # /health responses update it for long-lived MCP clients.
+        self._learned_profile: str | None = portfile_profile
         # Per-instance copies so users can tweak them on the fly (or via env)
         # without restarting the process.
         self._request_timeout_s = float(cfg.daemon.http_client_timeout)
@@ -744,11 +747,16 @@ class DaemonClient:
         ``/health`` calls, not only from internal probe paths. Only ``/health``
         exposes ``active_profile`` at the JSON root so this is a no-op for all
         other routes.
+
+        When ``active_profile`` is present but empty the learned value is
+        reset to ``None`` so a ``--no-profile`` switch is respected on
+        auto-restart.
         """
         with contextlib.suppress(Exception):
-            profile = data.get("active_profile")
-            if profile:
-                self._learned_profile = str(profile)
+            if "active_profile" not in data:
+                return
+            profile = data["active_profile"]
+            self._learned_profile = str(profile) if profile else None
 
     def _health_probe_sync(self) -> bool:
         """Single sync health check — True if daemon is reachable."""

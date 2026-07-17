@@ -70,6 +70,7 @@ who attach debuggers, but agents only see the structured envelope.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import subprocess
 import sys
@@ -370,7 +371,9 @@ class DaemonClient:
             if params:
                 kwargs["params"] = params
             resp = client.request(method, path, **kwargs)
-            return self._parse_response(resp)
+            data = self._parse_response(resp)
+            self._learn_profile_from_data(data)
+            return data
 
     async def _do_request_async(
         self,
@@ -397,7 +400,9 @@ class DaemonClient:
             if params:
                 kwargs["params"] = params
             resp = await client.request(method, path, **kwargs)
-            return self._parse_response(resp)
+            data = self._parse_response(resp)
+            self._learn_profile_from_data(data)
+            return data
 
     def _parse_response(self, resp: httpx.Response) -> dict[str, Any]:
         """Decode a daemon response and raise on error envelope."""
@@ -728,12 +733,22 @@ class DaemonClient:
 
     def _learn_profile(self, resp: httpx.Response) -> None:
         """Extract ``active_profile`` from a /health response body."""
-        try:
-            profile = resp.json().get("active_profile")
+        with contextlib.suppress(Exception):
+            self._learn_profile_from_data(resp.json())
+
+    def _learn_profile_from_data(self, data: dict[str, Any]) -> None:
+        """Learn ``active_profile`` from an already-parsed response body.
+
+        Called from ``_do_request_sync/async`` after every successful request
+        so persistent clients (MCP) also learn the profile from user-initiated
+        ``/health`` calls, not only from internal probe paths. Only ``/health``
+        exposes ``active_profile`` at the JSON root so this is a no-op for all
+        other routes.
+        """
+        with contextlib.suppress(Exception):
+            profile = data.get("active_profile")
             if profile:
                 self._learned_profile = str(profile)
-        except Exception:
-            pass
 
     def _health_probe_sync(self) -> bool:
         """Single sync health check — True if daemon is reachable."""

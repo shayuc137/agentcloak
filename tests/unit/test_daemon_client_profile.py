@@ -70,3 +70,21 @@ def test_respawn_passes_learned_profile() -> None:
         )
 
     ensure.assert_called_once_with(profile="dos")
+
+
+def test_learn_profile_from_data_updates_from_health_dict() -> None:
+    client = _make_client()
+    # Simulates a user-initiated /health call whose parsed body reaches the
+    # request path (not just internal probes). This is the flow that keeps
+    # persistent clients (MCP) informed so auto-restart preserves profile.
+    client._learn_profile_from_data({"active_profile": "dos", "version": "0.3.4"})
+    assert client._learned_profile == "dos"
+
+
+def test_learn_profile_from_data_ignores_non_health_payloads() -> None:
+    client = _make_client()
+    # OkEnvelope for any other route — no active_profile at root, so learning
+    # is a no-op. Guarantees the wrapper stays safe to call from every
+    # response path.
+    client._learn_profile_from_data({"ok": True, "seq": 5, "data": {"clicked": 1}})
+    assert client._learned_profile is None

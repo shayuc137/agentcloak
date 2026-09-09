@@ -35,7 +35,9 @@ dependencies = [
     # Directly used by our backend and its read-only Chromium/shell discovery.
     "playwright>=1.49",
     "httpx>=0.27",
-    "httpcloak>=1.6.0b1",
+    "httpcloak>=1.7.2",
+    # Security floor for CloakBrowser's transitive dependency (CVE-2026-69247).
+    "cryptography>=50.0.1",
     "mcp>=1.27.0,<2.0.0",
     "Pillow>=12.0",
 ]

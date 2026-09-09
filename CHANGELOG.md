@@ -7,6 +7,12 @@
 - **macOS headed startup** — restrict Xvfb auto-start to Linux so macOS uses its native display server (#3).
 - **Backend-aware doctor** — check the configured browser backend, honor CloakBrowser binary/cache overrides, and resolve Playwright's current system or managed Chromium build (including headless shell). RemoteBridge skips local browser requirements, and a working CloakBrowser installation passes without a system Chromium on PATH (#4).
 
+### Dependencies and CI
+
+- Refresh 29 locked packages, including CloakBrowser 0.5.10, Playwright 1.62.0, HTTPcloak 1.7.2, MCP 1.30.0, and Ruff 0.16.6. Keep the MCP SDK below 2 until its breaking server API migration is implemented.
+- Require stable HTTPcloak 1.7.2+ and cryptography 50.0.1+; the latter includes the fix for CVE-2026-69247 and prevents an existing installation from retaining the vulnerable transitive version.
+- Update checkout, setup-python, and setup-uv Actions. Run quality checks and unit tests against the committed lockfile, add dual-backend browser smoke tests, and audit both exported locked dependencies (including optional and development extras) and a fresh installation.
+
 ## 0.3.4 (2026-07-15)
 
 Follow-up polish to the profile subsystem after real-world usage: SPAs that stash auth in localStorage now survive profile relaunch, per-profile config overrides land, and a couple of surprising cross-cutting bugs get fixed.

@@ -15,22 +15,18 @@ jobs:
     name: Preflight Quality Gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
-      - run: uv sync --extra dev
-      # ``ruff format --check`` isn't wrapped by preflight (style-only,
-      # rarely fires) so we keep it as a discrete step for fast feedback.
-      - name: Ruff format
-        run: uv run ruff format --check src/ tests/
-      # Preflight wraps lint, pyright, surface-count, client drift, SKILL
+      - run: uv sync --locked --extra dev
+      # Preflight wraps lint, format, pyright, surface-count, client drift, SKILL
       # sync, config-docs sync, version consistency, and the typer-group
       # smoke test in one shot. ``--skip tests`` lets the matrix job below
       # own pytest so we don't pay for it twice in CI.
       - name: Preflight (lint + types + drift + config + version + smoke)
-        run: uv run python scripts/preflight.py --skip tests
+        run: uv run --locked python scripts/preflight.py --skip tests
 
   unit-tests:
     name: Unit Tests / ${{ matrix.os }} / Python ${{ matrix.python-version }}
@@ -48,21 +44,42 @@ jobs:
           - os: macos-latest
             python-version: "3.14"
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: actions/setup-python@v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
-      - run: uv sync --extra dev
+      - run: uv sync --locked --extra dev
       - name: Run unit tests
-        run: uv run pytest tests/unit/ -v --tb=short
+        run: uv run --locked pytest tests/unit/ -v --tb=short
+
+  browser-smoke:
+    name: Browser Smoke / Playwright + CloakBrowser
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: actions/setup-python@v7.0.0
+        with:
+          python-version: "3.12"
+      - run: uv sync --locked --extra dev
+      - name: Install Chromium headless shell and system libraries
+        run: uv run --locked playwright install --with-deps --only-shell chromium
+      # The shared fixture also launches CloakBrowser, which downloads its
+      # binary on first use. Use local pages so navigation needs no website.
+      - name: Navigate, screenshot, and evaluate on both backends
+        run: >-
+          uv run --locked pytest tests/integration/test_navigation.py
+          -k "navigate_local_page or screenshot_default_jpeg or evaluate_js"
+          -v --tb=short --timeout=60
 
   build:
     name: Build Verification
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
       - run: pip install build
@@ -75,12 +92,17 @@ jobs:
     name: Dependency Audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
           cache: pip
+      - uses: astral-sh/setup-uv@v10.0.1
+      - name: Export locked dependencies (including all extras)
+        run: uv export --locked --all-extras --no-emit-project --no-hashes --output-file /tmp/agentcloak-audit.txt
+      - name: Audit locked dependencies
+        run: uvx pip-audit --strict --no-deps --disable-pip --requirement /tmp/agentcloak-audit.txt
       - run: pip install pip-audit
       - run: pip install -e .
-      - name: Audit dependencies
+      - name: Audit fresh installation
         run: pip-audit

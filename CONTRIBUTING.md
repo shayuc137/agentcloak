@@ -7,7 +7,7 @@ Thanks for your interest in contributing. This guide covers setup, code style, t
 ```bash
 git clone https://github.com/shayuc137/agentcloak.git
 cd agentcloak
-pip install -e ".[dev,mcp,stealth]"
+uv sync --locked --extra dev
 ```
 
 The CloakBrowser binary (~200 MB) downloads automatically on first use. No manual browser install needed.
@@ -28,28 +28,21 @@ sudo apt-get install -y xvfb
 
 2. Make your changes
 
-3. Run lint and type checks:
+3. Run the complete quality gate before committing:
 
    ```bash
-   ruff check src/
-   ruff format --check src/
-   pyright src/
+   uv run --locked python scripts/preflight.py
    ```
 
-4. Run tests:
+   This runs unit tests, lint, format, strict type checking, generated-data and documentation checks, and CLI smoke checks.
+
+4. Run relevant integration tests when browser behavior changes:
 
    ```bash
-   pytest tests/unit/ -x           # fast unit tests
-   pytest tests/integration/ -x    # needs daemon + browser
+   uv run --locked pytest tests/integration/ -x  # needs browser binaries
    ```
 
-5. Run the consistency check (verifies CLI/MCP/daemon route alignment):
-
-   ```bash
-   python3 scripts/check_consistency.py
-   ```
-
-6. Push and open a PR
+5. Push and open a PR
 
 ## Code Style
 
@@ -114,7 +107,7 @@ Run `python3 scripts/check_consistency.py` to verify alignment across all three 
 
 **Unit tests** (`tests/unit/`): fast, no browser or daemon needed. These run in CI on every push.
 
-**Integration tests** (`tests/integration/`): require a running daemon and browser. These run in CI but can also be run locally.
+**Integration tests** (`tests/integration/`): require a running daemon and browser. CI runs navigation, screenshot, and JavaScript smoke tests on both Playwright and CloakBrowser. Run the broader suite locally when changing browser behavior.
 
 ```bash
 pytest tests/unit/ -x           # quick feedback loop
@@ -135,19 +128,33 @@ def test_real_site():
 - Include tests for new functionality
 - Update documentation if behavior changes (README, docs/, Skill files)
 - Link to a relevant issue if one exists
-- CI must pass: ruff + pyright + pytest + check_consistency
+- CI must pass: preflight quality gate, unit-test matrix, build verification, and dependency audits
 
 ## CI
 
-GitHub Actions runs on every push and PR:
+GitHub Actions runs on pushes and pull requests targeting `main`:
 
-- **ruff** lint + format check
-- **pyright** strict type checking
-- **pytest** unit tests (Python 3.12 + 3.13 matrix)
-- **integration tests** with daemon + browser
-- **build** verification (wheel + sdist)
-- **pip-audit** dependency vulnerability scan
-- **check_consistency** CLI/MCP/daemon alignment
+- **Preflight** quality checks, using the committed `uv.lock`
+- **Unit tests** on Linux and Windows (Python 3.12–3.14), and macOS (Python 3.12–3.13), using the same lockfile
+- **Browser smoke tests** on Linux for Playwright and CloakBrowser: navigation, JPEG screenshots, and JavaScript execution against local pages
+- **Build verification** for wheel and sdist, including a fresh wheel installation and CLI smoke check
+- **Dependency audits** for the locked dependencies (all extras) and a fresh installation
+
+### Updating dependencies
+
+Review upstream release notes, then refresh and validate the lockfile:
+
+```bash
+uv lock --upgrade
+uv sync --locked --extra dev
+uv run --locked python scripts/preflight.py
+uv export --locked --all-extras --no-emit-project --no-hashes --output-file /tmp/agentcloak-audit.txt
+uvx pip-audit --strict --no-deps --disable-pip --requirement /tmp/agentcloak-audit.txt
+```
+
+Commit `pyproject.toml` and `uv.lock` together if dependency requirements change. The export audit uses exact locked versions without re-resolving them; platform markers are evaluated on the audit runner (Linux in CI). Keep the separate fresh-install audit to cover dependency resolution for pip users. Browser upgrades also need relevant browser/bridge smoke checks.
+
+MCP remains on the supported 1.x line (`<2.0.0`) until the server API migration is implemented. The explicit cryptography minimum prevents existing environments from keeping the vulnerable version addressed by CVE-2026-69247.
 
 ## Questions?
 

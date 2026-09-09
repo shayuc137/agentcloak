@@ -144,7 +144,7 @@ class ContextManager:
         self,
         tier: StealthTier,
         *,
-        profile: str | None | _KeepProfile = _KEEP_PROFILE,
+        profile: str | _KeepProfile | None = _KEEP_PROFILE,
     ) -> dict[str, Any]:
         """Hot-switch the active browser context.
 

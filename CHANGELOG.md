@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Bug Fixes
+
+- **macOS headed startup** — restrict Xvfb auto-start to Linux so macOS uses its native display server (#3).
+- **Backend-aware doctor** — check the configured browser backend, honor CloakBrowser binary/cache overrides, and resolve Playwright's current system or managed Chromium build (including headless shell). RemoteBridge skips local browser requirements, and a working CloakBrowser installation passes without a system Chromium on PATH (#4).
+
 ## 0.3.4 (2026-07-15)
 
 Follow-up polish to the profile subsystem after real-world usage: SPAs that stash auth in localStorage now survive profile relaunch, per-profile config overrides land, and a couple of surprising cross-cutting bugs get fixed.

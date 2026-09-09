@@ -30,7 +30,8 @@ CI 在 `ubuntu-latest`、`windows-latest`、`macos-latest`（Python 3.12–3.14�
 - **权限检查** — `doctor --fix --execute` 在 POSIX 上需要 root（`os.geteuid() == 0`）或 `sudo`；Windows 不走这条路径。
 - **用户 spell 目录** — Windows 是 `%APPDATA%\agentcloak\spells`，其它平台是 `~/.config/agentcloak/spells`。
 - **Xvfb 自动启动** — 仅在 Linux、headed、无 `$DISPLAY` 时尝试。
-- **Playwright 系统库 / Xvfb 检查** — `doctor` 只在 Linux 上探测；macOS/Windows 报告「该 OS 无需」。
+- **浏览器二进制检查** — `doctor` 在各平台按配置的后端检查浏览器。CloakBrowser 使用自身缓存或显式路径覆盖；Playwright 使用系统 Chromium 或当前托管版本；RemoteBridge 跳过本地浏览器要求。
+- **Playwright 系统库 / Xvfb 检查** — `doctor` 在 Linux 上为本地后端探测系统库，在有头 CloakBrowser 需要显示服务时检查 Xvfb。macOS/Windows 使用原生显示服务。
 - **过期 Chromium 检测** — `doctor` 会标记 CloakBrowser 自动更新遗留的旧 Chromium 版本（每个约 700MB），并打印 `rm -rf` 命令回收。此功能在**所有平台**可用——缓存目录（`~/.cloakbrowser`，或 `CLOAKBROWSER_CACHE_DIR`）用纯 `Path` 操作解析，无 OS 相关代码。
 - **会话文件权限** — POSIX 上对 `active-session.json` 应用 `chmod 0o600`（尽力而为，不支持时静默跳过）。
 

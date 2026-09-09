@@ -32,6 +32,8 @@ dependencies = [
     "starlette>=0.40",
     "websockets>=12.0",
     "cloakbrowser>=0.3",
+    # Directly used by our backend and its read-only Chromium/shell discovery.
+    "playwright>=1.49",
     "httpx>=0.27",
     "httpcloak>=1.6.0b1",
     "mcp>=1.27.0,<2.0.0",

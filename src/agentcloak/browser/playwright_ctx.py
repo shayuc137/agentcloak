@@ -23,7 +23,6 @@ import asyncio
 import base64
 import contextlib
 import re
-import shutil
 import socket
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -38,6 +37,7 @@ from agentcloak.browser.base import (
     classify_url_pattern,
     match_url_substring,
 )
+from agentcloak.browser.binaries import find_system_chromium as _find_chromium
 from agentcloak.browser.state import (
     DownloadEntry,
     FrameInfo,
@@ -59,8 +59,6 @@ if TYPE_CHECKING:
 __all__ = ["PlaywrightContext", "launch_playwright"]
 
 logger = structlog.get_logger()
-
-_SNAP_CHROMIUM = "/snap/chromium/current/usr/lib/chromium-browser/chrome"
 
 
 def find_free_port() -> int:
@@ -104,21 +102,6 @@ def _download_filename(url: str, headers: Any) -> str:
     if not name or name in (".", ".."):
         return "download.bin"
     return name
-
-
-def _find_chromium() -> str | None:
-    if Path(_SNAP_CHROMIUM).is_file():
-        return _SNAP_CHROMIUM
-    for name in (
-        "chromium-browser",
-        "chromium",
-        "google-chrome-stable",
-        "google-chrome",
-    ):
-        path = shutil.which(name)
-        if path:
-            return path
-    return None
 
 
 class PlaywrightContext(BrowserContextBase):

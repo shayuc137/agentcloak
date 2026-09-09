@@ -1,6 +1,6 @@
 ---
 name: agentcloak
-description: "Browser automation and web reverse engineering via cloak CLI. Navigates pages with realistic browser fingerprinting, snapshots accessibility tree with [N] element refs for interaction, takes screenshots, evaluates JS, fetches HTTP with cookies, captures network traffic, manages profiles/tabs. Also debugs JavaScript (breakpoints, call stacks, scope inspection), parses source maps, monitors WebSocket/SSE streams, intercepts/modifies network requests, injects hooks (fetch/XHR/crypto), and profiles JS execution (coverage, CPU, heap). Use this skill whenever the task involves ANY web page interaction: opening URLs, reading page content, filling forms, clicking buttons, taking screenshots, extracting data from websites, logging into sites, checking what a page shows, scraping, or automating browser workflows. Also use when the user mentions a URL and wants to see or interact with its content, even if they don't say 'browser'. Also use for web reverse engineering: debugging JS, finding how a site encrypts or signs requests, inspecting API calls, hooking fetch/XHR, reading source maps, monitoring WebSocket traffic, or analyzing page performance. Built-in stealth ensures agents browse as a realistic browser, avoiding bot-detection false positives."
+description: "Browser automation and web reverse engineering via cloak CLI. Navigate pages with realistic browser fingerprinting, snapshots accessibility tree with [N] refs, screenshots, JS evaluation, HTTP fetch with cookies, network capture, profile/tab management. Also debugs JavaScript (breakpoints, call stacks, scope inspection), parses source maps, monitors WebSocket/SSE streams, intercepts network requests, injects hooks (fetch/XHR/crypto), profiles JS (coverage, CPU, heap). Use whenever the task involves ANY web page interaction: opening URLs, reading content, filling forms, clicking buttons, screenshots, scraping, logging in, or checking pages. Also use when the user mentions a URL and wants to see or interact with its content. Use for web reverse engineering: debugging JS, finding how a site encrypts or signs requests, inspecting API calls, reading source maps, monitoring WebSocket traffic, or analyzing page performance. Built-in stealth ensures realistic browsing, avoiding bot-detection false positives."
 ---
 
 # agentcloak
@@ -157,14 +157,14 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 
 | Command | Purpose |
 |---------|---------|
-| `cloak launch --tier cloak\|playwright\|remote_bridge` | Hot-switch the daemon's browser tier (no restart) |
+| `cloak launch --tier cloak\|playwright\|remote_bridge` | Hot-switch the daemon's browser tier (no restart); omit `--profile` to keep the current profile, pass `--no-profile` to explicitly clear it (mutually exclusive with `--profile`) |
 | `cloak profile list` / `create` / `launch` / `delete` | Browser profile management (`create --from-current` snapshots cookies + localStorage; profile mode auto-saves/restores both on launch; profile dir may hold a `config.toml` override) |
 | `cloak tab list` / `new` / `close` / `switch` | Tab management |
 | `cloak spell list` / `info` / `run NAME` / `scaffold` | Spells (PUBLIC runs locally; browser strategies use daemon + caller session) |
 | `cloak cookies export [--url URL]` / `restore [--file PATH]` | Export prints cookies and refreshes the active profile snapshot; restore imports that snapshot (or the global fallback) |
 | `cloak cookies import -c '[...]'` | Import Chrome cookies API, CDP, or Playwright JSON; malformed entries are skipped and counted |
 | `cloak cookies set NAME VAL [--domain D]` / `set --curl '<copy-as-curl>'` / `clear` / `delete NAME` | Cookie CRUD; `--curl` seeds cookies from a DevTools Copy-as-cURL string |
-| `cloak hide add CSS` / `remove ID_OR_CSS` / `list` | Hide overlays across snapshot, screenshot, and click hit-testing; profile sessions persist selectors, other sessions are session-only |
+| `cloak hide add CSS` / `remove ID_OR_CSS` / `list` | Hide overlays across snapshot, screenshot, and click hit-testing; `list` tags each entry `[builtin]`/`[profile]`/`[session]` so you know where it came from; profile sessions persist selectors, other sessions are session-only |
 | `cloak pdf [-o file] [--format A4] [--landscape]` | Export the current page to PDF (headless only) |
 | `cloak serve start DIR [--port P]` / `stop` / `status` | Local http server for previewing local files (`file://` is blocked); navigate to the printed URL |
 | `cloak session list` / `close [SESSION_ID]` | Multi-session management: list named sessions; `close` without an ID closes the current session |

@@ -30,7 +30,8 @@ These are the points in the codebase that branch on the operating system, summar
 - **Privilege check** — `doctor --fix --execute` needs root (`os.geteuid() == 0`) or `sudo` on POSIX; this path doesn't run on Windows.
 - **User spell directory** — `%APPDATA%\agentcloak\spells` on Windows, `~/.config/agentcloak/spells` elsewhere.
 - **Xvfb auto-spawn** — only attempted on Linux, headed, with no `$DISPLAY`.
-- **Playwright system libs / Xvfb checks** — `doctor` only probes these on Linux; on macOS/Windows they report "not required on this OS".
+- **Browser binary checks** — `doctor` checks the configured backend's browser on all platforms. CloakBrowser uses its own cache or explicit binary override; Playwright uses system Chromium or its current managed build. RemoteBridge skips local browser requirements.
+- **Playwright system libs / Xvfb checks** — `doctor` probes system libraries for local backends on Linux and Xvfb for headed CloakBrowser when a display is needed. macOS/Windows use their native display services.
 - **Stale Chromium detection** — `doctor` flags old CloakBrowser Chromium builds left behind by auto-update (~700MB each) and prints a `rm -rf` to reclaim them. This works on **all platforms** — the cache dir (`~/.cloakbrowser`, or `CLOAKBROWSER_CACHE_DIR`) is resolved with pure `Path` operations, no OS-specific code.
 - **Session file permissions** — `chmod 0o600` is applied to `active-session.json` on POSIX (best-effort; silently skipped where unsupported).
 

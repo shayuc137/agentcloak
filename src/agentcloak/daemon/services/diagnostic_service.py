@@ -23,7 +23,7 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
-from agentcloak.core.config import load_config
+from agentcloak.core.config import AgentcloakConfig, load_config, resolve_tier
 
 __all__ = ["DiagnosticService"]
 
@@ -39,14 +39,6 @@ _REQUIRED_PACKAGES = (
     "playwright",
     "httpcloak",
     "mcp",
-)
-
-
-_CHROMIUM_BINARIES = (
-    "chromium-browser",
-    "chromium",
-    "google-chrome-stable",
-    "google-chrome",
 )
 
 
@@ -122,22 +114,27 @@ class DiagnosticService:
     # ------------------------------------------------------------------
 
     def doctor(self, *, data_dir: Path) -> dict[str, Any]:
+        _, cfg = load_config(root=data_dir)
+        tier = resolve_tier(cfg.browser.default_tier)
         checks: list[dict[str, Any]] = []
         checks.append(self._check_python())
         checks.append(self._check_path_entry())
         for pkg in _REQUIRED_PACKAGES:
             checks.append(self._check_package(pkg))
-        checks.append(self._check_chromium())
-        checks.append(self._check_cloakbrowser_binary())
+        if tier == "cloak":
+            checks.append(self._check_cloakbrowser_binary())
+        elif tier == "playwright":
+            checks.append(self._check_chromium(headless=cfg.browser.headless))
         checks.append(self._check_data_dir(data_dir))
-        checks.append(self._check_playwright_libs())
+        if tier != "remote_bridge":
+            checks.append(self._check_playwright_libs())
 
         # Xvfb is only relevant on Linux when there's no display and the user
         # actually plans to run the browser headed. Headless mode bypasses the
         # whole virtual framebuffer dance, so reporting "Xvfb missing" on
         # ``headless=true`` would be a false negative.
         extras: list[dict[str, Any]] = []
-        if self._xvfb_relevant():
+        if self._xvfb_relevant(cfg):
             extras.append(self._check_xvfb())
         # Stale Chromium versions are informational (disk hygiene), not a
         # health failure — CloakBrowser auto-updates leave old ~700MB builds
@@ -407,21 +404,23 @@ class DiagnosticService:
             }
 
     @staticmethod
-    def _check_chromium() -> dict[str, Any]:
-        for name in _CHROMIUM_BINARIES:
-            path = shutil.which(name)
-            if path:
-                return {
-                    "name": "chromium",
-                    "ok": True,
-                    "detail": path,
-                    "hint": "",
-                }
+    def _check_chromium(*, headless: bool = True) -> dict[str, Any]:
+        from agentcloak.browser.binaries import find_playwright_chromium
+
+        try:
+            path = find_playwright_chromium(headless=headless)
+        except Exception as exc:
+            return {
+                "name": "chromium",
+                "ok": False,
+                "detail": f"Playwright binary check failed: {exc}",
+                "hint": "run 'playwright install chromium' and retry doctor",
+            }
         return {
             "name": "chromium",
-            "ok": False,
-            "detail": "not found",
-            "hint": "install chromium or run 'playwright install chromium'",
+            "ok": path is not None,
+            "detail": path or "Playwright Chromium not found",
+            "hint": "" if path else "run 'playwright install chromium'",
         }
 
     @staticmethod
@@ -495,7 +494,7 @@ class DiagnosticService:
         }
 
     @staticmethod
-    def _xvfb_relevant() -> bool:
+    def _xvfb_relevant(config: AgentcloakConfig | None = None) -> bool:
         """Return ``True`` when Xvfb is needed for the current configuration.
 
         Xvfb is only meaningful when (a) we're on Linux, (b) there's no
@@ -508,12 +507,16 @@ class DiagnosticService:
         if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
             return False
         try:
-            _, cfg = load_config()
+            if config is None:
+                _, config = load_config()
         except Exception:
             # Config-load problems are surfaced via other checks; assume Xvfb
             # might be needed if we can't tell.
             return True
-        return not cfg.browser.headless
+        return (
+            resolve_tier(config.browser.default_tier) == "cloak"
+            and not config.browser.headless
+        )
 
     @staticmethod
     def _check_xvfb() -> dict[str, Any]:
@@ -536,6 +539,22 @@ class DiagnosticService:
         try:
             import cloakbrowser  # pyright: ignore[reportMissingImports,reportMissingTypeStubs]
 
+            # ensure_binary() gives the local override priority over cached
+            # builds; binary_info() in some supported versions omits it.
+            override = os.environ.get("CLOAKBROWSER_BINARY_PATH")
+            if override:
+                installed = Path(override).is_file()
+                return {
+                    "name": "cloakbrowser_binary",
+                    "ok": installed,
+                    "detail": override,
+                    "hint": ""
+                    if installed
+                    else (
+                        "CLOAKBROWSER_BINARY_PATH must point to a browser file; "
+                        "correct it or unset it and run 'agentcloak doctor --fix'"
+                    ),
+                }
             info: dict[str, Any] = cloakbrowser.binary_info()  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
             installed = bool(info.get("installed"))
             detail = str(info.get("binary_path", "")) or "not downloaded"

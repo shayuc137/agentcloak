@@ -206,13 +206,15 @@ This checks:
 - Python version (3.12+)
 - PATH (so the `agentcloak` / `cloak` commands are reachable)
 - Required packages (typer, fastapi, cloakbrowser, playwright, httpcloak, mcp, ...)
-- CloakBrowser binary status
-- Playwright system libraries (Linux only)
+- Browser binary for the configured `browser.default_tier`: `auto`/`cloak` checks CloakBrowser; `playwright` checks its system Chromium or current managed build (including the headless shell); `remote_bridge` skips local browser binaries
+- Playwright system libraries (local backends on Linux only)
 - Data directory
-- Xvfb (only when needed — Linux without a display and `headless=false`)
+- Xvfb (CloakBrowser on Linux without a display and `headless=false`)
 - Daemon liveness
 
 A healthy install prints `"healthy": true`. If something's missing, `agentcloak doctor --fix` is the next step.
+
+CloakBrowser diagnostics honor `CLOAKBROWSER_BINARY_PATH` and `CLOAKBROWSER_CACHE_DIR`; Playwright diagnostics honor `PLAYWRIGHT_BROWSERS_PATH`. An installed CloakBrowser bundle is sufficient for the `cloak` backend, even when Chromium is absent from `PATH`. Plain `doctor` performs read-only discovery. `doctor --fix` downloads CloakBrowser only when that backend is configured; a missing Playwright browser produces a `playwright install chromium` hint.
 
 ## Platform-specific notes
 

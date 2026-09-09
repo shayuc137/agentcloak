@@ -199,13 +199,15 @@ agentcloak doctor
 - Python 版本（3.12+）
 - PATH（确认 `agentcloak` / `cloak` 命令可调用）
 - 必需依赖包（typer、fastapi、cloakbrowser、playwright、httpcloak、mcp 等）
-- CloakBrowser 二进制文件状态
-- Playwright 系统库（仅 Linux）
+- 按配置的 `browser.default_tier` 检查浏览器：`auto`/`cloak` 检查 CloakBrowser；`playwright` 检查系统 Chromium 或当前托管版本（含 headless shell）；`remote_bridge` 跳过本地浏览器二进制检查
+- Playwright 系统库（仅 Linux 上的本地后端）
 - 数据目录
-- Xvfb（仅在需要时检查 —— 无显示器的 Linux 且 `headless=false`）
+- Xvfb（CloakBrowser 在无显示器的 Linux 上运行，且 `headless=false`）
 - Daemon 连通性
 
 健康安装会输出 `"healthy": true`。如果有缺失，下一步运行 `agentcloak doctor --fix`。
+
+CloakBrowser 诊断遵循 `CLOAKBROWSER_BINARY_PATH` 和 `CLOAKBROWSER_CACHE_DIR`；Playwright 诊断遵循 `PLAYWRIGHT_BROWSERS_PATH`。对于 `cloak` 后端，已安装的 CloakBrowser 浏览器包即可满足要求，系统 `PATH` 中可以没有 Chromium。普通 `doctor` 只读探测；`doctor --fix` 仅在配置为 CloakBrowser 后端时下载它的浏览器，缺少 Playwright 浏览器时会提示运行 `playwright install chromium`。
 
 ## 平台专属说明
 

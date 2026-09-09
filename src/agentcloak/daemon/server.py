@@ -369,7 +369,7 @@ async def start(
     if tier == StealthTier.CLOAK and not skip_local_launch:
         needs_xvfb = (
             not actual_headless
-            and sys.platform != "win32"
+            and sys.platform == "linux"
             and not os.environ.get("DISPLAY")
         )
         if needs_xvfb:

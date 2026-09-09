@@ -1,11 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.3.5 (2026-09-09)
+
+Hardened profile subsystem, macOS platform fix, and a security-relevant dependency refresh.
 
 ### Bug Fixes
 
+- **Profile stickiness hardening** — config overlay timing, health report accuracy, request-path wiring, and hide-source tracking all fixed in a four-commit series driven by real-world DOS feedback. Profiles now reliably pin sessions to the profile browser across all entry points.
 - **macOS headed startup** — restrict Xvfb auto-start to Linux so macOS uses its native display server (#3).
 - **Backend-aware doctor** — check the configured browser backend, honor CloakBrowser binary/cache overrides, and resolve Playwright's current system or managed Chromium build (including headless shell). RemoteBridge skips local browser requirements, and a working CloakBrowser installation passes without a system Chromium on PATH (#4).
+- **Skill description overflow** — trim bundled skill description to the 1024-character MCP limit (#2, thanks @Blue-B).
 
 ### Dependencies and CI
 

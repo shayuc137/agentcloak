@@ -40,7 +40,7 @@ _GROUPS = (
     "launch, network, fetch, bridge, cookies, skill, cdp, dialog, wait, "
     "upload, config, console, download, storage, clipboard, pdf, serve, diff, "
     "script, route, emulation, graphql, debugger, ws, sse, sourcemap, "
-    "profiler, performance, session, hide, viewport, emulate"
+    "profiler, performance, session, hide, viewport, emulate, batch"
 )
 _EPILOG = (
     f"Shortcuts (top-level, also documented under their groups):\n  {_SHORTCUTS}\n"
@@ -230,6 +230,7 @@ def _root_callback(  # pyright: ignore[reportUnusedFunction]
 def _register_commands() -> None:
     from agentcloak.cli.commands import (
         action,
+        batch,
         bridge_cmd,
         browser,
         capture_cmd,
@@ -297,6 +298,9 @@ def _register_commands() -> None:
         browser.app, name="browser", help="Browser navigation and inspection."
     )
     app.add_typer(js.app, name="js", help="JavaScript execution.")
+    app.add_typer(
+        batch.app, name="batch", help="Sequential mixed daemon requests from JSONL."
+    )
     app.add_typer(network.app, name="network", help="Network request monitoring.")
     app.add_typer(
         action.app,

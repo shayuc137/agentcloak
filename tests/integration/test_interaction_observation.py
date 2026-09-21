@@ -153,7 +153,7 @@ async def test_cli_and_mcp_targeting(private_api, local_server, tmp_path):
     )
     env = {k: v for k, v in os.environ.items() if not k.startswith("AGENTCLOAK_")}
 
-    async def cli(*args):
+    async def cli(*args, calls_input=None, success=True):
         process = await asyncio.create_subprocess_exec(
             sys.executable,
             str(runner),
@@ -162,11 +162,14 @@ async def test_cli_and_mcp_targeting(private_api, local_server, tmp_path):
             "--json",
             "--session=surface",
             env=env,
+            stdin=asyncio.subprocess.PIPE if calls_input is not None else None,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await asyncio.wait_for(process.communicate(), 15)
-        assert process.returncode == 0, (stdout, stderr)
+        stdout, stderr = await asyncio.wait_for(process.communicate(calls_input), 15)
+        assert (process.returncode == 0) == success, (stdout, stderr)
+        if args[0] == "batch":
+            return [json.loads(line) for line in stdout.splitlines()]
         return json.loads(stdout)
 
     await cli("navigate", f"{local_server}/input-actions.html")
@@ -189,6 +192,93 @@ async def test_cli_and_mcp_targeting(private_api, local_server, tmp_path):
         "--sample",
         "1",
     )
+
+    calls = [
+        {
+            "method": "POST",
+            "path": "/action",
+            "body": {"kind": "fill", "selector": "#editor", "text": "batched"},
+        },
+        {"method": "POST", "path": "/evaluate", "body": {"js": "editor.value"}},
+        {"method": "GET", "path": "/snapshot", "params": {"find": "Editor"}},
+    ]
+
+    def encode(rows):
+        return ("\n".join(json.dumps(row) for row in rows) + "\n").encode()
+
+    records = await cli("batch", calls_input=encode(calls))
+    assert [r["index"] for r in records] == [0, 1, 2]
+    assert records[1]["data"]["result"] == "batched"
+    failed = await cli(
+        "batch",
+        calls_input=encode(
+            [
+                {
+                    "method": "POST",
+                    "path": "/evaluate",
+                    "body": {"js": "throw new Error('stop here')"},
+                },
+                {
+                    "method": "POST",
+                    "path": "/action",
+                    "body": {
+                        "kind": "fill",
+                        "selector": "#editor",
+                        "text": "must-not-run",
+                    },
+                },
+            ]
+        ),
+        success=False,
+    )
+    assert len(failed) == 1 and not failed[0]["ok"]
+    assert (await cli("js", "evaluate", "editor.value"))["data"]["result"] == "batched"
+    bad = await cli(
+        "batch",
+        calls_input=encode([{"method": "GET", "path": "https://example.invalid/"}]),
+        success=False,
+    )
+    assert bad[0]["error"]["code"] == "invalid_argument"
+
+    streaming = await asyncio.create_subprocess_exec(
+        sys.executable,
+        str(runner),
+        str(root),
+        "batch",
+        "--json",
+        "--pretty",
+        "--session=surface",
+        env=env,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        streaming.stdin.write(encode([{"method": "GET", "path": "/health"}]))
+        await streaming.stdin.drain()
+        first = json.loads(await asyncio.wait_for(streaming.stdout.readline(), 5))
+        assert first["ok"] and first["index"] == 0
+        streaming.stdin.close()
+        await asyncio.wait_for(streaming.wait(), 5)
+        assert streaming.returncode == 0
+    finally:
+        if streaming.returncode is None:
+            streaming.kill()
+            await streaming.wait()
+
+    started = time.monotonic()
+    for _ in range(6):
+        await cli("js", "evaluate", "1")
+    separate_time = time.monotonic() - started
+    started = time.monotonic()
+    await cli(
+        "batch",
+        calls_input=encode(
+            [{"method": "POST", "path": "/evaluate", "body": {"js": "1"}}] * 6
+        ),
+    )
+    batch_time = time.monotonic() - started
+    print(f"six evaluate calls: separate={separate_time:.3f}s batch={batch_time:.3f}s")
 
     client = DaemonClient(
         host="127.0.0.1",

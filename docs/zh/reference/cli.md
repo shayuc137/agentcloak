@@ -767,3 +767,20 @@ cloak cdp endpoint                 # jshookmcp / 其他 CDP 工具用的裸 ws:/
 [有界队列、强制关闭、截图身份、URL 断言与页面 CDP 地址](../guides/recovery.md)。`session list --all` 展示标签、工作空间路径、进行中动作与排队数；`tab close --others` 只影响当前会话。
 
 `tab close --others` 的 `closed` 为实际关闭的 ID 列表；文本输出显示数量与 ID，没有其他标签页时显示 `closed 0 tabs`。
+
+## batch
+
+```bash
+cloak batch --calls-file calls.jsonl --json
+# Or pipe JSONL into: cloak batch --json
+```
+
+```jsonl
+{"method":"POST","path":"/navigate","body":{"url":"https://example.com"}}
+{"method":"POST","path":"/action","body":{"kind":"click","selector":"#save"}}
+{"method":"GET","path":"/snapshot","params":{"find":"Saved"}}
+```
+
+每行是一个 daemon JSON 请求：`method`、相对 `path`，以及可选的 `params`、`body`。整个序列复用一个进程和 HTTP 连接池；会话/工作空间沿用全局参数与配置，不能逐行切换。不接受完整 URL 或任意 headers；查询字段放入 `params`。
+
+`--json` 每条输出一个紧凑信封，增加从零开始的 `index` 和从一开始的输入 `line`，读取下一行前立即刷新输出（`--pretty` 不展开 JSONL）。遇到第一条非法输入或请求失败，输出 `ok:false` 并非零退出；已经执行的操作保留，不回滚、不自动重放动作。空输入不执行操作。请求字段见生成的 HTTP 路由参考。原有 `cloak do batch --calls-file` 保留动作批处理、结果引用和导航/对话框中断规则。

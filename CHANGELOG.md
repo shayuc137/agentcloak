@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add streaming JSONL request batches with a shared HTTP connection pool, fixed workspace/session identity and fail-fast indexed results.
+
 - Add unique CSS interaction targets, accessible snapshot text search, timed drag with per-step samples, and session-scoped pending network observations with URL glob filters across CLI, HTTP and MCP.
 
 - Preserve live localStorage values and deletions across navigation; import profile storage once at creation instead of replaying stale snapshots.

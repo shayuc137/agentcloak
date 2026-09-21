@@ -135,6 +135,7 @@ def find_drift() -> tuple[list[str], list[str]]:
         "launch_daemon",
         "spawn_background",
         "config",  # property, exposed for downstream access
+        "connection",  # bounded sync transport reuse; not a daemon operation
     }
 
     route_bases: set[str] = {route_to_method(path) for _, path in routes}

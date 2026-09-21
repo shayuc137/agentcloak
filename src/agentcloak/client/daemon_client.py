@@ -79,6 +79,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
+
     from agentcloak.core.emulation import ColorScheme, Pointer
 
 import httpx
@@ -194,6 +196,7 @@ class DaemonClient:
         self._port = resolved_port
         self._base = f"http://{self._host}:{self._port}"
         self._auto_start = auto_start
+        self._sync_client: httpx.Client | None = None
         identity = resolve_workspace(cfg.browser.workspace_roots)
         self._workspace_id = identity.workspace_id
         self._workspace_path = identity.workspace_path
@@ -352,6 +355,19 @@ class DaemonClient:
             pool=5.0,
         )
 
+    @contextlib.contextmanager
+    def connection(self) -> Generator[None]:
+        """Reuse sync HTTP connections for a bounded sequence of requests."""
+        if self._sync_client is not None:
+            yield
+            return
+        with httpx.Client(transport=httpx.HTTPTransport(retries=2)) as client:
+            self._sync_client = client
+            try:
+                yield
+            finally:
+                self._sync_client = None
+
     def _do_request_sync(
         self,
         method: str,
@@ -364,12 +380,16 @@ class DaemonClient:
         # ConnectTimeout before any bytes are sent), so it smooths over
         # localhost handshake jitter without ever re-running a non-idempotent
         # request that the daemon already started processing.
-        transport = httpx.HTTPTransport(retries=2)
-        with httpx.Client(
-            base_url=self._base,
-            timeout=self._request_timeout(path, json_body),
-            transport=transport,
-        ) as client:
+        manager = (
+            contextlib.nullcontext(self._sync_client)
+            if self._sync_client is not None
+            else httpx.Client(
+                base_url=self._base,
+                timeout=self._request_timeout(path, json_body),
+                transport=httpx.HTTPTransport(retries=2),
+            )
+        )
+        with manager as client:
             kwargs: dict[str, Any] = {}
             headers: dict[str, str] = {}
             if json_body is not None:
@@ -395,7 +415,12 @@ class DaemonClient:
             kwargs["headers"] = headers
             if params:
                 kwargs["params"] = params
-            resp = client.request(method, path, **kwargs)
+            resp = client.request(
+                method,
+                f"{self._base}{path}",
+                timeout=self._request_timeout(path, json_body),
+                **kwargs,
+            )
             data = self._parse_response(resp)
             self._learn_profile_from_data(data)
             return data

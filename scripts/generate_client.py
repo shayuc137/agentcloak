@@ -57,6 +57,7 @@ EXCLUDED_ROUTES: set[str] = set()
 # ``tab_list`` to stay parallel with ``tab_new``/``tab_close``/``tab_switch``.
 ROUTE_METHOD_OVERRIDES: dict[str, str] = {
     "/tabs": "tab_list",
+    "/emulation": "emulate",
 }
 
 # CLI commands that need a typed sync wrapper. Everything else goes through

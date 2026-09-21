@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from typing import Any
 from unittest.mock import DEFAULT, AsyncMock, MagicMock
 
@@ -52,6 +53,8 @@ def _mock_cdp_session(eval_value: Any = "result") -> MagicMock:
         _listeners.setdefault(event, []).append(callback)
 
     async def _send(method: str, params: Any = None) -> Any:
+        if method == "Page.captureScreenshot":
+            return {"data": base64.b64encode(PNG).decode()}
         if method == "Accessibility.getFullAXTree":
             return {
                 "nodes": [
@@ -321,8 +324,14 @@ class TestActiveTabSemantics:
         await ctx.tab_new()  # active is now tab 1
         result = await ctx.screenshot()
         assert result == PNG
-        page1.screenshot.assert_awaited_once()
-        page0.screenshot.assert_not_awaited()
+        assert any(
+            call.args[0] == "Page.captureScreenshot"
+            for call in page1.context.new_cdp_session.return_value.send.await_args_list
+        )
+        assert not any(
+            call.args[0] == "Page.captureScreenshot"
+            for call in page0.context.new_cdp_session.return_value.send.await_args_list
+        )
 
     @pytest.mark.asyncio
     async def test_evaluate_uses_active_tab(self) -> None:

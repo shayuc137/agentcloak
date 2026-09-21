@@ -41,6 +41,7 @@ from agentcloak.browser.state import (
 )
 from agentcloak.core.capture import CaptureStore
 from agentcloak.core.config import BrowserConfig
+from agentcloak.core.emulation import ColorScheme, PageEmulation, Pointer
 from agentcloak.core.errors import (
     AgentBrowserError,
     BackendError,
@@ -315,6 +316,7 @@ class BrowserContextBase(ABC):
         # ``emulation headers`` can report the active set; the backend applies
         # them via ``_set_extra_headers_impl``.
         self._extra_headers: dict[str, str] = {}
+        self._emulation_state: PageEmulation | None = None
 
         # localStorage persistence: profile directory for snapshot dump/restore.
         # None in ephemeral mode or RemoteBridge — all localStorage logic is
@@ -1253,6 +1255,7 @@ class BrowserContextBase(ABC):
         quality: int | None = None,
         output_path: str | None = None,
         viewport: str | None = None,
+        dpr: float | None = None,
         expect_url: str = "",
     ) -> bytes:
         # ``output_path`` writes the capture to disk in addition to returning
@@ -1266,15 +1269,21 @@ class BrowserContextBase(ABC):
         self._check_page_valid()
         if quality is None:
             quality = self._browser_config.screenshot_quality
-        previous_viewport = (
-            await self._get_viewport_impl() if viewport is not None else None
-        )
+        from agentcloak.core.input import parse_viewport, validate_dpr
+
+        target_viewport = parse_viewport(viewport) if viewport is not None else None
+        if dpr is not None:
+            validate_dpr(dpr)
+        temporary = viewport is not None or dpr is not None
+        previous_viewport = await self._get_viewport_impl() if temporary else None
+        previous_dpr = await self._get_dpr_impl() if temporary else None
         capture_failed = False
         try:
-            if viewport is not None:
-                from agentcloak.core.input import parse_viewport
-
-                await self.set_viewport(*parse_viewport(viewport))
+            if previous_viewport is not None:
+                await self.set_viewport(
+                    *(target_viewport or previous_viewport),
+                    dpr=dpr if dpr is not None else previous_dpr,
+                )
             from fnmatch import fnmatchcase
             from io import BytesIO
 
@@ -1324,7 +1333,9 @@ class BrowserContextBase(ABC):
                 cancelling = task is not None and bool(task.cancelling())
                 try:
                     async with asyncio.timeout(0.1 if cancelling else 2):
-                        await self._set_viewport_impl(*previous_viewport)
+                        await self._set_viewport_impl(
+                            *previous_viewport, dpr=previous_dpr
+                        )
                 except Exception:
                     self.mark_page_invalid()
                     if not capture_failed:
@@ -1671,6 +1682,7 @@ class BrowserContextBase(ABC):
         sessions that never touched these capabilities, keeping tab switches
         free of overhead in the common path.
         """
+        await self._replay_emulation_impl()
         self._enabled_domains.clear()
         self._console_listening = False
         self._console_page_url = (await self._get_page_info())[0]
@@ -1907,20 +1919,84 @@ class BrowserContextBase(ABC):
         width, height = result["result"]["value"]
         return int(width), int(height)
 
-    async def _set_viewport_impl(self, width: int, height: int) -> None:
+    async def _get_dpr_impl(self) -> float:
+        return float(await self._evaluate_impl("devicePixelRatio", world="isolated"))
+
+    async def _set_viewport_impl(
+        self, width: int, height: int, *, dpr: float | None = None
+    ) -> None:
         await self._cdp_send(
             "Emulation.setDeviceMetricsOverride",
-            {"width": width, "height": height, "deviceScaleFactor": 1, "mobile": False},
+            {
+                "width": width,
+                "height": height,
+                "deviceScaleFactor": dpr
+                if dpr is not None
+                else await self._get_dpr_impl(),
+                "mobile": False,
+            },
         )
 
-    async def set_viewport(self, width: int, height: int) -> dict[str, int]:
-        from agentcloak.core.input import parse_viewport
+    async def set_viewport(
+        self, width: int, height: int, *, dpr: float | None = None
+    ) -> dict[str, Any]:
+        from agentcloak.core.input import parse_viewport, validate_dpr
 
         parse_viewport(f"{width}x{height}")
+        if dpr is not None:
+            validate_dpr(dpr)
         self._check_browser_alive()
         self._check_page_valid()
-        await self._set_viewport_impl(width, height)
-        return {"width": width, "height": height}
+        actual_dpr = dpr if dpr is not None else await self._get_dpr_impl()
+        await self._set_viewport_impl(width, height, dpr=actual_dpr)
+        return {"width": width, "height": height, "dpr": actual_dpr}
+
+    async def emulate(
+        self,
+        *,
+        color_scheme: ColorScheme | None = None,
+        reduced_motion: bool | None = None,
+        pointer: Pointer | None = None,
+        reset: bool = False,
+    ) -> dict[str, Any]:
+        from pydantic import ValidationError
+
+        from agentcloak.core.input import invalid_input
+
+        try:
+            patch = PageEmulation(
+                color_scheme=color_scheme,
+                reduced_motion=reduced_motion,
+                pointer=pointer,
+            ).model_dump(exclude_none=True)
+        except ValidationError as exc:
+            raise invalid_input(str(exc)) from exc
+        if reset and patch:
+            raise invalid_input("reset cannot be combined with emulation settings")
+        self._check_browser_alive()
+        self._check_page_valid()
+        if reset or patch:
+            state = (
+                PageEmulation()
+                if reset
+                else PageEmulation.model_validate(
+                    {**(self._emulation_state or PageEmulation()).model_dump(), **patch}
+                )
+            )
+            await self._set_emulation_impl(state)
+            self._emulation_state = state
+        return (self._emulation_state or PageEmulation()).model_dump()
+
+    async def _set_emulation_impl(self, state: PageEmulation) -> None:
+        raise BackendError(
+            error="unsupported_operation",
+            hint="Session environment emulation requires a local browser backend",
+            action="use Playwright or CloakBrowser",
+        )
+
+    async def _replay_emulation_impl(self) -> None:
+        if self._emulation_state is not None:
+            await self._set_emulation_impl(self._emulation_state)
 
     async def _element_center_impl(self, index: int) -> tuple[float, float]:
         raise NotImplementedError

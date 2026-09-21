@@ -180,8 +180,8 @@ cloak click 5 --snap
 
 ```bash
 cloak navigate https://example.com/dashboard --expect-path /dashboard
-cloak screenshot --expect-url 'https://example.com/dashboard*' --viewport 1280x800 -o page.png --json
+cloak screenshot --expect-url 'https://example.com/dashboard*' --viewport 1280x800 --dpr 2 -o page.png --json
 cloak cdp endpoint --page
 ```
 
-The capture response includes `url`, `title`, `viewport`, `dpr`, `pixel_width` and `pixel_height`. The output directory must exist. URL mismatches fail without writing a screenshot; temporary viewport changes are restored. If recovery reports `page_recreated`, navigate before retrying.
+The capture response includes `url`, `title`, `viewport`, `dpr`, `pixel_width` and `pixel_height`. The output directory must exist. URL mismatches fail without writing a screenshot; temporary viewport and DPR changes are restored on success, failure or cancellation. A 1280×800 capture at DPR 2 contains 2560×1600 image pixels. If recovery reports `page_recreated`, navigate before retrying.

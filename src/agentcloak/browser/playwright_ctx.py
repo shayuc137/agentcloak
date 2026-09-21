@@ -45,6 +45,7 @@ from agentcloak.browser.state import (
     FrameInfo,
     TabInfo,
 )
+from agentcloak.core.emulation import PageEmulation
 from agentcloak.core.errors import (
     BackendError,
     BrowserTimeoutError,
@@ -124,6 +125,7 @@ class PlaywrightContext(BrowserContextBase):
         cdp_port: int | None = None,
         browser_config: BrowserConfig | None = None,
         profile_dir: Path | None = None,
+        headless: bool = True,
         owns_browser: bool = True,
         owns_context: bool = False,
         workspace_state_path: Path | None = None,
@@ -140,8 +142,12 @@ class PlaywrightContext(BrowserContextBase):
         self._tabs: dict[int, Any] = {0: page}
         self._popup_requested = False
         self._popup_arrived = asyncio.Event()
+        self._emulation_lock = asyncio.Lock()
+        self._emulation_tasks: set[asyncio.Task[None]] = set()
         self._active_tab: int = 0
         self._next_tab_id: int = 1
+        self._headless = headless
+        self._emulation_touch_tabs: set[int] = set()
         self._browser = browser
         self._owns_browser = owns_browser
         self._owns_context = owns_context
@@ -190,6 +196,7 @@ class PlaywrightContext(BrowserContextBase):
             cdp_port=self._cdp_port,
             browser_config=self._browser_config,
             profile_dir=self._profile_dir,
+            headless=self._headless,
             owns_browser=False,
         )
 
@@ -217,6 +224,7 @@ class PlaywrightContext(BrowserContextBase):
                 proxy_url=self._proxy_url,
                 cdp_port=self._cdp_port,
                 browser_config=config,
+                headless=self._headless,
                 owns_browser=False,
                 owns_context=True,
                 workspace_state_path=state_path,
@@ -376,6 +384,10 @@ class PlaywrightContext(BrowserContextBase):
         self._tabs[new_id] = page
         self._setup_network_listeners(page)
         self._setup_feedback_listeners(page)
+        if self._emulation_state is not None:
+            self._emulation_tasks.add(
+                asyncio.create_task(self._replay_tab_emulation(new_id))
+            )
         with contextlib.suppress(Exception):
             self._last_new_tab_event = {
                 "tab_id": new_id,
@@ -865,8 +877,80 @@ class PlaywrightContext(BrowserContextBase):
         await self._page.mouse.wheel(delta_x, delta_y)
         return {"scrolled": True, "direction": direction, "amount": amount}
 
-    async def _set_viewport_impl(self, width: int, height: int) -> None:
+    async def _set_viewport_impl(
+        self, width: int, height: int, *, dpr: float | None = None
+    ) -> None:
+        actual_dpr = dpr if dpr is not None else await self._get_dpr_impl()
+        # Keep Playwright's viewport bookkeeping aligned with CDP.
         await self._page.set_viewport_size({"width": width, "height": height})
+        await super()._set_viewport_impl(width, height, dpr=actual_dpr)
+
+    async def _apply_tab_emulation(self, tab_id: int, state: PageEmulation) -> None:
+        page = self._tabs[tab_id]
+        await page.emulate_media(
+            color_scheme=state.color_scheme or "null",
+            reduced_motion=(
+                "null"
+                if state.reduced_motion is None
+                else "reduce"
+                if state.reduced_motion
+                else "no-preference"
+            ),
+        )
+        if state.pointer is not None or tab_id in self._emulation_touch_tabs:
+            session = await self._get_or_create_cdp_session(tab_id)
+            await session.send(
+                "Emulation.setTouchEmulationEnabled",
+                {
+                    "enabled": state.pointer == "coarse",
+                    **({"maxTouchPoints": 1} if state.pointer == "coarse" else {}),
+                },
+            )
+            if state.pointer is None:
+                self._emulation_touch_tabs.discard(tab_id)
+            else:
+                self._emulation_touch_tabs.add(tab_id)
+
+    async def _set_emulation_impl(self, state: PageEmulation) -> None:
+        if self._headless and state.pointer is not None:
+            # Headless Chromium restores pointer:none, losing the desktop baseline.
+            raise BackendError(
+                error="unsupported_operation",
+                hint="Pointer emulation requires a headed browser for reliable reset",
+                action="set browser.headless=false (Xvfb is supported) and relaunch",
+            )
+        async with self._emulation_lock:
+            previous = self._emulation_state or PageEmulation()
+            touched: list[int] = []
+            try:
+                for tab_id, page in list(self._tabs.items()):
+                    if not page.is_closed():
+                        touched.append(tab_id)
+                        await self._apply_tab_emulation(tab_id, state)
+            except BaseException:
+                try:
+                    async with asyncio.timeout(2):
+                        for tab_id in touched:
+                            if (
+                                tab_id in self._tabs
+                                and not self._tabs[tab_id].is_closed()
+                            ):
+                                await self._apply_tab_emulation(tab_id, previous)
+                except Exception:
+                    self.mark_page_invalid()
+                raise
+
+    async def _replay_tab_emulation(self, tab_id: int) -> None:
+        async with self._emulation_lock:
+            if (
+                self._emulation_state is not None
+                and tab_id in self._tabs
+                and not self._tabs[tab_id].is_closed()
+            ):
+                await self._apply_tab_emulation(tab_id, self._emulation_state)
+
+    async def _replay_emulation_impl(self) -> None:
+        await self._replay_tab_emulation(self._active_tab)
 
     async def _element_center_impl(self, index: int) -> tuple[float, float]:
         element = await self._resolve_element(index)
@@ -980,6 +1064,13 @@ class PlaywrightContext(BrowserContextBase):
             with contextlib.suppress(TimeoutError):
                 async with asyncio.timeout(0.5):
                     await self._popup_arrived.wait()
+
+        pending = self._emulation_tasks.copy()
+        if pending:
+            try:
+                await asyncio.gather(*pending)
+            finally:
+                self._emulation_tasks.difference_update(pending)
 
     async def _post_action_cleanup(self) -> None:
         with contextlib.suppress(Exception):
@@ -1549,10 +1640,22 @@ class PlaywrightContext(BrowserContextBase):
     async def _screenshot_impl(
         self, *, full_page: bool, fmt: str, quality: int
     ) -> bytes:
-        kwargs: dict[str, Any] = {"full_page": full_page, "type": fmt}
+        # Playwright's screenshot helper resets device metrics to context defaults.
+        params: dict[str, Any] = {"format": fmt, "captureBeyondViewport": full_page}
         if fmt == "jpeg":
-            kwargs["quality"] = quality
-        return await self._page.screenshot(**kwargs)
+            params["quality"] = quality
+        if full_page:
+            metrics = await self._cdp_send("Page.getLayoutMetrics", {})
+            size = metrics["cssContentSize"]
+            params["clip"] = {
+                "x": 0,
+                "y": 0,
+                "width": size["width"],
+                "height": size["height"],
+                "scale": 1,
+            }
+        result = await self._cdp_send("Page.captureScreenshot", params)
+        return base64.b64decode(result["data"])
 
     # ------------------------------------------------------------------
     # Atomic: fetch (HTTP via browser cookies + UA)
@@ -1883,8 +1986,8 @@ class PlaywrightContext(BrowserContextBase):
     # Persistent CDP session (7b) — event-stream transport for managers
     # ------------------------------------------------------------------
 
-    async def _get_or_create_cdp_session(self) -> Any:
-        """Return the active tab's persistent ``CDPSession``, creating once.
+    async def _get_or_create_cdp_session(self, tab_id: int | None = None) -> Any:
+        """Return a tab's persistent ``CDPSession``; default to the active tab.
 
         Cache hit returns the existing session; on miss we open a new session
         bound to the active page and wire its generic ``"event"`` listener
@@ -1893,13 +1996,13 @@ class PlaywrightContext(BrowserContextBase):
         ``"event"`` (carrying ``{"method", "params"}``); we subscribe to the
         latter so a single forward covers every domain the managers enable.
         """
-        tab_id = self._active_tab
+        tab_id = self._active_tab if tab_id is None else tab_id
         existing = self._cdp_sessions.get(tab_id)
         if existing is not None:
             return existing
-        session = await self._page.context.new_cdp_session(self._page)
+        page = self._tabs[tab_id]
+        session = await page.context.new_cdp_session(page)
 
-        page = self._page
         document_url = str(page.url)
 
         def _forward(event: dict[str, Any]) -> None:
@@ -1955,6 +2058,7 @@ class PlaywrightContext(BrowserContextBase):
                 with contextlib.suppress(Exception):
                     await session.detach()
 
+        self._emulation_touch_tabs.discard(tab_id)
         self._console_native_tabs.discard(tab_id)
         self._console_main_frame_ids.pop(tab_id, None)
 
@@ -2097,7 +2201,14 @@ class PlaywrightContext(BrowserContextBase):
                 action="check CDP method name and parameters",
             ) from exc
 
+    async def _cancel_emulation_tasks(self) -> None:
+        for task in self._emulation_tasks:
+            task.cancel()
+        await asyncio.gather(*self._emulation_tasks, return_exceptions=True)
+        self._emulation_tasks.clear()
+
     async def force_close(self) -> None:
+        await self._cancel_emulation_tasks()
         if self._owns_browser or self._owns_context:
             await super().force_close()
             return
@@ -2126,6 +2237,7 @@ class PlaywrightContext(BrowserContextBase):
         self._tabs.clear()
 
     async def _close_impl(self) -> None:
+        await self._cancel_emulation_tasks()
         # Detach persistent CDP sessions first. Closing the browser/context
         # below tears them down anyway, but detaching explicitly avoids a
         # spurious "session orphaned" warning on a still-attached session and
@@ -2227,6 +2339,7 @@ async def launch_playwright(
         ring_buffer = RingBuffer()
 
         return PlaywrightContext(
+            headless=headless,
             page=page,
             browser=None,
             playwright=pw,
@@ -2266,6 +2379,7 @@ async def launch_playwright(
     ring_buffer = RingBuffer()
 
     return PlaywrightContext(
+        headless=headless,
         page=page,
         browser=browser,
         playwright=pw,

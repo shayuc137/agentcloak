@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
+import orjson
 import structlog
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -66,7 +67,10 @@ def register_exception_handlers(app: FastAPI) -> None:
     ) -> JSONResponse:
         # Surface the first validation error as the hint — agents can scan the
         # full list under `errors` if they need more detail.
-        errors: list[dict[str, Any]] = list(exc.errors())
+        # Validator contexts can contain exceptions and non-finite numeric inputs.
+        errors: list[dict[str, Any]] = orjson.loads(
+            orjson.dumps(exc.errors(), default=str)
+        )
         first: dict[str, Any] = errors[0] if errors else {}
         loc_parts: list[Any] = list(first.get("loc", []))
         loc = ".".join(str(p) for p in loc_parts)

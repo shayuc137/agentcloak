@@ -60,6 +60,7 @@ Read this file when you need full parameter detail. For the common path, the qui
 - MCP: `agentcloak_screenshot`
 - Query:
   - `expect_url` (string, default: "") — Require the captured URL to match this glob.
+  - `dpr` (number | null, default: —) — Temporary device pixel ratio; restored after capture.
   - `viewport` (string | null, default: —) — Temporary WIDTHxHEIGHT; restored after capture.
   - `full_page` (boolean, default: false) — Capture the full scrollable page instead of the viewport.
   - `format` (string | null, default: —) — Format override: jpeg or png. Unset uses browser.screenshot_format.
@@ -503,7 +504,17 @@ Read this file when you need full parameter detail. For the common path, the qui
 - Body:
   - `identifier` (string, default: *required*) — Pending request ID or rule ID from route add/list.
 
-## Header Injection
+## Page Emulation
+
+### `POST /emulation`
+
+- CLI: `cloak emulate`
+- MCP: `agentcloak_emulate`
+- Body:
+  - `color_scheme` (any | null, default: —) — Color scheme override; omitted retains the current value.
+  - `reduced_motion` (boolean | null, default: —) — True reduces motion; false requests no preference.
+  - `pointer` (any | null, default: —) — Touch/pointer override; requires a headed local browser.
+  - `reset` (boolean, default: false)
 
 ### `POST /emulation/headers`
 
@@ -519,6 +530,7 @@ Read this file when you need full parameter detail. For the common path, the qui
 - Body:
   - `width` (integer, default: *required*)
   - `height` (integer, default: *required*)
+  - `dpr` (number | null, default: —)
 
 ### `POST /cdp/send`
 

@@ -1,15 +1,12 @@
-"""Pydantic models for emulation routes (7b T1.2).
-
-Currently a single capability: extra HTTP headers injected on every request
-(custom Authorization / tokens for API debugging). ``POST
-/emulation/headers`` sets the active set; passing an empty map clears it.
-"""
+"""Page environment, viewport and raw CDP request models."""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from agentcloak.core.emulation import PageEmulation
 
 __all__ = ["HeadersRequest", "HeadersResponse"]
 
@@ -28,14 +25,30 @@ class HeadersResponse(BaseModel):
     count: int = Field(description="Number of active extra headers.")
 
 
+class EmulationRequest(PageEmulation):
+    reset: bool = False
+
+    @model_validator(mode="after")
+    def validate_reset(self) -> Self:
+        if self.reset and any(
+            value is not None
+            for key, value in self.model_dump().items()
+            if key != "reset"
+        ):
+            raise ValueError("reset cannot be combined with emulation settings")
+        return self
+
+
 class ViewportRequest(BaseModel):
     width: int = Field(ge=1, le=16384)
     height: int = Field(ge=1, le=16384)
+    dpr: float | None = Field(None, gt=0, allow_inf_nan=False)
 
 
 class ViewportResponse(BaseModel):
     width: int
     height: int
+    dpr: float
 
 
 class CdpSendRequest(BaseModel):

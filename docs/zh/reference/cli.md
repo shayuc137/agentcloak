@@ -120,24 +120,42 @@ cloak snapshot [--mode MODE] [--selector CSS] [--limit N] [--focus N] [--offset 
 ### viewport
 
 ```bash
-cloak viewport set 2560x1440
-cloak screenshot --viewport 1024x768 --output compact.png
+cloak viewport set 2560x1440 --dpr 2
+cloak screenshot --viewport 1024x768 --dpr 2 --output compact.png
 ```
 
-`viewport set` 只调整当前 session 的页面，不导航、不丢登录态。截图覆盖是一次性的，成功或失败后都会恢复原视口。宽高为不超过 16384 的正整数。
+`viewport set` 只调整当前 session 的页面，不导航、不丢登录态。省略 `--dpr` 会保留当前设备像素比，DPR 必须为有限正数。截图覆盖是一次性的，成功、失败或取消后都会恢复原尺寸与 DPR，包括此前 raw CDP 设置的值。宽高使用 CSS 像素，为不超过 16384 的正整数；600×400 的视口在 DPR 2 下生成 1200×800 的图片。`--dpr` 也可单独用于截图。
+
+### emulate
+
+```bash
+cloak emulate --color-scheme dark --reduced-motion
+cloak emulate --color-scheme light --no-reduced-motion
+cloak emulate --pointer coarse
+cloak emulate --pointer fine
+cloak emulate
+cloak emulate reset
+```
+
+本地 Playwright 和 CloakBrowser 的深浅色、减少动画支持有头和无头模式。指针模拟要求 `browser.headless=false`（可使用 Xvfb）；无头请求会在应用任何设置前失败，因为 Chromium 无法可靠恢复桌面指针基线。`coarse` 启用一个触摸点，`fine` 关闭触摸模拟；这不会改变 User-Agent 或启用移动端视口布局。
+
+省略的选项保留已有覆盖。不带选项时显示当前覆盖（`null` 表示浏览器默认值）。设置应用于当前会话已有和新建的标签页；弹窗在登记后继承，最早执行的脚本可能先于模拟设置。设置跨导航保留，会话关闭或 daemon 重启后清除，不影响其他会话。`reset` 清除这些覆盖，保留视口、DPR 和 HTTP headers，不能与设置选项混用。RemoteBridge 对修改返回 `unsupported_operation`。
+
+HTTP 使用 `POST /emulation`，字段为可选的 `color_scheme`、`reduced_motion`、`pointer`、`reset`；MCP 使用同字段的 `agentcloak_emulate`。视口 DPR 使用 `POST /viewport` / `agentcloak_viewport`，临时截图 DPR 使用 `GET /screenshot` / `agentcloak_screenshot`。
 
 ### screenshot
 
 截取当前页面的屏幕截图。
 
 ```bash
-cloak screenshot [--output FILE] [--viewport WIDTHxHEIGHT] [--full-page] [--format FORMAT] [--quality N] [--wait-for CSS] [--hide CSS] [--keep-overlays]
+cloak screenshot [--output FILE] [--viewport WIDTHxHEIGHT] [--dpr RATIO] [--full-page] [--format FORMAT] [--quality N] [--wait-for CSS] [--hide CSS] [--keep-overlays]
 ```
 
 | 参数 | 默认值 | 说明 |
 |------|-------|------|
 | `--output` | 自动放在系统临时目录（`tempfile.gettempdir()`） | 保存到文件；`.png` 选择 PNG，`.jpg`/`.jpeg` 选择 JPEG |
 | `--viewport` | 当前页面 | 一次性 `WIDTHxHEIGHT`，截图后恢复 |
+| `--dpr` | 当前页面 | 一次性设备像素比，截图后恢复 |
 | `--full-page` | 关闭 | 捕获完整可滚动页面 |
 | `--format` | 输出后缀，其次为 `browser.screenshot_format`（`jpeg`） | 显式覆盖为 `jpeg` 或 `png`；必须与已识别后缀一致 |
 | `--quality` | `80` | JPEG 质量 0-100（PNG 时忽略） |

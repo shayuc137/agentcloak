@@ -196,6 +196,7 @@ CloakBrowser 会抑制实时 Runtime 日志。日志采集使用原生 CDP Conso
 
 | 能力 | Playwright | CloakBrowser | RemoteBridge |
 |---|---|---|---|
+| DPR 截图与会话媒体模拟 | 真实浏览器回归；pointer 要求有头模式 | 真实浏览器回归；pointer 要求有头模式 | DPR 未验证；会话媒体/pointer 修改不支持 |
 | 输入、视口、本地 snapshot 和 JS 错误 | 真实浏览器回归 | 真实浏览器回归 | 真实 MV3 冒烟覆盖导航、snapshot、视口、evaluate 和截图；完整输入/错误对齐尚未验证 |
 | 脚本、拦截与请求暂停/放行 | 真实浏览器回归 | 真实浏览器回归 | 完整对齐尚未验证 |
 | 工作空间存储与 daemon 正常重启 | 真实浏览器与 CLI 回归 | 真实浏览器与 CLI 回归 | 不支持，明确拒绝 workspace 模式 |

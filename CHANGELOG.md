@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add `--dpr` to viewport and screenshot controls, preserving the existing ratio on resize and restoring temporary dimensions and DPR after capture, failure or cancellation.
+- Add session color-scheme/reduced-motion emulation and reset across CLI, HTTP and MCP. Headed local browsers also support coarse/fine pointer emulation; unsupported modes fail before changing the page.
+- Capture local screenshots through CDP to preserve device metrics and report actual image pixels. Keep validation failures serializable when validator contexts contain exceptions or non-finite inputs.
+
 - Correct multi-tab close results across CLI/API/MCP and document shared connection-pool limits, with dual-backend streaming recovery coverage.
 
 - Add workspace-aware sessions with shared login by default and configurable isolated, persistent workspace storage.

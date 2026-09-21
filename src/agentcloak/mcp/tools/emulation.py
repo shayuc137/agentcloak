@@ -1,4 +1,4 @@
-"""Emulation tool (7b T1.2) — inject extra HTTP headers."""
+"""Session environment, viewport, HTTP headers and raw CDP tools."""
 
 # pyright: reportUnusedFunction=false
 # Tools register via @mcp.tool decorator side-effect.
@@ -9,8 +9,10 @@ from typing import TYPE_CHECKING, Any
 
 from mcp.types import ToolAnnotations
 
+from agentcloak.core.emulation import ColorScheme, Pointer  # noqa: TC001
 from agentcloak.core.text_renderers import (
     render_cdp_send_text,
+    render_emulation_text,
     render_headers_text,
     render_viewport_text,
 )
@@ -44,10 +46,12 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         )
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
-    async def agentcloak_viewport(width: int, height: int) -> str:
+    async def agentcloak_viewport(
+        width: int, height: int, dpr: float | None = None
+    ) -> str:
         """Resize the current session page without reloading it."""
         return await format_call(
-            client.viewport(width=width, height=height), render_viewport_text
+            client.viewport(width=width, height=height, dpr=dpr), render_viewport_text
         )
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
@@ -58,4 +62,22 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         return await format_call(
             client.cdp_send(method=method, params=params, timeout=timeout),
             render_cdp_send_text,
+        )
+
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
+    async def agentcloak_emulate(
+        color_scheme: ColorScheme | None = None,
+        reduced_motion: bool | None = None,
+        pointer: Pointer | None = None,
+        reset: bool = False,
+    ) -> str:
+        """Set session media/pointer overrides; reset clears them, no args queries."""
+        return await format_call(
+            client.emulate(
+                color_scheme=color_scheme,
+                reduced_motion=reduced_motion,
+                pointer=pointer,
+                reset=reset,
+            ),
+            render_emulation_text,
         )

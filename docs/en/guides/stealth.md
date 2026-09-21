@@ -172,3 +172,5 @@ All three settings require a daemon restart to take effect.
 - **No Xvfb on a headless server** — CloakBrowser auto-starts Xvfb but it must be installed (`sudo apt-get install xvfb` etc., see `cloak doctor`)
 - **Mismatched httpcloak preset** — if you pinned `cloakbrowser` to a major version the proxy doesn't have, you get `chrome-latest` fallback; usually fine but verify with `tls.peet.ws`
 - **Patchright leftover** — pre-v0.2.0 configs used `default_tier = "patchright"`. Change to `"playwright"` or `"cloak"`
+
+Runtime visual emulation (`viewport set --dpr` and `emulate`) deliberately changes values visible to the page. Media settings support headless mode; pointer emulation requires a headed browser. These commands do not provide a complete mobile fingerprint or alter launch settings. See [CLI emulation](../reference/cli.md#emulate).

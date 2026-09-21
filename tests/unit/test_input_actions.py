@@ -61,6 +61,7 @@ def test_modifier_aliases(key: str, expected: str) -> None:
 async def test_screenshot_restores_viewport_even_on_failure(fails: bool) -> None:
     ctx = context()
     ctx._get_viewport_impl = AsyncMock(return_value=(1280, 720))
+    ctx._get_dpr_impl = AsyncMock(return_value=1)
     ctx._set_viewport_impl = AsyncMock()
     from io import BytesIO
 

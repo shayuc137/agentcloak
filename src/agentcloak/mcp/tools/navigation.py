@@ -170,6 +170,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         hide: str | None = None,
         keep_overlays: bool = False,
         viewport: str | None = None,
+        dpr: float | None = None,
         expect_url: str = "",
     ) -> list[ImageContent | TextContent]:
         """Take a screenshot of the current page.
@@ -182,6 +183,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         under MCP token budgets.
 
         Args:
+            dpr: Temporary device pixel ratio, restored after capture
             viewport: Temporary WIDTHxHEIGHT, restored after capture
             full_page: Capture the full scrollable page instead of viewport
             format: Optional image format override: 'jpeg' or 'png'
@@ -209,7 +211,13 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                     timeout=wait_timeout,
                     state="visible",
                 )
-            if hide or keep_overlays or viewport is not None or expect_url:
+            if (
+                hide
+                or keep_overlays
+                or viewport is not None
+                or dpr is not None
+                or expect_url
+            ):
                 envelope = await client.screenshot(
                     full_page=full_page,
                     format=format,
@@ -220,6 +228,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                     **({"expect_url": expect_url} if expect_url else {}),
                     keep_overlays=keep_overlays,
                     **({"viewport": viewport} if viewport is not None else {}),
+                    dpr=dpr,
                 )
             else:
                 envelope = await client.screenshot(

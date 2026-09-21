@@ -19,6 +19,7 @@ You need a browser. Your agents do too.
 
 ## Highlights
 
+- **Visual emulation** -- DPR-aware screenshots, session color scheme and reduced motion, plus headed-browser touch/pointer emulation with reset
 - **Recoverable sessions and verifiable captures** -- force-close stuck sessions, inspect queues, assert page URLs, capture page/viewport metadata, and attach CDP clients to the exact session page
 - **Pages as structured text** -- every page becomes an accessibility tree with `[N]` indexed elements; agents interact by index, not fragile CSS selectors
 - **CLI + Skill on-demand loading** -- agents call `cloak` via Bash; the Skill lazy-loads at ~300 tokens (vs ~6,000 for MCP tool definitions)
@@ -28,7 +29,7 @@ You need a browser. Your agents do too.
 - **Workspace-aware sessions** -- isolated pages for Git worktrees or ordinary directories; shared login by default, opt-in per-workspace storage, live viewport changes, drag, and request hold/release
 - **Spells + API capture** -- wrap common site operations as one-liners; capture traffic, analyze patterns, generate spells automatically
 - **Web reverse engineering** -- CDP-native debugger, network route interception, WebSocket/SSE capture, init-script hooks, and source-map decode -- one tool covers 90%+ of browser RE
-- **MCP server with 41 tools** -- full compatibility with MCP-native clients (Claude Code, Codex, Cursor, etc.)
+- **MCP server with 42 tools** -- full compatibility with MCP-native clients (Claude Code, Codex, Cursor, etc.)
 
 ## Installation
 

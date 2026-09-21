@@ -91,6 +91,7 @@ PATHS: dict[Scheduling, frozenset[str]] = {
             "/download/url",
             "/download/wait",
             "/download/wait-click",
+            "/emulation",
             "/emulation/headers",
             "/evaluate",
             "/fetch",

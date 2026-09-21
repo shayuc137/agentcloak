@@ -120,24 +120,42 @@ Output starts with a header line:
 ### viewport
 
 ```bash
-cloak viewport set 2560x1440
-cloak screenshot --viewport 1024x768 --output compact.png
+cloak viewport set 2560x1440 --dpr 2
+cloak screenshot --viewport 1024x768 --dpr 2 --output compact.png
 ```
 
-`viewport set` changes only the current session's page without navigation or loss of login state. Screenshot overrides are temporary and restore the previous viewport even if capture fails. Dimensions are positive integers up to 16384.
+`viewport set` changes only the current session's page without navigation or loss of login state. Omitting `--dpr` preserves the current device pixel ratio. DPR must be finite and positive. Screenshot overrides are temporary and restore both dimensions and DPR on success, failure or cancellation, including prior raw-CDP overrides. Dimensions are CSS pixels, positive integers up to 16384; a 600×400 capture at DPR 2 produces 1200×800 image pixels. `--dpr` can also be used without `--viewport`.
+
+### emulate
+
+```bash
+cloak emulate --color-scheme dark --reduced-motion
+cloak emulate --color-scheme light --no-reduced-motion
+cloak emulate --pointer coarse
+cloak emulate --pointer fine
+cloak emulate
+cloak emulate reset
+```
+
+Local Playwright and CloakBrowser sessions support color scheme and reduced motion in both headed and headless modes. Pointer emulation requires `browser.headless=false` (Xvfb is supported); headless requests fail before applying any settings because Chromium cannot reliably restore its desktop pointer baseline. `coarse` enables one touch point; `fine` disables touch emulation. This does not change the user agent or enable mobile viewport layout.
+
+Omitted options retain their overrides. No options shows the current overrides (`null` means browser default). Changes apply to all owned tabs and new tabs; popups inherit after registration, so their earliest scripts may run before emulation is applied. Settings survive navigation but not session closure or daemon restart. Other sessions are unaffected. `reset` clears these overrides without changing viewport, DPR or HTTP headers; it cannot be combined with settings. RemoteBridge returns `unsupported_operation` for changes.
+
+HTTP: `POST /emulation` with optional `color_scheme`, `reduced_motion`, `pointer`, `reset`; MCP: `agentcloak_emulate` with the same fields. Viewport DPR uses `POST /viewport` / `agentcloak_viewport`; temporary screenshot DPR uses `GET /screenshot` / `agentcloak_screenshot`.
 
 ### screenshot
 
 Take a screenshot of the current page.
 
 ```bash
-cloak screenshot [--output FILE] [--viewport WIDTHxHEIGHT] [--full-page] [--format FORMAT] [--quality N] [--wait-for CSS] [--hide CSS] [--keep-overlays]
+cloak screenshot [--output FILE] [--viewport WIDTHxHEIGHT] [--dpr RATIO] [--full-page] [--format FORMAT] [--quality N] [--wait-for CSS] [--hide CSS] [--keep-overlays]
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--output` | auto-named in OS temp dir (`tempfile.gettempdir()`) | Save to file; `.png` selects PNG and `.jpg`/`.jpeg` selects JPEG |
 | `--viewport` | current page | Temporary `WIDTHxHEIGHT`, restored after capture |
+| `--dpr` | current page | Temporary device pixel ratio, restored after capture |
 | `--full-page` | off | Capture full scrollable page |
 | `--format` | output suffix, then `browser.screenshot_format` (`jpeg`) | Explicit `jpeg` or `png` override; must agree with a recognized suffix |
 | `--quality` | `80` | JPEG quality 0-100 (ignored for PNG) |

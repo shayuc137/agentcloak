@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from typing import Any
 from unittest.mock import DEFAULT, AsyncMock, MagicMock, patch
 
@@ -83,6 +84,10 @@ def _mock_cdp_session() -> MagicMock:
         _listeners.setdefault(event, []).append(callback)
 
     async def _send(method: str, params: Any = None) -> Any:
+        if method == "Page.captureScreenshot":
+            return {"data": base64.b64encode(PNG).decode()}
+        if method == "Page.getLayoutMetrics":
+            return {"cssContentSize": {"width": 1280, "height": 720}}
         if method == "Accessibility.getFullAXTree":
             return _ax_tree_response()
         if method == "Runtime.enable":
@@ -748,8 +753,9 @@ class TestScreenshot:
         page = _default_page()
         ctx = _make_ctx(page=page)
         await ctx.screenshot()
-        page.screenshot.assert_called_once_with(
-            full_page=False, type="jpeg", quality=80
+        page.context.new_cdp_session.return_value.send.assert_any_await(
+            "Page.captureScreenshot",
+            {"captureBeyondViewport": False, "format": "jpeg", "quality": 80},
         )
 
     @pytest.mark.asyncio
@@ -758,7 +764,9 @@ class TestScreenshot:
         page = _default_page()
         ctx = _make_ctx(page=page)
         await ctx.screenshot(format="png")
-        page.screenshot.assert_called_once_with(full_page=False, type="png")
+        page.context.new_cdp_session.return_value.send.assert_any_await(
+            "Page.captureScreenshot", {"captureBeyondViewport": False, "format": "png"}
+        )
 
 
 class TestSeqBehavior:

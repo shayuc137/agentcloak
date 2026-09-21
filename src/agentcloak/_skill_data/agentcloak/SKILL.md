@@ -81,8 +81,9 @@ Snapshot modes: `compact` (default, interactive + containers only, capped at 80 
 | `cloak snapshot --frames` | Include iframe content |
 | `cloak snapshot --diff` | Mark `[+]` added, `[~]` changed vs previous |
 | `cloak screenshot [--output FILE]` | Screenshot to file, stdout = path (`--wait-for CSS` waits first; `--hide CSS` hides overlays once; `--keep-overlays` reveals all) |
+| `cloak emulate [--color-scheme dark] [--reduced-motion] [--pointer coarse]` / `emulate reset` | Session media overrides on local backends; pointer requires headed mode. No options queries state; reset preserves viewport/DPR/headers |
 | `cloak diff screenshot BASELINE [--current FILE]` | Exact RGBA pixel comparison; omit current for a live PNG, add `--output diff.png` for red highlights |
-| `cloak viewport set WIDTHxHEIGHT` | Resize the current session without navigation; `screenshot --viewport WIDTHxHEIGHT` temporarily overrides and restores it |
+| `cloak viewport set WIDTHxHEIGHT [--dpr RATIO]` | Resize without navigation; omitted DPR is preserved. `screenshot --viewport WIDTHxHEIGHT --dpr RATIO` temporarily overrides and restores both |
 | `cloak resume` | Session state: URL, tabs, recent actions |
 
 ### Interaction
@@ -221,6 +222,8 @@ cloak screenshot -o page.png
 For one selector readiness condition, combine it with capture: `cloak screenshot --wait-for "#ready" --wait-timeout 15000`. A timeout stops before any file is written.
 
 **Evidence**: use `navigate --expect-path /page` and `screenshot --expect-url "*/page" --json` to reject redirects. Screenshot JSON includes URL, title, viewport, DPR and actual pixel dimensions. After `page_recreated`/`page_lost`, navigate again. For `session_busy` or a frozen page use `session close --force`; see troubleshooting.
+
+**Emulation**: color scheme and reduced motion support headed/headless local browsers. Pointer requires `browser.headless=false`; headless and RemoteBridge pointer requests fail before changing the page. Owned tabs inherit settings; popup scripts may run before registration. Overrides last until reset or session closure.
 
 **Screenshot format**: `.png` / `.jpg` / `.jpeg` output suffixes select encoding without `--format`; unknown suffixes warn and use the live `browser.screenshot_format` (`jpeg` by default). JPEG is ~4-10x smaller for observe-act loops; PNG is lossless for UI design, OCR, and visual comparison. MCP defaults to JPEG quality 50.
 

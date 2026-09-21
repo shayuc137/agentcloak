@@ -5,7 +5,7 @@ loop. Handlers delegate heavy lifting to :mod:`agentcloak.daemon.services`.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 import orjson
 import structlog
@@ -107,6 +107,14 @@ async def handle_screenshot(
     expect_url: str = Query(
         "", description="Require the captured URL to match this glob."
     ),
+    dpr: Annotated[
+        float | None,
+        Query(
+            gt=0,
+            allow_inf_nan=False,
+            description="Temporary device pixel ratio; restored after capture.",
+        ),
+    ] = None,
     viewport: str | None = Query(
         None, description="Temporary WIDTHxHEIGHT; restored after capture."
     ),
@@ -175,6 +183,7 @@ async def handle_screenshot(
             quality=quality,
             **({"expect_url": expect_url} if expect_url else {}),
             **({"viewport": viewport} if viewport is not None else {}),
+            **({"dpr": dpr} if dpr is not None else {}),
         )
 
     metadata = getattr(ctx, "screenshot_metadata", {})

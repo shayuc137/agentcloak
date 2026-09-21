@@ -1967,10 +1967,15 @@ def render_performance_metrics_text(data: dict[str, Any]) -> str:
 
 
 def render_viewport_text(data: dict[str, Any]) -> str:
-    return f"viewport {data['width']}x{data['height']}"
+    return f"viewport {data['width']}x{data['height']} | dpr={data.get('dpr', 1)}"
 
 
 def render_cdp_send_text(data: dict[str, Any]) -> str:
     import json
 
     return json.dumps(data.get("result"), ensure_ascii=False)
+
+
+def render_emulation_text(data: dict[str, Any]) -> str:
+    overrides = [f"{key}={value}" for key, value in data.items() if value is not None]
+    return "emulation " + (" | ".join(overrides) if overrides else "default")

@@ -76,7 +76,10 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from agentcloak.core.emulation import ColorScheme, Pointer
 
 import httpx
 import orjson
@@ -1057,6 +1060,7 @@ class DaemonClient:
         hide: str | None = None,
         keep_overlays: bool = False,
         viewport: str | None = None,
+        dpr: float | None = None,
         expect_url: str = "",
     ) -> dict[str, Any]:
         return self._send_sync(
@@ -1075,6 +1079,7 @@ class DaemonClient:
                 hide=hide,
                 keep_overlays=keep_overlays,
                 viewport=viewport,
+                dpr=dpr,
                 expect_url=expect_url,
             ),
         )
@@ -1211,6 +1216,7 @@ class DaemonClient:
         hide: str | None = None,
         keep_overlays: bool = False,
         viewport: str | None = None,
+        dpr: float | None = None,
         expect_url: str = "",
     ) -> dict[str, Any]:
         # MCP defaults to ``mcp_screenshot_quality`` (lower than CLI's 80) so
@@ -1229,6 +1235,7 @@ class DaemonClient:
                 hide=hide,
                 keep_overlays=keep_overlays,
                 viewport=viewport,
+                dpr=dpr,
                 expect_url=expect_url,
             ),
         )
@@ -1397,9 +1404,36 @@ class DaemonClient:
 
     # --- CDP / Tabs (async) ---
 
-    async def viewport(self, *, width: int, height: int) -> dict[str, Any]:
+    async def viewport(
+        self, *, width: int, height: int, dpr: float | None = None
+    ) -> dict[str, Any]:
         return await self._send_async(
-            "POST", "/viewport", json_body={"width": width, "height": height}
+            "POST",
+            "/viewport",
+            json_body={
+                "width": width,
+                "height": height,
+                **({"dpr": dpr} if dpr is not None else {}),
+            },
+        )
+
+    async def emulate(
+        self,
+        *,
+        color_scheme: ColorScheme | None = None,
+        reduced_motion: bool | None = None,
+        pointer: Pointer | None = None,
+        reset: bool = False,
+    ) -> dict[str, Any]:
+        return await self._send_async(
+            "POST",
+            "/emulation",
+            json_body={
+                "color_scheme": color_scheme,
+                "reduced_motion": reduced_motion,
+                "pointer": pointer,
+                "reset": reset,
+            },
         )
 
     async def cdp_send(
@@ -2045,6 +2079,7 @@ def _build_screenshot_params(
     hide: str | None = None,
     keep_overlays: bool = False,
     viewport: str | None = None,
+    dpr: float | None = None,
     expect_url: str = "",
 ) -> dict[str, str]:
     params: dict[str, str] = {"quality": str(quality)}
@@ -2064,6 +2099,8 @@ def _build_screenshot_params(
         params["expect_url"] = expect_url
     if viewport is not None:
         params["viewport"] = viewport
+    if dpr is not None:
+        params["dpr"] = str(dpr)
     return params
 
 

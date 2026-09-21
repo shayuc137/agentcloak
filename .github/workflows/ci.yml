@@ -76,6 +76,7 @@ jobs:
       - name: Browser controls, workspace isolation, and CLI recovery
         run: >-
           uv run --locked pytest
+          tests/integration/test_page_emulation.py
           tests/integration/test_input_actions.py
           tests/integration/test_network_controls.py
           tests/integration/test_snapshot_errors.py
@@ -85,6 +86,12 @@ jobs:
           tests/integration/test_recovery_evidence.py
           tests/integration/test_bridge_runtime.py
           -v --tb=short --timeout=100
+
+      - name: Headed pointer emulation and reset
+        run: >-
+          xvfb-run -a env AGENTCLOAK_TEST_HEADED=1 uv run --locked pytest
+          tests/integration/test_page_emulation.py
+          -k session_environment -v --tb=short --timeout=60
 
   build:
     name: Build Verification

@@ -128,6 +128,7 @@ async def launch_cloak(
         page = pages[0] if pages else await browser_context.new_page()
 
         return CloakContext(
+            headless=headless,
             page=page,
             browser=None,
             playwright=None,
@@ -153,6 +154,7 @@ async def launch_cloak(
     page = await ctx.new_page()
 
     return CloakContext(
+        headless=headless,
         page=page,
         browser=browser,
         playwright=None,

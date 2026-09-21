@@ -172,3 +172,5 @@ cloak config add browser.extra_args "--lang=ja-JP"
 - **headless 服务器没装 Xvfb**——CloakBrowser 会自动启动 Xvfb 但必须先安装（`sudo apt-get install xvfb` 等，见 `cloak doctor`）
 - **httpcloak preset 不匹配**——如果你把 `cloakbrowser` 钉到代理没有的 major 版本，会拿到 `chrome-latest` 回退；通常没事，但用 `tls.peet.ws` 验证一下
 - **遗留的 patchright 配置**——v0.2.0 前的配置用 `default_tier = "patchright"`，改成 `"playwright"` 或 `"cloak"`
+
+运行时视觉模拟（`viewport set --dpr` 和 `emulate`）会主动改变页面可见的值。媒体模拟支持无头模式；指针模拟要求有头浏览器。这些命令不提供完整的移动设备指纹，也不改变启动参数，详见 [CLI 模拟说明](../reference/cli.md#emulate)。

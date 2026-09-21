@@ -44,6 +44,12 @@ def parse_viewport(value: str) -> tuple[int, int]:
     return width, height
 
 
+def validate_dpr(value: float) -> float:
+    if not math.isfinite(value) or value <= 0:
+        raise invalid_input("DPR must be a finite positive number")
+    return value
+
+
 def normalize_key(key: str) -> str:
     aliases = {
         "ctrl": "Control",

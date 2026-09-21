@@ -40,7 +40,7 @@ _GROUPS = (
     "launch, network, fetch, bridge, cookies, skill, cdp, dialog, wait, "
     "upload, config, console, download, storage, clipboard, pdf, serve, diff, "
     "script, route, emulation, graphql, debugger, ws, sse, sourcemap, "
-    "profiler, performance, session, hide, viewport"
+    "profiler, performance, session, hide, viewport, emulate"
 )
 _EPILOG = (
     f"Shortcuts (top-level, also documented under their groups):\n  {_SHORTCUTS}\n"
@@ -244,6 +244,7 @@ def _register_commands() -> None:
         diff_cmd,
         doctor,
         download_cmd,
+        emulate,
         emulation,
         fetch,
         frame,
@@ -407,6 +408,9 @@ def _register_commands() -> None:
         route.app,
         name="route",
         help="Network route interception: abort/fulfill/continue requests.",
+    )
+    app.add_typer(
+        emulate.app, name="emulate", help="Session media and pointer overrides."
     )
     app.add_typer(viewport.app, name="viewport", help="Resize the current page.")
     app.add_typer(

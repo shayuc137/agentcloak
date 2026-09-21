@@ -197,6 +197,7 @@ Both local backends run one browser process. `browser.isolation` defaults to `sh
 
 | Capability | Playwright | CloakBrowser | RemoteBridge |
 |---|---|---|---|
+| DPR captures and session media emulation | Real-browser regression; pointer requires headed mode | Real-browser regression; pointer requires headed mode | DPR unverified; session media/pointer changes unsupported |
 | Input, viewport, local snapshots and JavaScript errors | Real-browser regression | Real-browser regression | Real MV3 smoke covers navigation, snapshot, viewport, evaluate and screenshot; detailed input/error parity remains unverified |
 | Scripts, interception and request hold/release | Real-browser regression | Real-browser regression | Full parity remains unverified |
 | Workspace storage and normal daemon restart | Real-browser + CLI regression | Real-browser + CLI regression | Unsupported; workspace mode is rejected |

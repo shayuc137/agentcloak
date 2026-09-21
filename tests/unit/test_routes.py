@@ -9,6 +9,7 @@ coverage during the framework swap.
 from __future__ import annotations
 
 import asyncio
+import base64
 from typing import Any
 from unittest.mock import DEFAULT, AsyncMock, MagicMock, patch
 
@@ -38,6 +39,8 @@ def _mock_cdp() -> MagicMock:
         _listeners.setdefault(event, []).append(callback)
 
     async def _send(method: str, params: Any = None) -> Any:
+        if method == "Page.captureScreenshot":
+            return {"data": base64.b64encode(PNG).decode()}
         if method == "Accessibility.getFullAXTree":
             return {
                 "nodes": [
@@ -233,14 +236,17 @@ class TestRoutes:
         configured = client.get("/screenshot")
         assert configured.status_code == 200
         assert configured.json()["data"]["format"] == "png"
-        ctx._page.screenshot.assert_awaited_with(full_page=False, type="png")
+        ctx._page.context.new_cdp_session.return_value.send.assert_any_await(
+            "Page.captureScreenshot", {"captureBeyondViewport": False, "format": "png"}
+        )
 
-        ctx._page.screenshot.reset_mock()
+        ctx._page.context.new_cdp_session.return_value.send.reset_mock()
         explicit = client.get("/screenshot?format=jpeg&quality=72")
         assert explicit.status_code == 200
         assert explicit.json()["data"]["format"] == "jpeg"
-        ctx._page.screenshot.assert_awaited_with(
-            full_page=False, type="jpeg", quality=72
+        ctx._page.context.new_cdp_session.return_value.send.assert_any_await(
+            "Page.captureScreenshot",
+            {"captureBeyondViewport": False, "format": "jpeg", "quality": 72},
         )
 
     def test_screenshot_output_path_infers_format_and_warns_on_fallback(
@@ -297,8 +303,9 @@ class TestRoutes:
 
         first = client.get("/screenshot")
         assert first.json()["data"]["format"] == "jpeg"
-        ctx._page.screenshot.assert_awaited_with(
-            full_page=False, type="jpeg", quality=61
+        ctx._page.context.new_cdp_session.return_value.send.assert_any_await(
+            "Page.captureScreenshot",
+            {"captureBeyondViewport": False, "format": "jpeg", "quality": 61},
         )
 
         config_file.write_text(
@@ -312,7 +319,9 @@ class TestRoutes:
         )
         second = client.get("/screenshot")
         assert second.json()["data"]["format"] == "png"
-        ctx._page.screenshot.assert_awaited_with(full_page=False, type="png")
+        ctx._page.context.new_cdp_session.return_value.send.assert_any_await(
+            "Page.captureScreenshot", {"captureBeyondViewport": False, "format": "png"}
+        )
         assert client.app.state.browser_ctx is ctx
 
         ctx.snapshot = AsyncMock(
@@ -353,7 +362,8 @@ class TestRoutes:
         ctx.wait.assert_awaited_once_with(
             condition="selector", value="#ready", timeout=1234, state="visible"
         )
-        ctx._page.screenshot.assert_awaited_once()
+        calls = ctx._page.context.new_cdp_session.return_value.send.await_args_list
+        assert sum(call.args[0] == "Page.captureScreenshot" for call in calls) == 1
 
     def test_screenshot_wait_timeout_keeps_structured_guidance(
         self, client: TestClient
@@ -372,7 +382,8 @@ class TestRoutes:
         assert resp.status_code == 400
         assert resp.json()["error"] == "wait_timeout"
         assert "increase timeout" in resp.json()["action"]
-        ctx._page.screenshot.assert_not_awaited()
+        calls = ctx._page.context.new_cdp_session.return_value.send.await_args_list
+        assert not any(call.args[0] == "Page.captureScreenshot" for call in calls)
 
     def test_snapshot(self, client: TestClient) -> None:
         # ``include_selector_map`` defaults to ``False`` route-side so MCP

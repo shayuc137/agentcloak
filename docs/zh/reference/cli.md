@@ -739,3 +739,5 @@ cloak cdp endpoint                 # jshookmcp / 其他 CDP 工具用的裸 ws:/
 ## 恢复与证据
 
 [有界队列、强制关闭、截图身份、URL 断言与页面 CDP 地址](../guides/recovery.md)。`session list --all` 展示标签、工作空间路径、进行中动作与排队数；`tab close --others` 只影响当前会话。
+
+`tab close --others` 的 `closed` 为实际关闭的 ID 列表；文本输出显示数量与 ID，没有其他标签页时显示 `closed 0 tabs`。

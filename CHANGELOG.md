@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Correct multi-tab close results across CLI/API/MCP and document shared connection-pool limits, with dual-backend streaming recovery coverage.
+
 - Add workspace-aware sessions with shared login by default and configurable isolated, persistent workspace storage.
 - Expand browser controls with live viewport changes, drag, keyboard aliases, request hold/release, and bounded raw CDP calls.
 - Add bounded session queues, client-disconnect cancellation, force recovery, readable session diagnostics, popup feedback and source build identification.

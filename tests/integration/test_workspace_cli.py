@@ -66,13 +66,13 @@ async def test_cli_namespaces_recovery_and_read_only_discovery(
     first.mkdir()
     second.mkdir()
 
-    async def cli(cwd, *args, success=True):
+    async def cli(cwd, *args, success=True, text=False):
         proc = await asyncio.create_subprocess_exec(
             sys.executable,
             str(runner),
             str(root),
             *args,
-            "--json",
+            *([] if text else ["--json"]),
             "--session=same",
             cwd=cwd,
             env=env,
@@ -91,7 +91,7 @@ async def test_cli_namespaces_recovery_and_read_only_discovery(
                 stderr.decode(),
                 log_path.read_text(),
             )
-        return json.loads(stdout)
+        return stdout.decode().strip() if text else json.loads(stdout)
 
     try:
         async with httpx.AsyncClient(base_url=base, timeout=1) as client:
@@ -147,6 +147,14 @@ async def test_cli_namespaces_recovery_and_read_only_discovery(
             str(first),
             str(second),
         }
+        popup = await cli(first, "js", "evaluate", "window.open('/form.html'); true")
+        popup_id = popup["data"]["new_tab"]["tab_id"]
+        closed = await cli(first, "tab", "close", "--others", text=True)
+        assert closed == f"closed 1 tab | ids: {popup_id}"
+        assert (await cli(first, "tab", "list"))["data"]["count"] == 1
+        assert (
+            await cli(first, "tab", "close", "--others", text=True) == "closed 0 tabs"
+        )
         shot = await cli(
             first,
             "screenshot",

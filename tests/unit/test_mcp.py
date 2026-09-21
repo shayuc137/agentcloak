@@ -314,6 +314,29 @@ class TestMCPServerCreation:
         )
         client.health.assert_not_awaited()
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("closed", [[2, 4], []])
+    async def test_close_others_reports_closed_ids(self, closed: list[int]) -> None:
+        from unittest.mock import AsyncMock
+
+        from mcp.server.fastmcp import FastMCP
+
+        from agentcloak.mcp.tools.management import register
+
+        client = AsyncMock()
+        client.tab_close.return_value = {
+            "ok": True,
+            "seq": 1,
+            "data": {"closed": closed},
+        }
+        mcp = FastMCP("test")
+        register(mcp, client)
+        result = await mcp._tool_manager._tools["agentcloak_tab"].fn(
+            action="close", others=True
+        )
+        assert result == ("closed 2 tabs | ids: 2, 4" if closed else "closed 0 tabs")
+        client.tab_close.assert_awaited_once_with(-1, others=True)
+
     def test_tool_count_is_41(self) -> None:
         try:
             from agentcloak.mcp.server import create_server

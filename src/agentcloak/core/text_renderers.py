@@ -536,6 +536,15 @@ def render_tab_list_text(data: dict[str, Any]) -> str:
 
 def render_tab_op_text(verb: str, data: dict[str, Any]) -> str:
     """Render a tab new/close/switch response with the relevant identifier."""
+    closed = data.get("closed")
+    if verb == "closed" and isinstance(closed, list):
+        closed_ids = cast("list[int]", closed)
+        if not closed_ids:
+            return "closed 0 tabs"
+        noun = "tab" if len(closed_ids) == 1 else "tabs"
+        return (
+            f"closed {len(closed_ids)} {noun} | ids: {', '.join(map(str, closed_ids))}"
+        )
     tab_id = data.get("tab_id", "?")
     url = str(data.get("url", "") or "")
     title = _clip_title(str(data.get("title", "") or ""))

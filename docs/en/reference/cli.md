@@ -759,3 +759,5 @@ cloak cdp endpoint                 # raw ws:// URL for jshookmcp / other CDP too
 ## Recovery and evidence
 
 [Bounded queues, force close, capture identity, URL assertions and page CDP endpoints](../guides/recovery.md). `session list --all` includes labels, workspace paths, active actions and queue counts. `tab close --others` affects only the current session.
+
+`tab close --others` returns `closed` as the list of closed IDs; text output shows the count and IDs, or `closed 0 tabs` when no sibling tabs remain.

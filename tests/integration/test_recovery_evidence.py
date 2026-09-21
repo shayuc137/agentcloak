@@ -258,13 +258,18 @@ async def test_popup_feedback_and_recreated_page(
     client, config = private_api
     config.browser.action_timeout = 3000
     await navigate(client, local_server)
+    opened = []
     for _ in range(8):
         result = await evaluate(client, "window.open('/form.html'); true")
-        assert result["new_tab"]["tab_id"] > 0
+        opened.append(result["new_tab"]["tab_id"])
+        assert opened[-1] > 0
         await navigate(client, local_server)
     assert result["warning"]
     close = await client.post("/tab/close", json={"others": True})
     assert close.is_success, close.text
+    assert close.json()["data"] == {"closed": opened}
+    again = await client.post("/tab/close", json={"others": True})
+    assert again.json()["data"] == {"closed": []}
     tabs = (await client.get("/tabs")).json()["data"]["tabs"]
     assert len(tabs) == 1
     endpoint = (await client.get("/cdp/endpoint", params={"page": True})).json()["data"]
@@ -289,3 +294,73 @@ async def test_popup_feedback_and_recreated_page(
     assert (await evaluate(client, "location.pathname"))[
         "result"
     ] == "/input-actions.html"
+
+
+async def test_force_close_releases_shared_origin_stream_connections(private_api):
+    from starlette.applications import Starlette
+    from starlette.responses import HTMLResponse, StreamingResponse
+    from starlette.routing import Route
+
+    client, config = private_api
+    config.browser.action_timeout = 1000
+    config.browser.navigation_timeout = 1
+    active_streams = 0
+    pool_full = asyncio.Event()
+
+    async def page(request):
+        return HTMLResponse("<title>Stream test</title><button>Ready</button>")
+
+    async def events(request):
+        async def chunks():
+            nonlocal active_streams
+            active_streams += 1
+            if active_streams == 6:
+                pool_full.set()
+            try:
+                while True:
+                    yield b": heartbeat\n\n"
+                    await asyncio.sleep(0.1)
+            finally:
+                active_streams -= 1
+
+        return StreamingResponse(chunks(), media_type="text/event-stream")
+
+    app = Starlette(routes=[Route("/", page), Route("/events", events)])
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    server = uvicorn.Server(
+        uvicorn.Config(app, host="127.0.0.1", port=port, http="h11", log_level="error")
+    )
+    task = asyncio.create_task(server.serve())
+    url = f"http://127.0.0.1:{port}/"
+    sibling = {"X-Agentcloak-Session": "stream-sibling"}
+    try:
+        while not server.started:
+            await asyncio.sleep(0.01)
+        assert (await client.post("/navigate", json={"url": url})).is_success
+        await evaluate(
+            client,
+            "window.streams = Array.from({length: 6}, "
+            "() => new EventSource('/events'));"
+            " true",
+        )
+        await asyncio.wait_for(pool_full.wait(), 5)
+        response = await client.post("/navigate", json={"url": url}, headers=sibling)
+        assert response.json()["error"] == "action_timeout", response.text
+        assert (await client.get("/health", timeout=0.5)).is_success
+        start = time.monotonic()
+        closed = await client.post("/session/close", json={"force": True})
+        assert closed.is_success, closed.text
+        assert time.monotonic() - start < 1
+        async with asyncio.timeout(3):
+            while active_streams:
+                await asyncio.sleep(0.01)
+        restored = await client.post("/navigate", json={"url": url}, headers=sibling)
+        assert restored.is_success, restored.text
+        assert restored.json()["data"]["title"] == "Stream test"
+    finally:
+        await client.post("/session/close", json={"force": True})
+        await client.post("/session/close", json={"force": True}, headers=sibling)
+        server.should_exit = True
+        await task

@@ -72,11 +72,18 @@ async def handle_tab_close(
     await _update_resume(
         resume_writer,
         ctx,
-        action_summary={"kind": "tab_close", "tab_id": body.tab_id},
+        action_summary={
+            "kind": "tab_close",
+            **(
+                {"closed": result.get("closed")}
+                if body.others
+                else {"tab_id": body.tab_id}
+            ),
+        },
     )
-    # Echo the closed id — backends don't always include it, but JSON
-    # consumers (and the CLI/MCP renderer) expect ``tab_id`` in the response.
-    result.setdefault("tab_id", body.tab_id)
+    # Single-tab consumers expect the requested id even if the backend omits it.
+    if not body.others:
+        result.setdefault("tab_id", body.tab_id)
     return _ok(result, seq=ctx.seq)
 
 

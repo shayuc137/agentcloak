@@ -347,13 +347,14 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         Actions:
           list   — show all open tabs with id, url, title, active status
           new    — create a new tab (optionally navigate to url)
-          close  — close tab by tab_id
+          close  — close tab by tab_id, or sibling tabs with others=True
           switch — switch active tab to tab_id
 
         Args:
             action: Tab action — list, new, close, or switch
             tab_id: Tab ID (required for close/switch, ignored for list)
             url: URL to navigate new tab to (only for 'new' action)
+            others: Close sibling tabs instead of tab_id (only for 'close')
 
         Returns:
             list: array of tabs.

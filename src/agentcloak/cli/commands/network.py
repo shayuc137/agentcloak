@@ -20,6 +20,10 @@ app = typer.Typer(invoke_without_command=True)
 @app.callback(invoke_without_command=True)
 def network_list(
     ctx: typer.Context,
+    pending: bool = typer.Option(
+        False, "--pending", help="Only in-flight requests, including streams."
+    ),
+    filter: str = typer.Option("", "--filter", help="URL glob filter."),
     since: str = typer.Option(
         "0",
         "--since",
@@ -47,6 +51,10 @@ def network_list(
         DaemonClient(),
         "GET",
         "/network",
-        params={"since": str(since)},
+        params={
+            "since": str(since),
+            **({"pending": "true"} if pending else {}),
+            **({"filter": filter} if filter else {}),
+        },
         renderer=render_network_text,
     )

@@ -281,6 +281,9 @@ def browser_snapshot(
         "-s",
         help="Scope the snapshot to a main-document CSS selector.",
     ),
+    find: str = typer.Option(
+        "", "--find", help="Find accessible names/text by case-insensitive substring."
+    ),
     diff: bool = typer.Option(
         False,
         "--diff",
@@ -319,6 +322,8 @@ def browser_snapshot(
         params["frames"] = "true"
     if selector:
         params["selector"] = selector
+    if find:
+        params["find"] = find
     if diff:
         params["diff"] = "true"
     if selector_map:

@@ -51,6 +51,7 @@ class SnapshotService:
         include_selector_map: bool = True,
         frames: bool = False,
         selector: str = "",
+        find: str = "",
         diff: bool = False,
         prev_cached_lines: list[tuple[int, str, int | None]] | None = None,
     ) -> tuple[dict[str, Any], list[tuple[int, str, int | None]] | None]:
@@ -67,6 +68,7 @@ class SnapshotService:
             offset=offset,
             frames=frames,
             selector=selector,
+            **({"find": find} if find else {}),
         )
 
         cur_cache = getattr(ctx, "_cached_lines", None)

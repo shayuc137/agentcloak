@@ -15,6 +15,7 @@ Intercepted methods:
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
@@ -122,6 +123,7 @@ class SecureBrowserContext:
         offset: int = 0,
         frames: bool = False,
         selector: str = "",
+        find: str = "",
     ) -> PageSnapshot:
         snap: PageSnapshot = await self._inner.snapshot(
             mode=mode,
@@ -131,6 +133,7 @@ class SecureBrowserContext:
             offset=offset,
             frames=frames,
             selector=selector,
+            **({"find": find} if find else {}),
         )
 
         warnings: list[dict[str, str | int]] = []
@@ -159,8 +162,11 @@ class SecureBrowserContext:
 
     async def action(self, kind: str, target: str, **kw: Any) -> dict[str, Any]:
         if self._content_scan and self._patterns:
-            snap: PageSnapshot = await self._inner.snapshot(mode="accessible")
-            self._check_action_target(snap, target)
+            if kw.get("selector"):
+                await self._scan_selector(str(kw["selector"]))
+            else:
+                snap: PageSnapshot = await self._inner.snapshot(mode="accessible")
+                self._check_action_target(snap, target)
         return await self._inner.action(kind, target, **kw)
 
     async def action_batch(
@@ -186,8 +192,11 @@ class SecureBrowserContext:
             target = str(index) if index is not None else act.get("target", "")
 
             try:
-                snap = await self._inner.snapshot(mode="accessible")
-                self._check_action_target(snap, target)
+                if act.get("selector"):
+                    await self._scan_selector(str(act["selector"]))
+                else:
+                    snap = await self._inner.snapshot(mode="accessible")
+                    self._check_action_target(snap, target)
             except SecurityError:
                 return {
                     "results": results,
@@ -278,6 +287,20 @@ class SecureBrowserContext:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    async def _scan_selector(self, selector: str) -> None:
+        text = await self._inner.evaluate(
+            "Array.from(document.querySelectorAll("
+            + json.dumps(selector)
+            + ")).map(e => [e.textContent, e.getAttribute('aria-label')]"
+            ".join(' ')).join(' ')"
+        )
+        if scan_content(str(text), self._patterns):
+            raise SecurityError(
+                error="content_scan_blocked",
+                hint="Selected element matched an injection pattern",
+                action="inspect the element manually or disable content_scan",
+            )
 
     def _check_action_target(self, snap: PageSnapshot, target: str) -> None:
         """Check the target element text for injection patterns."""

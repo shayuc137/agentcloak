@@ -197,7 +197,19 @@ class ActionRequest(BaseModel):
     destination: str | None = Field(None, description="Drag destination N or '[N]'.")
     from_point: str | None = Field(None, description="Drag source x,y coordinates.")
     to_point: str | None = Field(None, description="Drag destination x,y coordinates.")
+    selector: str | None = Field(
+        None, description="Unique CSS selector for click/fill/hover instead of a ref."
+    )
     steps: int = Field(20, ge=1, le=1000, description="Drag mouse movement steps.")
+    hold: int = Field(
+        0, ge=0, le=60000, description="Drag hold after pressing, milliseconds."
+    )
+    duration: int = Field(
+        0, ge=0, le=60000, description="Drag movement duration, milliseconds."
+    )
+    sample: str | None = Field(
+        None, description="JavaScript expression evaluated after each drag step."
+    )
     include_snapshot: bool = Field(
         False,
         description="Attach a snapshot after the action to see the result.",

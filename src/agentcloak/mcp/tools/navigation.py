@@ -75,6 +75,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         offset: int = 0,
         frames: bool = False,
         selector: str = "",
+        find: str = "",
         diff: bool = False,
         hide: str | None = None,
         keep_overlays: bool = False,
@@ -107,6 +108,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             frames: Include iframe content in the snapshot. When true, child
                 frame AX trees are merged under [frame "name"] context nodes.
                 Opt-in to avoid performance penalty on simple pages.
+            find: Substring search in accessible names, descriptions or values.
             selector: Scope to a main-document CSS selector such as `main`.
                 Cannot be combined with frames or DOM mode.
             diff: Compare with the previous snapshot and mark changes.
@@ -131,6 +133,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                 offset=offset,
                 frames=frames,
                 selector=selector,
+                find=find,
                 diff=diff,
                 # MCP omits selector_map by default to save tokens — agents
                 # work with [N] refs from the tree, not the raw map.
@@ -147,6 +150,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                 offset=offset,
                 frames=frames,
                 selector=selector,
+                find=find,
                 diff=diff,
                 include_selector_map=False,
             )

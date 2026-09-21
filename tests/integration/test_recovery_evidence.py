@@ -346,6 +346,22 @@ async def test_force_close_releases_shared_origin_stream_connections(private_api
             " true",
         )
         await asyncio.wait_for(pool_full.wait(), 5)
+        pending = await client.get(
+            "/network", params={"pending": True, "filter": "*/events"}
+        )
+        streams = pending.json()["data"]["requests"]
+        assert len(streams) == 6
+        assert all(
+            entry["pending"] and entry["resource_type"] == "eventsource"
+            for entry in streams
+        )
+        assert (
+            await client.get(
+                "/network",
+                params={"pending": True, "filter": "*/events"},
+                headers=sibling,
+            )
+        ).json()["data"]["count"] == 0
         response = await client.post("/navigate", json={"url": url}, headers=sibling)
         assert response.json()["error"] == "action_timeout", response.text
         assert (await client.get("/health", timeout=0.5)).is_success

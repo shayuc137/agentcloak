@@ -267,3 +267,7 @@ Read these when you need deeper guidance:
 | `references/commands-reference.md` | you need an exact daemon parameter / type — full route catalog with CLI / MCP bindings (auto-generated from the OpenAPI spec) |
 
 Double-click with `cloak click N --click-count 2`. `hide` only affects matching configured selectors; third-party CDP overlays need an explicit selector.
+
+Target known controls without a snapshot: `cloak click --selector '#save'`, `cloak fill --selector '#email' --text 'user@example.com'`, `cloak hover --selector '#menu'`. Selectors must match exactly one main-document element and cannot accompany refs or absolute coordinates. `cloak snapshot --find 'Save'` filters accessible names/text before pagination and returns usable refs.
+
+For measured gestures, use `cloak drag --from 20,180 --to 240,180 --hold 120 --duration 300 --steps 10 --sample 'window.measurement'`; samples report actual elapsed time and may extend the requested duration. `cloak network --pending --filter '*/api/*'` lists in-flight local requests, including long-lived SSE after response headers; it does not mean the page is stuck. RemoteBridge pending observation is unsupported.

@@ -206,3 +206,5 @@ CloakBrowser 会抑制实时 Runtime 日志。日志采集使用原生 CDP Conso
 CI 浏览器任务包含本地操作回归、工作空间持久化、CLI 恢复和真实扩展冒烟。扩展测试使用临时副本，只将自动发现端口收窄到独立测试 daemon；Chrome/CDP 未使用 mock，也不使用现有用户 profile。
 
 本地 Playwright 与 CloakBrowser 支持强制会话恢复和准确的页面 CDP 地址，见[恢复与证据](recovery.md)。弹窗循环回归覆盖合成同源页面，不等于已经确定所有特定应用渲染冻结的根因。
+
+CSS 定位、snapshot find 和定时拖动复用共享交互/快照路径，两个本地后端有真实浏览器回归；Bridge 完整输入对齐仍未验证。在途请求观测目前仅支持本地后端，RemoteBridge 明确拒绝。

@@ -25,6 +25,7 @@ import contextlib
 import json
 import re
 import socket
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 from urllib.parse import unquote, urlparse
@@ -156,6 +157,7 @@ class PlaywrightContext(BrowserContextBase):
         self._browser_context = browser_context
         self._proxy_url = proxy_url
         self._pending_captures: set[asyncio.Task[None]] = set()
+        self._pending_requests: dict[Any, dict[str, Any]] = {}
         self._cdp_port: int | None = cdp_port
         # Playwright Dialog object retained so dialog_handle can accept/dismiss.
         self._dialog_object: Any = None
@@ -304,6 +306,7 @@ class PlaywrightContext(BrowserContextBase):
         target.on("request", self._on_request_start)
         target.on("requestfinished", self._on_request_end)
         target.on("requestfailed", self._on_request_end)
+        target.on("close", lambda: self._clear_page_requests(target))
         target.on("dialog", self._on_dialog)
         target.on("framenavigated", self._on_frame_navigated)
         target.on("download", self._on_download)
@@ -318,12 +321,38 @@ class PlaywrightContext(BrowserContextBase):
 
         target.on("pageerror", _page_error)
 
-    def _on_request_start(self, _request: Any) -> None:
-        self._pending_request_count += 1
+    def _on_request_start(self, request: Any) -> None:
+        self._pending_requests[request] = {
+            "seq": self._seq_counter.value,
+            "method": request.method,
+            "url": request.url,
+            "resource_type": request.resource_type,
+            "started": time.monotonic(),
+            "status": None,
+        }
+        self._pending_request_count = len(self._pending_requests)
 
-    def _on_request_end(self, _request: Any) -> None:
-        if self._pending_request_count > 0:
-            self._pending_request_count -= 1
+    def _on_request_end(self, request: Any) -> None:
+        self._pending_requests.pop(request, None)
+        self._pending_request_count = len(self._pending_requests)
+
+    def _clear_page_requests(self, page: Any) -> None:
+        for request in list(self._pending_requests):
+            with contextlib.suppress(Exception):
+                if request.frame.page == page:
+                    self._pending_requests.pop(request, None)
+        self._pending_request_count = len(self._pending_requests)
+
+    async def _pending_network_entries(self, *, since_seq: int) -> list[dict[str, Any]]:
+        return [
+            {
+                **{k: v for k, v in entry.items() if k != "started"},
+                "pending": True,
+                "elapsed_ms": round((time.monotonic() - entry["started"]) * 1000, 2),
+            }
+            for entry in self._pending_requests.values()
+            if entry["seq"] > since_seq
+        ]
 
     def _on_dialog(self, dialog: Any) -> None:
         # Stash the Playwright Dialog object up front so both auto-accept
@@ -433,6 +462,8 @@ class PlaywrightContext(BrowserContextBase):
     def _on_response(self, response: Any) -> None:
         try:
             request = response.request
+            if request in self._pending_requests:
+                self._pending_requests[request]["status"] = response.status
             self._ring_buffer.append(
                 SeqEvent(
                     seq=self._seq_counter.value,
@@ -679,6 +710,8 @@ class PlaywrightContext(BrowserContextBase):
 
         backend_node_id = self._backend_node_map.get(index)
         if backend_node_id is not None:
+            if index == self._direct_selector_index:
+                return await self._resolve_by_backend_node(backend_node_id, index)
             try:
                 return await self._resolve_by_backend_node(backend_node_id, index)
             except Exception as exc:

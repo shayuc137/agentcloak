@@ -1250,6 +1250,7 @@ class DaemonClient:
         offset: int = 0,
         frames: bool = False,
         selector: str = "",
+        find: str = "",
         diff: bool = False,
         include_selector_map: bool = False,
         hide: str | None = None,
@@ -1266,6 +1267,7 @@ class DaemonClient:
                 offset=offset,
                 frames=frames,
                 selector=selector,
+                find=find,
                 diff=diff,
                 include_selector_map=include_selector_map,
                 hide=hide,
@@ -1294,8 +1296,18 @@ class DaemonClient:
             },
         )
 
-    async def network(self, *, since: str | int = 0) -> dict[str, Any]:
-        return await self._send_async("GET", "/network", params={"since": str(since)})
+    async def network(
+        self, *, since: str | int = 0, pending: bool = False, filter: str = ""
+    ) -> dict[str, Any]:
+        return await self._send_async(
+            "GET",
+            "/network",
+            params={
+                "since": str(since),
+                **({"pending": "true"} if pending else {}),
+                **({"filter": filter} if filter else {}),
+            },
+        )
 
     async def action(
         self,
@@ -2114,6 +2126,7 @@ def _build_snapshot_params(
     frames: bool,
     selector: str,
     diff: bool,
+    find: str = "",
     include_selector_map: bool,
     hide: str | None = None,
     keep_overlays: bool = False,
@@ -2138,6 +2151,8 @@ def _build_snapshot_params(
         params["frames"] = "true"
     if selector:
         params["selector"] = selector
+    if find:
+        params["find"] = find
     if diff:
         params["diff"] = "true"
     if hide:

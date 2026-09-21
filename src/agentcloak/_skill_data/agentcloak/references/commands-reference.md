@@ -50,6 +50,7 @@ Read this file when you need full parameter detail. For the common path, the qui
   - `include_selector_map` (boolean, default: false) — Include the [N] → element selector map in the response.
   - `frames` (boolean, default: false) — Merge child iframe accessibility trees into the snapshot.
   - `selector` (string, default: "") — Scope the AX snapshot to a main-document CSS selector.
+  - `find` (string, default: "") — Substring search in accessible names, descriptions or values.
   - `diff` (boolean, default: false) — Mark [+] added / [~] changed nodes versus the previous snapshot.
   - `hide` (string | null, default: —) — Comma-separated CSS selectors to hide for this snapshot.
   - `keep_overlays` (boolean, default: false) — Disable all persistent and builtin hiding for this snapshot.
@@ -76,6 +77,8 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak network`
 - MCP: `agentcloak_network`
 - Query:
+  - `pending` (boolean, default: false) — Only requests still in flight, including long-lived streams.
+  - `filter` (string, default: "") — Case-sensitive URL glob; * spans slashes.
   - `since` (string, default: "0") — Requests after this seq, or 'last_action' for the last action.
 
 ## Interaction
@@ -93,7 +96,11 @@ Read this file when you need full parameter detail. For the common path, the qui
   - `destination` (string | null, default: —) — Drag destination N or '[N]'.
   - `from_point` (string | null, default: —) — Drag source x,y coordinates.
   - `to_point` (string | null, default: —) — Drag destination x,y coordinates.
+  - `selector` (string | null, default: —) — Unique CSS selector for click/fill/hover instead of a ref.
   - `steps` (integer, default: 20) — Drag mouse movement steps.
+  - `hold` (integer, default: 0) — Drag hold after pressing, milliseconds.
+  - `duration` (integer, default: 0) — Drag movement duration, milliseconds.
+  - `sample` (string | null, default: —) — JavaScript expression evaluated after each drag step.
   - `include_snapshot` (boolean, default: false) — Attach a snapshot after the action to see the result.
   - `snapshot_mode` (enum("compact" | "accessible"), default: "compact") — Snapshot density: compact (token-lean) or accessible (full ARIA).
 

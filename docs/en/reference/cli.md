@@ -93,7 +93,7 @@ A simple `#fragment` waits up to 3 seconds for an element with that id and scrol
 Get the page as an accessibility tree with `[N]` element references. Both `compact` and `accessible` include exposed `button`/`menuitem` roles and focusable custom elements, including `tabindex="0"` and `tabindex="-1"`. Ignored AX nodes remain excluded; open a collapsed menu before taking a new snapshot.
 
 ```bash
-cloak snapshot [--mode MODE] [--selector CSS] [--limit N] [--focus N] [--offset N] [--frames] [--diff] [--hide CSS] [--keep-overlays]
+cloak snapshot [--mode MODE] [--selector CSS] [--find TEXT] [--limit N] [--focus N] [--offset N] [--frames] [--diff] [--hide CSS] [--keep-overlays]
 ```
 
 | Flag | Default | Description |
@@ -291,6 +291,10 @@ cloak hover '[12]' --offset 10,-5
 
 `--offset` is relative to the element center; `--at` is an absolute viewport coordinate.
 
+`--find TEXT` matches accessible names, descriptions or values by case-insensitive substring before pagination. Matching nodes keep their ancestry and descendants, and returned `[N]` refs remain actionable. It supports compact/accessible/content modes and CSS scoping; combining it with `--frames` or DOM mode is rejected.
+
+`click`, `fill` and `hover` accept `--selector CSS` instead of a ref, with exactly one main-document match required. Existing refs remain usable. For example: `cloak fill --selector '#email' --text 'user@example.com'`. Do not combine selectors with refs or absolute coordinates; hover offsets are supported.
+
 ### drag
 
 ```bash
@@ -299,6 +303,8 @@ cloak drag --from 100,200 --to 300,400 --steps 12
 ```
 
 Drag uses browser pointer input, including the press, intermediate moves, and release. Supply either two references or both coordinate endpoints.
+
+`--hold MS` pauses after pressing; `--duration MS` schedules the movement steps. Both default to zero and accept 0–60000 ms, subject to the action timeout. `--sample JS` evaluates an expression after each step and returns step number, elapsed milliseconds and value. `--steps` (1–1000) bounds the sample count; sampling overhead can extend the requested duration. Errors and cancellation release the mouse.
 
 ### select
 
@@ -345,22 +351,24 @@ HTTP request using the browser's cookies and user agent. The response body goes 
 cloak fetch URL [--method METHOD] [--body BODY] [--headers-json JSON]
 ```
 
-### network requests
+### network
 
 List recent network requests.
 
 ```bash
-cloak network requests [--since SEQ]
+cloak network [--since SEQ] [--pending] [--filter GLOB]
 ```
 
 Use `--since last_action` to see requests triggered by the most recent action.
 
-### network console
+`--pending` lists requests still in flight across this session's owned tabs, with URL, method, resource type, response status when available and elapsed milliseconds. Receiving response headers does not end a request: SSE streams stay pending until closed. `--filter GLOB` filters URLs (`*` spans slashes), and combines with `--since`. Pending observation requires a local backend; RemoteBridge returns `unsupported_operation`.
+
+### console show
 
 List console messages.
 
 ```bash
-cloak network console [--since SEQ]
+cloak console show [--since SEQ]
 ```
 
 ## Dialog handling

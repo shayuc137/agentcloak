@@ -227,6 +227,7 @@ class BrowserContextBase(ABC):
 
         # Element + snapshot caches populated by snapshot()
         self._selector_map: dict[int, ElementRef] = {}
+        self._direct_selector_index: int | None = None
         self._backend_node_map: dict[int, int] = {}
         self._cached_lines: list[tuple[int, str, int | None]] = []
         self._cached_mode: str = ""
@@ -1006,6 +1007,7 @@ class BrowserContextBase(ABC):
         offset: int = 0,
         frames: bool = False,
         selector: str = "",
+        find: str = "",
     ) -> PageSnapshot:
         self._check_debugger_paused()
         self._check_browser_alive()
@@ -1033,9 +1035,10 @@ class BrowserContextBase(ABC):
                 offset=offset,
                 frames=frames,
                 selector=selector,
+                find=find,
             )
         if mode == "dom":
-            if selector:
+            if selector or find:
                 raise BackendError(
                     error="snapshot_selector_unsupported",
                     hint="Selector scope is not supported for DOM snapshots",
@@ -1066,10 +1069,12 @@ class BrowserContextBase(ABC):
         offset: int,
         frames: bool,
         selector: str,
+        find: str = "",
     ) -> PageSnapshot:
         from agentcloak.browser._snapshot_builder import (
             FrameData,
             build_snapshot,
+            find_ax_nodes,
             scope_ax_tree,
         )
 
@@ -1085,6 +1090,14 @@ class BrowserContextBase(ABC):
                         "select an accessible ancestor such as main, form, or section"
                     ),
                 )
+        if find:
+            if frames:
+                from agentcloak.core.input import invalid_input
+
+                raise invalid_input(
+                    "find cannot be combined with frames; focus a frame first"
+                )
+            raw_nodes = find_ax_nodes(raw_nodes, find)
         frame_trees: list[FrameData] | None = None
         if frames:
             collected = await self._get_child_frame_trees()
@@ -1110,7 +1123,9 @@ class BrowserContextBase(ABC):
         self._cached_mode = mode
         return result.snapshot
 
-    async def _resolve_snapshot_selector(self, selector: str) -> int:
+    async def _resolve_snapshot_selector(
+        self, selector: str, *, unique: bool = False
+    ) -> int:
         """Resolve a main-document CSS selector to its backend DOM node id."""
         try:
             document = await self._cdp_send(
@@ -1129,9 +1144,20 @@ class BrowserContextBase(ABC):
                     action="retry after the page finishes loading",
                 )
             match = await self._cdp_send(
-                "DOM.querySelector", {"nodeId": root_id, "selector": selector}
+                "DOM.querySelectorAll" if unique else "DOM.querySelector",
+                {"nodeId": root_id, "selector": selector},
             )
-            node_id = match.get("nodeId")
+            if unique:
+                ids = match.get("nodeIds", [])
+                if len(ids) > 1:
+                    raise BackendError(
+                        error="selector_ambiguous",
+                        hint=f"Selector matches {len(ids)} elements",
+                        action="use a selector matching exactly one element",
+                    )
+                node_id = ids[0] if ids else None
+            else:
+                node_id = match.get("nodeId")
             if not isinstance(node_id, int) or node_id <= 0:
                 raise BackendError(
                     error="snapshot_selector_not_found",
@@ -1153,7 +1179,10 @@ class BrowserContextBase(ABC):
                 )
             return backend_id
         except BackendError as exc:
-            if exc.error.startswith("snapshot_selector_"):
+            if (
+                exc.error.startswith("snapshot_selector_")
+                or exc.error == "selector_ambiguous"
+            ):
                 raise
             raise self._snapshot_selector_query_error(selector, exc) from exc
         except Exception as exc:
@@ -1211,12 +1240,34 @@ class BrowserContextBase(ABC):
         return await self._get_page_info()
 
     async def network(
-        self, *, since: int | str = "last_action"
+        self,
+        *,
+        since: int | str = "last_action",
+        pending: bool = False,
+        filter: str = "",
     ) -> list[dict[str, Any]]:
         if since == "last_action":
             since_seq = self._seq_counter.last_action_seq - 1
         else:
             since_seq = int(since)
+        if pending:
+            entries = await self._pending_network_entries(since_seq=since_seq)
+        else:
+            entries = await self._completed_network_entries(since_seq)
+        if filter:
+            from fnmatch import fnmatchcase
+
+            entries = [e for e in entries if fnmatchcase(str(e.get("url", "")), filter)]
+        return entries
+
+    async def _pending_network_entries(self, *, since_seq: int) -> list[dict[str, Any]]:
+        raise BackendError(
+            error="unsupported_operation",
+            hint="Pending requests require a local browser backend",
+            action="use Playwright or CloakBrowser",
+        )
+
+    async def _completed_network_entries(self, since_seq: int) -> list[dict[str, Any]]:
         # Some adapters (Playwright) collect from the ring buffer; remote bridge
         # may have its own queue. Default implementation walks the ring buffer.
         events = self._ring_buffer.since(since_seq)
@@ -1933,6 +1984,16 @@ class BrowserContextBase(ABC):
         destination = kw.get("destination")
         source_point, destination_point = kw.get("from_point"), kw.get("to_point")
         steps = kw.get("steps", 20)
+        hold, duration = kw.get("hold", 0), kw.get("duration", 0)
+        sample = kw.get("sample")
+        for name, value in (("hold", hold), ("duration", duration)):
+            if not isinstance(value, int) or not 0 <= value <= 60000:
+                raise invalid_input(
+                    f"Drag {name} must be integer milliseconds between 0 and 60000"
+                )
+        if sample is not None and (not isinstance(sample, str) or not sample.strip()):
+            raise invalid_input("Drag sample must be a nonempty JavaScript expression")
+        samples: list[dict[str, Any]] = []
         if not isinstance(steps, int) or not 1 <= steps <= 1000:
             raise invalid_input("Drag steps must be an integer between 1 and 1000")
         if (
@@ -1958,19 +2019,22 @@ class BrowserContextBase(ABC):
             "Input.dispatchMouseEvent",
             {"type": "mouseMoved", "x": start[0], "y": start[1]},
         )
-        await self._cdp_send(
-            "Input.dispatchMouseEvent",
-            {
-                "type": "mousePressed",
-                "x": start[0],
-                "y": start[1],
-                "button": "left",
-                "buttons": 1,
-                "clickCount": 1,
-            },
-        )
         x, y = start
+        started = time.monotonic()
         try:
+            await self._cdp_send(
+                "Input.dispatchMouseEvent",
+                {
+                    "type": "mousePressed",
+                    "x": start[0],
+                    "y": start[1],
+                    "button": "left",
+                    "buttons": 1,
+                    "clickCount": 1,
+                },
+            )
+            if hold:
+                await asyncio.sleep(hold / 1000)
             if end is None:
                 # Start the gesture before resolving a target that can scroll the page.
                 width, _ = await self._get_viewport_impl()
@@ -1987,7 +2051,16 @@ class BrowserContextBase(ABC):
                 )
                 end = await self._element_center_impl(parse_ref(str(destination)))
             move_start = (x, y)
+            move_started = time.monotonic()
             for step in range(1, steps + 1):
+                await asyncio.sleep(
+                    max(
+                        0,
+                        move_started
+                        + duration / 1000 * step / steps
+                        - time.monotonic(),
+                    )
+                )
                 x = move_start[0] + (end[0] - move_start[0]) * step / steps
                 y = move_start[1] + (end[1] - move_start[1]) * step / steps
                 await self._cdp_send(
@@ -2000,6 +2073,15 @@ class BrowserContextBase(ABC):
                         "buttons": 1,
                     },
                 )
+                if sample is not None:
+                    value = await self._evaluate_impl(sample, world="main")
+                    samples.append(
+                        {
+                            "step": step,
+                            "elapsed_ms": round((time.monotonic() - started) * 1000, 2),
+                            "value": value,
+                        }
+                    )
         finally:
             await self._cdp_send(
                 "Input.dispatchMouseEvent",
@@ -2012,7 +2094,15 @@ class BrowserContextBase(ABC):
                     "clickCount": 1,
                 },
             )
-        return {"dragged": True, "from": list(start), "to": list(end), "steps": steps}
+        return {
+            "dragged": True,
+            "from": list(start),
+            "to": list(end),
+            "steps": steps,
+            "hold": hold,
+            "duration": duration,
+            **({"samples": samples} if sample is not None else {}),
+        }
 
     # ------------------------------------------------------------------
     # Capture (network traffic recording)
@@ -2386,7 +2476,7 @@ class BrowserContextBase(ABC):
         self._last_download_event = None
 
         try:
-            result = await self._run_action(kind, target, **kw)
+            result = await self._run_targeted_action(kind, target, **kw)
         except Exception as exc:
             self._translate_browser_closed(exc)
             raise
@@ -2424,6 +2514,44 @@ class BrowserContextBase(ABC):
 
         self._collect_feedback(result)
         return result
+
+    async def _run_targeted_action(
+        self, kind: str, target: str, **kw: Any
+    ) -> dict[str, Any]:
+        from agentcloak.core.input import invalid_input
+
+        selector = kw.pop("selector", None)
+        if selector is None:
+            return await self._run_action(kind, target, **kw)
+        if not isinstance(selector, str) or not selector.strip():
+            raise invalid_input("selector must be nonempty CSS")
+        if (
+            kind not in ("click", "fill", "hover")
+            or target
+            or any(kw.get(k) is not None for k in ("x", "y", "at"))
+        ):
+            raise invalid_input(
+                "selector requires click/fill/hover "
+                "without refs or absolute coordinates"
+            )
+        backend_id = await self._resolve_snapshot_selector(selector, unique=True)
+        index = max(self._selector_map, default=0) + 1
+        self._selector_map[index] = ElementRef(
+            index=index, tag="", role="generic", text=""
+        )
+        self._backend_node_map[index] = backend_id
+        self._direct_selector_index = index
+        try:
+            result = await self._run_action(kind, str(index), **kw)
+            result.pop("index", None)
+            result.pop("element", None)
+            result["selector"] = selector
+            return result
+        finally:
+            self._selector_map.pop(index, None)
+            self._backend_node_map.pop(index, None)
+            self._direct_selector_index = None
+            await self._post_action_cleanup()
 
     async def _run_action(self, kind: str, target: str, **kw: Any) -> dict[str, Any]:
         from agentcloak.core.input import (

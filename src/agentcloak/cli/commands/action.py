@@ -89,6 +89,9 @@ def do_click(
         None,
         help="Element index [N] from snapshot. Equivalent to --index.",
     ),
+    selector: str | None = typer.Option(
+        None, "--selector", help="Unique CSS selector instead of a snapshot ref."
+    ),
     index: int | None = typer.Option(None, "--index", "-i", help="Element index [N]."),
     x: float | None = typer.Option(None, "--x", help="X coordinate (fallback)."),
     y: float | None = typer.Option(None, "--y", help="Y coordinate (fallback)."),
@@ -112,6 +115,7 @@ def do_click(
     )
     body = _build_action_body(
         "click",
+        selector=selector,
         index=resolved,
         snap=snap,
         button=button,
@@ -133,6 +137,9 @@ def do_click(
 def do_fill(
     target: str | None = typer.Argument(None, help="Element index [N]."),
     text_pos: str | None = typer.Argument(None, help="Text to fill."),
+    selector: str | None = typer.Option(
+        None, "--selector", help="Unique CSS selector instead of a snapshot ref."
+    ),
     index: int | None = typer.Option(None, "--index", "-i", help="Element index [N]."),
     text: str | None = typer.Option(None, "--text", "-t", help="Text to fill."),
     snap: bool = typer.Option(
@@ -148,13 +155,15 @@ def do_fill(
         if index is not None
         else (parse_ref(target) if target is not None else None)
     )
-    if resolved is None:
+    if resolved is None and selector is None:
         error("missing element index", "pass it as the first positional or --index N")
     if text is None:
         text = text_pos
     if text is None:
         error("missing text to fill", "pass it as the second positional or --text")
-    body = _build_action_body("fill", index=resolved, snap=snap, text=text)
+    body = _build_action_body(
+        "fill", index=resolved, snap=snap, text=text, selector=selector
+    )
     dispatch_text_or_json(
         DaemonClient(),
         "POST",
@@ -236,6 +245,9 @@ def do_scroll(
 @app.command("hover")
 def do_hover(
     target: str | None = typer.Argument(None, help="Element index [N]."),
+    selector: str | None = typer.Option(
+        None, "--selector", help="Unique CSS selector instead of a snapshot ref."
+    ),
     index: int | None = typer.Option(None, "--index", "-i", help="Element index [N]."),
     x: float | None = typer.Option(None, "--x", help="X coordinate (fallback)."),
     y: float | None = typer.Option(None, "--y", help="Y coordinate (fallback)."),
@@ -261,7 +273,14 @@ def do_hover(
     if offset is not None:
         parse_point(offset)
     body = _build_action_body(
-        "hover", index=resolved, snap=snap, x=x, y=y, at=at, offset=offset
+        "hover",
+        index=resolved,
+        snap=snap,
+        x=x,
+        y=y,
+        at=at,
+        offset=offset,
+        selector=selector,
     )
     dispatch_text_or_json(
         DaemonClient(),
@@ -464,6 +483,15 @@ def do_drag(
     ),
     from_point: str | None = typer.Option(None, "--from", help="Source x,y."),
     to_point: str | None = typer.Option(None, "--to", help="Destination x,y."),
+    hold: int = typer.Option(
+        0, "--hold", min=0, max=60000, help="Hold after pressing, in ms."
+    ),
+    duration: int = typer.Option(
+        0, "--duration", min=0, max=60000, help="Movement duration in ms."
+    ),
+    sample: str | None = typer.Option(
+        None, "--sample", help="JS expression sampled after each movement step."
+    ),
     steps: int = typer.Option(20, "--steps", min=1, max=1000),
     snap: bool = typer.Option(False, "--snap", "--include-snapshot"),
 ) -> None:
@@ -479,6 +507,9 @@ def do_drag(
         from_point=from_point,
         to_point=to_point,
         steps=steps,
+        hold=hold,
+        duration=duration,
+        sample=sample,
         snap=snap,
     )
     dispatch_text_or_json(

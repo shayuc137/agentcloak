@@ -49,6 +49,10 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         from_point: str | None = None,
         to_point: str | None = None,
         steps: int = 20,
+        selector: str | None = None,
+        hold: int = 0,
+        duration: int = 0,
+        sample: str | None = None,
     ) -> str:
         """Interact with the page. Use [N] refs from agentcloak_snapshot as target.
 
@@ -89,6 +93,10 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             destination: Drag destination N or '[N]', paired with target
             from_point: Drag source x,y, without target/destination refs
             to_point: Drag destination x,y, paired with from_point
+            selector: Unique CSS selector for click/fill/hover without a ref.
+            hold: Drag hold milliseconds after pressing.
+            duration: Drag movement milliseconds.
+            sample: JavaScript expression sampled after every drag movement.
             steps: Drag mouse movement steps, 1 to 1000
             include_snapshot: If true, attach a compact snapshot to the
                 action result. Saves a round-trip when you need to see
@@ -100,6 +108,8 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             tree_text, mode, total_nodes, and total_interactive.
         """
         extras: dict[str, Any] = {}
+        if selector is not None:
+            extras["selector"] = selector
         if kind == "hover":
             if at is not None:
                 extras["at"] = at
@@ -111,6 +121,9 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                 from_point=from_point,
                 to_point=to_point,
                 steps=steps,
+                hold=hold,
+                duration=duration,
+                **({"sample": sample} if sample is not None else {}),
             )
         if kind in ("fill", "type") and text:
             extras["text"] = text

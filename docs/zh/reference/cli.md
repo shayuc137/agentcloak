@@ -93,7 +93,7 @@ cloak navigate URL [--timeout SECONDS] [--snap] [--snapshot-mode MODE]
 获取带有 `[N]` 元素引用的无障碍树。`compact` 和 `accessible` 都包含无障碍树暴露的 `button`/`menuitem` 及可聚焦自定义元素，包括 `tabindex="0"` 和 `tabindex="-1"`。被 AX 忽略的节点仍不显示；菜单展开后重新 snapshot，才能获取菜单项引用。
 
 ```bash
-cloak snapshot [--mode MODE] [--selector CSS] [--limit N] [--focus N] [--offset N] [--frames] [--diff] [--hide CSS] [--keep-overlays]
+cloak snapshot [--mode MODE] [--selector CSS] [--find TEXT] [--limit N] [--focus N] [--offset N] [--frames] [--diff] [--hide CSS] [--keep-overlays]
 ```
 
 | 参数 | 默认值 | 说明 |
@@ -286,6 +286,10 @@ cloak hover '[12]' --offset 10,-5
 
 `--offset` 相对元素中心偏移；`--at` 为视口绝对坐标。
 
+`--find TEXT` 在分页前按大小写不敏感的子串匹配可访问名称、描述或值，保留匹配节点的祖先与子树，返回的 `[N]` 可直接操作。支持 compact/accessible/content 和 CSS 范围；不支持与 `--frames` 或 DOM 模式组合。
+
+`click`、`fill`、`hover` 支持以 `--selector CSS` 替代引用，要求在主文档中唯一匹配，且不影响已有引用。例如 `cloak fill --selector '#email' --text 'user@example.com'`。不能与引用或绝对坐标组合；hover 仍支持相对偏移。
+
 ### drag
 
 ```bash
@@ -294,6 +298,8 @@ cloak drag --from 100,200 --to 300,400 --steps 12
 ```
 
 拖拽使用浏览器真实指针输入，包括按下、移动和松开。选择两个元素引用，或同时指定起终点坐标。
+
+`--hold MS` 在按下后停留，`--duration MS` 安排移动步骤的时间；默认均为零，范围 0–60000 ms，仍受动作超时限制。`--sample JS` 在每一步移动后求值，返回步骤号、经过毫秒数和值。`--steps`（1–1000）限定采样数；采样开销可能延长请求的持续时间。失败或取消均释放鼠标。
 
 ### select
 
@@ -339,22 +345,24 @@ scalar 结果（string/number/boolean）直接输出裸值。对象和数组打�
 cloak fetch URL [--method METHOD] [--body BODY] [--headers-json JSON]
 ```
 
-### network requests
+### network
 
 列出最近的网络请求。
 
 ```bash
-cloak network requests [--since SEQ]
+cloak network [--since SEQ] [--pending] [--filter GLOB]
 ```
 
 使用 `--since last_action` 查看最近一次操作触发的请求。
 
-### network console
+`--pending` 列出当前 session 所属标签页内仍在进行的请求，包含 URL、方法、资源类型、已收到的响应状态和经过毫秒数。收到响应头不代表结束：SSE 会持续 pending 到连接关闭。`--filter GLOB` 过滤 URL（`*` 跨越斜线），可与 `--since` 组合。pending 观测要求本地后端，RemoteBridge 明确返回 `unsupported_operation`。
+
+### console show
 
 列出控制台消息。
 
 ```bash
-cloak network console [--since SEQ]
+cloak console show [--since SEQ]
 ```
 
 ## 对话框处理

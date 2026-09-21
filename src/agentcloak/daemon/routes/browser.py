@@ -251,6 +251,10 @@ async def handle_snapshot(
     selector: str = Query(
         "", description="Scope the AX snapshot to a main-document CSS selector."
     ),
+    find: str = Query(
+        "",
+        description="Substring search in accessible names, descriptions or values.",
+    ),
     diff: bool = Query(
         False,
         description="Mark [+] added / [~] changed nodes versus the previous snapshot.",
@@ -273,7 +277,7 @@ async def handle_snapshot(
     else:
         effective_max_nodes = max_nodes
 
-    signature = (mode, selector.strip(), frames)
+    signature = (mode, selector.strip(), frames, find.casefold())
     prev_cached_lines = (
         snapshot_cache.prev_lines if snapshot_cache.signature == signature else None
     )
@@ -291,6 +295,7 @@ async def handle_snapshot(
             include_selector_map=include_selector_map,
             frames=frames,
             selector=selector,
+            find=find,
             diff=diff,
             prev_cached_lines=prev_cached_lines,
         )
@@ -359,13 +364,21 @@ async def handle_evaluate(
 @router.get("/network", response_model=OkEnvelope[NetworkResponse])
 async def handle_network(
     ctx: BrowserCtxDep,
+    pending: bool = Query(
+        False,
+        description="Only requests still in flight, including long-lived streams.",
+    ),
+    filter: str = Query("", description="Case-sensitive URL glob; * spans slashes."),
     since: str = Query(
         "0",
         description="Requests after this seq, or 'last_action' for the last action.",
     ),
 ) -> dict[str, Any]:
     since_value: int | str = int(since) if since.isdigit() else since
-    reqs = await ctx.network(since=since_value)
+    reqs = await ctx.network(
+        since=since_value,
+        **({"pending": pending, "filter": filter} if pending or filter else {}),
+    )
     data = {"requests": reqs, "count": len(reqs)}
     return _ok(data, seq=ctx.seq)
 

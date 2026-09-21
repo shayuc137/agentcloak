@@ -453,7 +453,12 @@ def render_network_text(data: dict[str, Any]) -> str:
         method = str(req.get("method", "") or "GET")
         url = str(req.get("url", "") or "")
         status = req.get("status")
-        if status is None:
+        if req.get("pending"):
+            lines.append(
+                f"{method:6s} {status or '---'} pending "
+                f"{req.get('elapsed_ms', 0)}ms {url}"
+            )
+        elif status is None:
             lines.append(f"{method:6s} ---  {url}")
         else:
             lines.append(f"{method:6s} {int(status):3d}  {url}")
@@ -485,6 +490,7 @@ def render_action_text(kind: str, target: str, data: dict[str, Any]) -> str:
         "keyup": "keyup",
     }
     verb = verb_table.get(kind, kind)
+    target = str(data.get("selector") or target)
     ref = f"[{target}]" if target and target.lstrip("-").isdigit() else target
     base = f"{verb} {ref}".rstrip()
     if kind == "fill" and "text" in data:
@@ -496,6 +502,8 @@ def render_action_text(kind: str, target: str, data: dict[str, Any]) -> str:
         key = str(data.get("key", "") or "")
         base = f"{verb} {key}".rstrip()
     result = _attach_feedback(base, data)
+    if data.get("samples") is not None:
+        result += "\n" + orjson.dumps({"samples": data["samples"]}).decode()
     raw_snap = data.get("snapshot")
     if isinstance(raw_snap, dict):
         block = _render_snapshot_block(_as_dict(raw_snap))

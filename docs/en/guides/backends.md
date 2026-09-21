@@ -207,3 +207,5 @@ Both local backends run one browser process. `browser.isolation` defaults to `sh
 The CI browser job runs the local control suites, workspace persistence and CLI recovery tests, plus a real extension smoke test. That test copies the extension and narrows only its discovery ports to a private daemon. It does not mock Chrome/CDP or use an existing user profile.
 
 Local Playwright and CloakBrowser backends support forced session recovery and exact page CDP endpoints; see [recovery and evidence](recovery.md). Popup-loop regression tests cover synthetic same-origin pages; this does not establish the cause of every application-specific renderer freeze.
+
+CSS targeting, snapshot find and timed drag use the shared action/snapshot paths; both local backends have real-browser coverage, while full Bridge input parity remains unverified. Pending-request observation is currently local-only and explicitly rejected by RemoteBridge.

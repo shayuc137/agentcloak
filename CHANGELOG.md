@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add unique CSS interaction targets, accessible snapshot text search, timed drag with per-step samples, and session-scoped pending network observations with URL glob filters across CLI, HTTP and MCP.
+
 - Preserve live localStorage values and deletions across navigation; import profile storage once at creation instead of replaying stale snapshots.
 
 - Add `--dpr` to viewport and screenshot controls, preserving the existing ratio on resize and restoring temporary dimensions and DPR after capture, failure or cancellation.

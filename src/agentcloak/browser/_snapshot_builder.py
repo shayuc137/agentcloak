@@ -109,6 +109,39 @@ class SnapshotResult:
     cached_lines: list[tuple[int, str, int | None]]
 
 
+def find_ax_nodes(raw_nodes: list[dict[str, Any]], text: str) -> list[dict[str, Any]]:
+    """Keep matching names/values with their ancestry and descendants."""
+    nodes = {str(n.get("nodeId", "")): n for n in raw_nodes}
+    parents: dict[str, str] = {}
+    for identifier, node in nodes.items():
+        for child in node.get("childIds", []):
+            parents[str(child)] = identifier
+    matches = {
+        identifier
+        for identifier, node in nodes.items()
+        if any(
+            text.casefold() in str(node.get(field, {}).get("value", "")).casefold()
+            for field in ("name", "value", "description")
+        )
+    }
+    included = set(matches)
+    pending = list(matches)
+    while pending:
+        node = nodes.get(pending.pop(), {})
+        for child in node.get("childIds", []):
+            child = str(child)
+            if child not in included:
+                included.add(child)
+                pending.append(child)
+    for identifier in matches:
+        seen: set[str] = set()
+        while identifier in parents and identifier not in seen:
+            seen.add(identifier)
+            identifier = parents[identifier]
+            included.add(identifier)
+    return [node for node in raw_nodes if str(node.get("nodeId", "")) in included]
+
+
 def scope_ax_tree(
     raw_nodes: list[dict[str, Any]], backend_node_id: int
 ) -> list[dict[str, Any]]:

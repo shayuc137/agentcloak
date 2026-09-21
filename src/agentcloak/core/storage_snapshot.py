@@ -30,7 +30,6 @@ if TYPE_CHECKING:
 
 __all__ = [
     "LOCALSTORAGE_DUMP_JS",
-    "build_localstorage_restore_js",
     "read_storage_snapshot",
     "resolve_storage_snapshot_path",
     "write_browser_state",
@@ -47,21 +46,6 @@ LOCALSTORAGE_DUMP_JS = (
     "d:Object.fromEntries(Object.keys(localStorage)"
     ".map(k=>[k,localStorage.getItem(k)]))})"
 )
-
-
-def build_localstorage_restore_js(entries: dict[str, str]) -> str:
-    """Build a self-contained JS snippet that writes ``entries`` into localStorage.
-
-    ``json.dumps`` produces a valid JS object literal (no injection risk from
-    the values) and the IIFE keeps our locals out of the page's global scope.
-    """
-    import json
-
-    return (
-        "(()=>{const d="
-        + json.dumps(entries)
-        + ";Object.keys(d).forEach(k=>localStorage.setItem(k,d[k]))})()"
-    )
 
 
 _SNAPSHOT_NAME = "localStorage-snapshot.json"

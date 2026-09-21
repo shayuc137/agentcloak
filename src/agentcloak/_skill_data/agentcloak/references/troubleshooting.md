@@ -185,3 +185,5 @@ Start with `cloak daemon start --log-level info` for request entered/acquired/st
 ### Pointer emulation rejected
 
 `unsupported_operation` from `emulate --pointer` means the backend cannot restore pointer state reliably. Use a local headed browser (`browser.headless=false`, with Xvfb on a server). Color scheme, reduced motion and DPR remain available in headless local browsers. RemoteBridge does not support session environment changes.
+
+Profile localStorage is native browser state: navigation does not replay JSON backups. `profile create --from-current` seeds a new native profile once. If a legacy profile contains only a localStorage snapshot, recreate it from a live authenticated session; do not overwrite current storage with an old backup.

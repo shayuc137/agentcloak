@@ -42,6 +42,8 @@ cloak profile launch example-account
 cloak navigate "https://example.com/dashboard"   # 已经登录
 ```
 
+profile 创建后以 Chromium 原生存储为准。`navigate` 不会重放 `localStorage-snapshot.json`，更新后的 token、偏好和删除操作都保留当前状态。`--from-current` 在新 profile 首次启动前将 cookies 和当前 origin 的 localStorage 写入原生存储，导入过程不访问原网站。旧 JSON 快照仅保留为备份，不再自动恢复；仅有快照数据的旧 profile 需要从已登录的实时会话重新创建。
+
 ## 用 profile 启动
 
 `profile launch` 会重启 daemon——当前运行中的浏览器会话先被关闭。

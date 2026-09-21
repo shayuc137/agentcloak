@@ -169,8 +169,10 @@ class ProfileService:
         self,
         name: str,
         cookies: list[dict[str, Any]],
+        *,
+        local_storage: dict[str, dict[str, str]] | None = None,
     ) -> dict[str, Any]:
-        """Persist a fresh profile populated from the given cookie list.
+        """Persist a fresh profile populated with cookies and origin storage.
 
         Allocates a non-colliding name (appending ``-2``, ``-3``, etc.) and
         shells out to the ``_profile_writer`` subprocess which knows how to
@@ -193,7 +195,9 @@ class ProfileService:
 
         exec_path = self._maybe_cloakbrowser_binary()
         try:
-            await self._run_profile_writer(profile_dir, cookies, exec_path)
+            await self._run_profile_writer(
+                profile_dir, cookies, exec_path, local_storage=local_storage
+            )
         except ProfileError:
             # Clean up the empty directory so it doesn't linger as a ghost profile.
             with contextlib.suppress(OSError):
@@ -223,11 +227,15 @@ class ProfileService:
         profile_dir: Path,
         cookies: list[dict[str, Any]],
         exec_path: str | None,
+        *,
+        local_storage: dict[str, dict[str, str]] | None = None,
     ) -> None:
         fd, cookies_file = _tempfile.mkstemp(suffix=".json", prefix="cloak-cookies-")
         try:
             with _os.fdopen(fd, "w") as f:
-                _json_mod.dump(cookies, f)
+                _json_mod.dump(
+                    {"cookies": cookies, "local_storage": local_storage or {}}, f
+                )
             _os.chmod(cookies_file, 0o600)
 
             cmd = [
@@ -236,7 +244,7 @@ class ProfileService:
                 "agentcloak.browser._profile_writer",
                 "--profile-dir",
                 str(profile_dir),
-                "--cookies-file",
+                "--state-file",
                 cookies_file,
             ]
             if exec_path:

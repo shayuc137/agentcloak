@@ -181,6 +181,8 @@ async def handle_profile_create_from_current(
         if isinstance(raw, str):
             parsed = _json.loads(raw)
             ls_origin = parsed.get("o", "")
+            if not ls_origin.startswith(("http://", "https://")):
+                ls_origin = ""
             data_val = parsed.get("d", {})
             if isinstance(data_val, dict):
                 ls_data = {str(k): str(v) for k, v in data_val.items()}  # type: ignore[arg-type]
@@ -188,7 +190,9 @@ async def handle_profile_create_from_current(
         _log.info("profile_create_ls_capture_failed", extra={"error": str(exc)})
 
     try:
-        result = await service.create_from_cookies(body.name, cookies)
+        result = await service.create_from_cookies(
+            body.name, cookies, local_storage={ls_origin: ls_data} if ls_origin else {}
+        )
     except ProfileError as exc:
         raise _profile_error_to_http(exc) from exc
 

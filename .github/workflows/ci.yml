@@ -77,6 +77,7 @@ jobs:
         run: >-
           uv run --locked pytest
           tests/integration/test_page_emulation.py
+          tests/integration/test_storage_lifecycle.py
           tests/integration/test_input_actions.py
           tests/integration/test_network_controls.py
           tests/integration/test_snapshot_errors.py

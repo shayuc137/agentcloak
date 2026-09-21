@@ -54,8 +54,6 @@ from agentcloak.core.errors import (
 from agentcloak.core.seq import RingBuffer, SeqCounter, SeqEvent
 from agentcloak.core.storage_snapshot import (
     LOCALSTORAGE_DUMP_JS,
-    build_localstorage_restore_js,
-    read_storage_snapshot,
     resolve_storage_snapshot_path,
     write_storage_snapshot,
 )
@@ -318,9 +316,7 @@ class BrowserContextBase(ABC):
         self._extra_headers: dict[str, str] = {}
         self._emulation_state: PageEmulation | None = None
 
-        # localStorage persistence: profile directory for snapshot dump/restore.
-        # None in ephemeral mode or RemoteBridge — all localStorage logic is
-        # skipped when this is unset.
+        # Native profile storage is authoritative; snapshots are backups only.
         self._profile_dir: Path | None = profile_dir
 
     # ------------------------------------------------------------------
@@ -909,20 +905,6 @@ class BrowserContextBase(ABC):
             timeout = float(self._browser_config.navigation_timeout)
 
         new_seq = self._seq_counter.increment_action()
-        # Dump localStorage before navigating away from the current origin so
-        # token refreshes that happened since the last dump are captured.
-        if self._profile_dir is not None:
-            target_origin = self._extract_origin(url)
-            if target_origin:
-                current_origin = await self._get_current_origin()
-                if current_origin and current_origin != target_origin:
-                    await self._dump_localstorage_for_origin()
-
-        # Pre-register an init script that restores localStorage before the
-        # new page's JS runs. This ensures SPA initial scripts see the saved
-        # JWT/tokens immediately, without requiring a page reload.
-        ls_restore_id = await self._prepare_localstorage_restore(url)
-
         # Flag flips on the failure / success edge, not on entry. If we
         # invalidated *before* awaiting ``_navigate_impl``, a concurrent
         # ``screenshot`` request could observe ``_page_valid = False`` mid-
@@ -938,14 +920,9 @@ class BrowserContextBase(ABC):
         except Exception as exc:
             self._page_valid = False
             self._translate_browser_closed(exc)
-            await self._cleanup_localstorage_restore(ls_restore_id)
             raise
         self._page_valid = True
         await self._notify_managers_on_navigated()
-
-        # Remove the one-shot restore script so it doesn't re-fire on
-        # subsequent in-page navigations or reloads.
-        await self._cleanup_localstorage_restore(ls_restore_id)
 
         anchor = await self._maybe_scroll_to_hash(url)
         if anchor is not None:
@@ -1766,7 +1743,7 @@ class BrowserContextBase(ABC):
     # ------------------------------------------------------------------
     # localStorage persistence (profile mode only)
     # ------------------------------------------------------------------
-    # Dump/restore JS payloads live in ``core.storage_snapshot`` so the
+    # Dump payloads live in ``core.storage_snapshot`` so the
     # daemon profile-create route can share the exact same schema without
     # crossing the browser layer boundary.
 
@@ -1817,57 +1794,6 @@ class BrowserContextBase(ABC):
         if active_tab is not None:
             with contextlib.suppress(Exception):
                 await self.tab_switch(active_tab)
-
-    async def _prepare_localstorage_restore(self, url: str) -> str | None:
-        """Register an init script that writes saved localStorage before page JS runs.
-
-        Returns the script identifier so the caller can remove it after
-        navigation completes (the script should only fire once, not on every
-        subsequent document load).
-        """
-        if self._profile_dir is None:
-            return None
-        try:
-            target_origin = self._extract_origin(url)
-            if not target_origin:
-                return None
-            path = resolve_storage_snapshot_path(self._profile_dir)
-            snapshot = read_storage_snapshot(path)
-            entries = snapshot.get(target_origin)
-            if not entries:
-                return None
-            js = build_localstorage_restore_js(entries)
-            identifier = await self.script_manager.add(js)
-            return identifier
-        except Exception as exc:
-            logger.debug("ls_restore_prepare_error", error=str(exc))
-            return None
-
-    async def _cleanup_localstorage_restore(self, identifier: str | None) -> None:
-        if identifier is None:
-            return
-        with contextlib.suppress(Exception):
-            await self.script_manager.remove(identifier)
-
-    def _extract_origin(self, url: str) -> str:
-        """Extract origin from a URL string for comparison."""
-        try:
-            parts = urlsplit(url)
-            if parts.scheme not in ("http", "https"):
-                return ""
-            port = f":{parts.port}" if parts.port else ""
-            return f"{parts.scheme}://{parts.hostname}{port}"
-        except Exception:
-            return ""
-
-    async def _get_current_origin(self) -> str:
-        try:
-            origin = await self.evaluate("location.origin")
-            if isinstance(origin, str) and origin and origin != "null":
-                return origin
-        except Exception:
-            pass
-        return ""
 
     async def force_close(self) -> None:
         """Close without renderer-dependent persistence during recovery."""

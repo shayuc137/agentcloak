@@ -42,6 +42,8 @@ cloak profile launch example-account
 cloak navigate "https://example.com/dashboard"   # already logged in
 ```
 
+Native Chromium storage is authoritative after profile creation. `navigate` never replays `localStorage-snapshot.json`, so updated tokens, preferences and deleted keys retain their current state. `--from-current` imports cookies and the current origin’s localStorage into the new native profile before its first launch, without contacting that website. Older JSON snapshots remain backups, not automatic restore inputs; a legacy profile that only has snapshot data must be recreated from a live authenticated session.
+
 ## Launching with a profile
 
 `profile launch` restarts the daemon — running browser sessions are closed first.

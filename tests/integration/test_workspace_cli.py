@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import signal
 import socket
 import sys
 from pathlib import Path
@@ -42,7 +43,8 @@ async def test_cli_namespaces_recovery_and_read_only_discovery(
         "root = Path(sys.argv.pop(1))\nconfig._default_root = lambda: root\n"
         "if sys.argv[1] == 'serve':\n"
         "    from agentcloak.daemon.server import start\n"
-        "    asyncio.run(start(port=int(sys.argv[2]), profile='integration'))\n"
+        "    asyncio.run(start(port=int(sys.argv[2]), profile='integration', "
+        "log_level='info'))\n"
         "else:\n    from agentcloak.cli.app import main\n    main()\n"
     )
     env = {k: v for k, v in os.environ.items() if not k.startswith("AGENTCLOAK_")}
@@ -112,6 +114,14 @@ async def test_cli_namespaces_recovery_and_read_only_discovery(
                     + log_path.read_text()
                 )
 
+        if os.name != "nt":
+            os.kill(process.pid, signal.SIGUSR1)
+            for _ in range(100):
+                if "asyncio_task_dump" in log_path.read_text():
+                    break
+                await asyncio.sleep(0.01)
+            assert "asyncio_task_dump" in log_path.read_text()
+
         record = root / "daemon.json"
         data = json.loads(record.read_bytes())
         assert data["port"] == runtime_port != config_port
@@ -131,6 +141,36 @@ async def test_cli_namespaces_recovery_and_read_only_discovery(
             cli(first, "navigate", f"{local_server}/index.html"),
             cli(second, "navigate", f"{local_server}/form.html"),
         )
+        sessions = (await cli(first, "session", "list", "--all"))["data"]["sessions"]
+        assert {item["label"] for item in sessions} >= {"one", "two"}
+        assert {item["workspace_path"] for item in sessions} >= {
+            str(first),
+            str(second),
+        }
+        shot = await cli(
+            first,
+            "screenshot",
+            "--format",
+            "png",
+            "--expect-url",
+            "*/index.html",
+            "-o",
+            str(tmp_path / "evidence.png"),
+        )
+        assert shot["data"]["url"].endswith("/index.html")
+        assert shot["data"]["pixel_width"] > 0
+        mismatch = await cli(
+            first,
+            "navigate",
+            f"{local_server}/index.html",
+            "--expect-path",
+            "/login",
+            success=False,
+        )
+        assert mismatch["ok"] is False
+        assert mismatch["error"]["code"] == "url_mismatch"
+        endpoint = await cli(first, "cdp", "endpoint", "--page")
+        assert "/devtools/page/" in endpoint["data"]["ws_endpoint"]
         await cli(
             first, "js", "evaluate", "localStorage.setItem('cli-workspace','first')"
         )

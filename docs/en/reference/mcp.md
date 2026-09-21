@@ -492,3 +492,7 @@ Page runtime performance metrics (DOM node count, JS heap size, layout count, et
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | (none) | | | Returns all available `Performance.getMetrics` counters |
+
+## Evidence parameters
+
+`agentcloak_navigate(expect_path=...)` checks the final pathname. `agentcloak_screenshot(expect_url=...)` checks the capture URL and returns URL/title/viewport/DPR/pixel dimensions alongside the image. `agentcloak_status(query="cdp_endpoint", page=True)` selects the caller page target. `agentcloak_tab(action="close", others=True)` closes only sibling tabs. Session list/force close remain CLI/HTTP management operations. See [recovery and evidence](../guides/recovery.md).

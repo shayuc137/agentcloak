@@ -696,7 +696,7 @@ Omitting `--profile` keeps whatever profile the daemon is currently attached to 
 ## Daemon management
 
 ```bash
-cloak daemon start [--host HOST] [--port PORT] [--headed] [--profile NAME]
+cloak daemon start [--host HOST] [--port PORT] [--headed] [--profile NAME] [--log-level info]
 cloak daemon stop
 cloak daemon status                # tier | browser status | seq (+ metrics line)
 ```
@@ -722,7 +722,7 @@ cloak session close                    # close only the current caller's session
 cloak session close panel-a            # explicitly close this session
 ```
 
-An idle session releases its own tabs after `daemon.session_idle_timeout` seconds (default 300s); the next request recreates them. A closed page or disconnected local browser is rebuilt on the next request. A shared browser failure loses volatile page state, so navigate again as needed. Changing the shared tier/profile while other sessions are active is rejected rather than changing those callers' browser. RemoteBridge does not silently share its user tab between callers.
+An idle session releases its own tabs after `daemon.session_idle_timeout` seconds (default 300s); the next request recreates them. A closed page or disconnected local browser is rebuilt on the next request. A shared browser failure loses volatile page state, so page actions report `page_recreated` until a new navigation. Changing the shared tier/profile while other sessions are active is rejected rather than changing those callers' browser. RemoteBridge does not silently share its user tab between callers.
 
 Clients discover the daemon by probing the recorded `/health` endpoint. They only read `daemon.json`; PID visibility or a read-only state directory does not invalidate a live daemon. Raw HTTP callers can send `X-Agentcloak-Workspace` and `X-Agentcloak-Session`; omitted headers use the legacy empty workspace and `default` session. CLI/MCP send their resolved identities.
 
@@ -755,3 +755,7 @@ cloak cdp endpoint                 # raw ws:// URL for jshookmcp / other CDP too
 ```
 
 `doctor` exits with code `1` when any check fails, so it composes with shell scripts.
+
+## Recovery and evidence
+
+[Bounded queues, force close, capture identity, URL assertions and page CDP endpoints](../guides/recovery.md). `session list --all` includes labels, workspace paths, active actions and queue counts. `tab close --others` affects only the current session.

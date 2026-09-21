@@ -64,7 +64,11 @@ async def handle_tab_close(
     ctx: BrowserCtxDep,
     resume_writer: ResumeWriterDep,
 ) -> dict[str, Any]:
-    result = await ctx.tab_close(body.tab_id)
+    result = (
+        await ctx.tab_close_others()
+        if body.others
+        else await ctx.tab_close(body.tab_id)
+    )
     await _update_resume(
         resume_writer,
         ctx,

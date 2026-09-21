@@ -36,6 +36,9 @@ app = typer.Typer()
 @app.command("navigate")
 def browser_navigate(
     url: str = typer.Argument(help="URL to navigate to."),
+    expect_path: str = typer.Option(
+        "", "--expect-path", help="Require this exact final URL pathname."
+    ),
     timeout: float | None = typer.Option(
         None,
         "--timeout",
@@ -58,7 +61,10 @@ def browser_navigate(
 ) -> None:
     """Navigate to a URL."""
     client = DaemonClient()
-    body: dict[str, object] = {"url": url}
+    body: dict[str, object] = {
+        "url": url,
+        **({"expect_path": expect_path} if expect_path else {}),
+    }
     if timeout is not None:
         body["timeout"] = timeout
     if snap:
@@ -71,6 +77,9 @@ def browser_navigate(
 
 @app.command("screenshot")
 def browser_screenshot(
+    expect_url: str = typer.Option(
+        "", "--expect-url", help="Require the captured URL to match this glob."
+    ),
     output: Path | None = typer.Option(
         None,
         "--output",
@@ -123,6 +132,14 @@ def browser_screenshot(
     ),
 ) -> None:
     """Take a screenshot. Defaults to a file in the system temp dir; prints the path."""
+    if output is not None:
+        output = output.expanduser()
+        if not output.parent.is_dir():
+            from agentcloak.core.input import invalid_input
+
+            raise invalid_input(
+                f"Screenshot parent directory does not exist: {output.parent}"
+            )
     client = DaemonClient()
     try:
         resolution = resolve_screenshot_format(
@@ -145,7 +162,7 @@ def browser_screenshot(
             if wait_timeout is not None:
                 wait_body["timeout"] = wait_timeout
             client._send_sync("POST", "/wait", json_body=wait_body)  # pyright: ignore[reportPrivateUsage]
-        if hide or keep_overlays or viewport is not None:
+        if hide or keep_overlays or viewport is not None or expect_url:
             result = client.screenshot_sync(
                 full_page=full_page,
                 format=resolution.format,
@@ -153,6 +170,7 @@ def browser_screenshot(
                 wait_selector=wait_selector,
                 wait_timeout=wait_timeout,
                 hide=hide,
+                **({"expect_url": expect_url} if expect_url else {}),
                 keep_overlays=keep_overlays,
                 **({"viewport": viewport} if viewport is not None else {}),
             )
@@ -193,6 +211,7 @@ def browser_screenshot(
                 "ok": True,
                 "seq": seq,
                 "data": {
+                    **{k: v for k, v in data.items() if k not in {"base64", "path"}},
                     "saved": str(output),
                     "size": data.get("size", 0),
                     "format": resolved_format,

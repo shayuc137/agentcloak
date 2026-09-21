@@ -112,6 +112,7 @@ _BROWSER_CLOSED_HINTS: tuple[str, ...] = (
     "connection lost",
     "browser disconnected",
     "page closed",
+    "no target with given id",
 )
 
 _ANCHOR_SCROLL_POLL_INTERVAL = 0.2
@@ -234,6 +235,7 @@ class BrowserContextBase(ABC):
         # R0: Proactive State Feedback transient state.
         self._pending_request_count: int = 0
         self._last_navigation_event: dict[str, str] | None = None
+        self._navigation_generation = 0
         self._last_new_tab_event: dict[str, Any] | None = None
         self._last_download_event: dict[str, str] | None = None
         self._last_auto_dialog: dict[str, str] | None = None
@@ -764,7 +766,9 @@ class BrowserContextBase(ABC):
         if callback not in handlers:
             handlers.append(callback)
 
-    def _dispatch_cdp_event(self, method: str, params: dict[str, Any]) -> None:
+    def _dispatch_cdp_event(
+        self, method: str, params: dict[str, Any], *, current_page: bool = True
+    ) -> None:
         """Fan a CDP event out to every matching registered callback.
 
         Called by the backend's persistent-session event forwarder
@@ -775,6 +779,12 @@ class BrowserContextBase(ABC):
         debug) so one misbehaving manager can't break event delivery to the
         others.
         """
+        if (
+            current_page
+            and method == "Page.frameNavigated"
+            and not params.get("frame", {}).get("parentId")
+        ):
+            self._navigation_generation += 1
         for cb in list(self._cdp_event_handlers.get(method, [])):
             try:
                 cb(params)
@@ -836,10 +846,15 @@ class BrowserContextBase(ABC):
     # Browser self-healing
     # ------------------------------------------------------------------
 
-    def _maybe_mark_browser_closed(self, exc: BaseException) -> None:
+    def _translate_browser_closed(self, exc: BaseException) -> None:
         if _looks_like_browser_closed(exc):
             self._browser_closed = True
             logger.warning("browser_closed_detected", error=str(exc))
+            raise BackendError(
+                error="page_lost",
+                hint="The page or browser closed during this request",
+                action="navigate to recreate the page before collecting evidence",
+            ) from exc
 
     def _check_browser_alive(self) -> None:
         """Raise structured error if we've seen the browser go away."""
@@ -891,6 +906,7 @@ class BrowserContextBase(ABC):
         if timeout is None:
             timeout = float(self._browser_config.navigation_timeout)
 
+        new_seq = self._seq_counter.increment_action()
         # Dump localStorage before navigating away from the current origin so
         # token refreshes that happened since the last dump are captured.
         if self._profile_dir is not None:
@@ -919,7 +935,7 @@ class BrowserContextBase(ABC):
             result = await self._navigate_impl(url, timeout=timeout)
         except Exception as exc:
             self._page_valid = False
-            self._maybe_mark_browser_closed(exc)
+            self._translate_browser_closed(exc)
             await self._cleanup_localstorage_restore(ls_restore_id)
             raise
         self._page_valid = True
@@ -933,7 +949,6 @@ class BrowserContextBase(ABC):
         if anchor is not None:
             result["anchor"] = anchor
 
-        new_seq = self._seq_counter.increment_action()
         self._ring_buffer.append(
             SeqEvent(seq=new_seq, kind="navigate", data={"url": url})
         )
@@ -1191,13 +1206,14 @@ class BrowserContextBase(ABC):
         self._check_debugger_paused()
         self._check_browser_alive()
         self._check_page_valid()
+        self._last_new_tab_event = None
+        new_seq = self._seq_counter.increment_action()
         try:
             result = await self._evaluate_impl(js, world=world)
         except Exception as exc:
-            self._maybe_mark_browser_closed(exc)
+            self._translate_browser_closed(exc)
             raise
 
-        new_seq = self._seq_counter.increment_action()
         self._ring_buffer.append(
             SeqEvent(seq=new_seq, kind="evaluate", data={"js": js[:200]})
         )
@@ -1209,13 +1225,17 @@ class BrowserContextBase(ABC):
             js_length=len(js),
             url=url,
         )
+        await self._settle_feedback()
         return result
+
+    async def page_info(self) -> tuple[str, str]:
+        return await self._get_page_info()
 
     async def network(
         self, *, since: int | str = "last_action"
     ) -> list[dict[str, Any]]:
         if since == "last_action":
-            since_seq = self._seq_counter.last_action_seq
+            since_seq = self._seq_counter.last_action_seq - 1
         else:
             since_seq = int(since)
         # Some adapters (Playwright) collect from the ring buffer; remote bridge
@@ -1233,6 +1253,7 @@ class BrowserContextBase(ABC):
         quality: int | None = None,
         output_path: str | None = None,
         viewport: str | None = None,
+        expect_url: str = "",
     ) -> bytes:
         # ``output_path`` writes the capture to disk in addition to returning
         # the bytes. Writing lives here rather than in ``_screenshot_impl`` so
@@ -1248,20 +1269,70 @@ class BrowserContextBase(ABC):
         previous_viewport = (
             await self._get_viewport_impl() if viewport is not None else None
         )
+        capture_failed = False
         try:
             if viewport is not None:
                 from agentcloak.core.input import parse_viewport
 
                 await self.set_viewport(*parse_viewport(viewport))
+            from fnmatch import fnmatchcase
+            from io import BytesIO
+
+            from PIL import Image
+
+            generation = self._navigation_generation
+            identity = await self._evaluate_impl(
+                "({url:location.href,title:document.title,viewport:{width:innerWidth,height:innerHeight},dpr:devicePixelRatio,document_id:performance.timeOrigin})",
+                world="isolated",
+            )
+            if expect_url and not fnmatchcase(identity["url"], expect_url):
+                raise BackendError(
+                    error="url_mismatch",
+                    hint=f"Expected URL {expect_url!r}, got {identity['url']!r}",
+                    action="navigate to the intended page before capturing",
+                )
             data = await self._screenshot_impl(
                 full_page=full_page, fmt=format, quality=quality
             )
-        except Exception as exc:
-            self._maybe_mark_browser_closed(exc)
+            current = await self._evaluate_impl(
+                "({url:location.href,document_id:performance.timeOrigin})",
+                world="isolated",
+            )
+            if (
+                current["url"] != identity["url"]
+                or current["document_id"] != identity["document_id"]
+                or generation != self._navigation_generation
+            ):
+                raise BackendError(
+                    error="page_changed",
+                    hint="Page navigated during capture",
+                    action="wait for navigation and retry",
+                )
+            with Image.open(BytesIO(data)) as image:
+                identity.update(pixel_width=image.width, pixel_height=image.height)
+            self.screenshot_metadata: dict[str, Any] = {
+                key: value for key, value in identity.items() if key != "document_id"
+            }
+        except BaseException as exc:
+            capture_failed = True
+            if isinstance(exc, Exception):
+                self._translate_browser_closed(exc)
             raise
         finally:
             if previous_viewport is not None:
-                await self._set_viewport_impl(*previous_viewport)
+                task = asyncio.current_task()
+                cancelling = task is not None and bool(task.cancelling())
+                try:
+                    async with asyncio.timeout(0.1 if cancelling else 2):
+                        await self._set_viewport_impl(*previous_viewport)
+                except Exception:
+                    self.mark_page_invalid()
+                    if not capture_failed:
+                        raise BackendError(
+                            error="viewport_restore_failed",
+                            hint="Capture viewport could not be restored",
+                            action="navigate or set the viewport before retrying",
+                        ) from None
         if output_path:
             from pathlib import Path
 
@@ -1422,7 +1493,7 @@ class BrowserContextBase(ABC):
         except BrowserTimeoutError:
             raise
         except Exception as exc:
-            self._maybe_mark_browser_closed(exc)
+            self._translate_browser_closed(exc)
             if "timeout" in str(exc).lower():
                 raise BrowserTimeoutError(
                     error="wait_timeout",
@@ -1484,7 +1555,7 @@ class BrowserContextBase(ABC):
             else:
                 impl_result = await self._upload_impl(index, validated)
         except Exception as exc:
-            self._maybe_mark_browser_closed(exc)
+            self._translate_browser_closed(exc)
             raise
 
         new_seq = self._seq_counter.increment_action()
@@ -1558,6 +1629,14 @@ class BrowserContextBase(ABC):
         if url:
             result.update(await self.navigate(url))
         return result
+
+    async def tab_close_others(self) -> dict[str, Any]:
+        closed: list[int] = []
+        for tab in await self.tab_list():
+            if not tab.active:
+                await self._tab_close_impl(tab.tab_id)
+                closed.append(tab.tab_id)
+        return {"closed": closed}
 
     async def tab_close(self, tab_id: int) -> dict[str, Any]:
         closing_active = any(
@@ -1778,6 +1857,12 @@ class BrowserContextBase(ABC):
             pass
         return ""
 
+    async def force_close(self) -> None:
+        """Close without renderer-dependent persistence during recovery."""
+        if self._route_mgr is not None:
+            self._route_mgr.release_all()
+        await self._close_impl()
+
     async def close(self) -> None:
         if self._route_mgr is not None:
             self._route_mgr.release_all()
@@ -1807,7 +1892,7 @@ class BrowserContextBase(ABC):
         except AgentBrowserError:
             raise
         except Exception as exc:
-            self._maybe_mark_browser_closed(exc)
+            self._translate_browser_closed(exc)
             raise BackendError(
                 error="cdp_call_failed",
                 hint=f"{method}: {exc}",
@@ -2290,6 +2375,7 @@ class BrowserContextBase(ABC):
                 action=f"use one of: {', '.join(sorted(_VALID_ACTION_KINDS))}",
             )
 
+        new_seq = self._seq_counter.increment_action()
         pre_url, _ = await self._get_page_info()
 
         # R0: reset per-action transient state before executing.
@@ -2300,19 +2386,19 @@ class BrowserContextBase(ABC):
         try:
             result = await self._run_action(kind, target, **kw)
         except Exception as exc:
-            self._maybe_mark_browser_closed(exc)
+            self._translate_browser_closed(exc)
             raise
 
         # Subclasses may run post-action housekeeping (settling DOM, removing
         # locator markers, etc.).
         await self._post_action_cleanup()
+        await self._settle_feedback()
 
         post_url, _ = await self._get_page_info()
         caused_navigation = (
             post_url != pre_url or self._last_navigation_event is not None
         )
 
-        new_seq = self._seq_counter.increment_action()
         self._ring_buffer.append(
             SeqEvent(
                 seq=new_seq,
@@ -2460,6 +2546,14 @@ class BrowserContextBase(ABC):
         """
         return None
 
+    async def _settle_feedback(self) -> None:
+        return None
+
+    def take_feedback(self) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        self._collect_feedback(result)
+        return result
+
     def _collect_feedback(self, result: dict[str, Any]) -> None:
         """R0: Attach proactive state feedback fields to action result."""
         if self._pending_request_count > 0:
@@ -2477,6 +2571,10 @@ class BrowserContextBase(ABC):
             self._last_navigation_event = None
         if self._last_new_tab_event is not None:
             result["new_tab"] = self._last_new_tab_event
+            if self._last_new_tab_event.get("open_tabs", 0) >= 6:
+                result["warning"] = (
+                    "Many popup tabs are open; use tab close --others when finished"
+                )
             self._last_new_tab_event = None
         if self._last_download_event is not None:
             result["download"] = self._last_download_event

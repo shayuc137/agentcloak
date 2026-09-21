@@ -71,6 +71,9 @@ async def handle_health(
         started_at=started_at,
         metrics=metrics,
     )
+    from agentcloak.core.build import build_id
+
+    data["build_id"] = build_id()
     startup_config = getattr(request.app.state, "config", None) or config
     data["isolation"] = startup_config.browser.isolation
     data["workspace_id"] = workspace_scope(request).get("workspace_id", "")
@@ -180,7 +183,7 @@ async def handle_resume(
 
 
 @router.get("/cdp/endpoint", response_model=OkEnvelope[CDPEndpointResponse])
-async def handle_cdp_endpoint(ctx: BrowserCtxDep) -> dict[str, Any]:
+async def handle_cdp_endpoint(ctx: BrowserCtxDep, page: bool = False) -> dict[str, Any]:
     """Return the CDP WebSocket URL for jshookmcp browser_attach."""
     import httpx
 
@@ -214,4 +217,22 @@ async def handle_cdp_endpoint(ctx: BrowserCtxDep) -> dict[str, Any]:
         ) from exc
 
     data = {"ws_endpoint": ws_endpoint, "http_url": http_url, "port": cdp_port}
+    if page:
+        target = await ctx.raw_cdp("Target.getTargetInfo")
+        target_id = target["targetInfo"]["targetId"]
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            response = await client.get(f"{http_url}/json/list")
+            targets = response.json()
+        selected = next((item for item in targets if item.get("id") == target_id), None)
+        if not selected or not selected.get("webSocketDebuggerUrl"):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "ok": False,
+                    "error": "page_target_unavailable",
+                    "hint": "Current page target is no longer available",
+                    "action": "navigate and retry",
+                },
+            )
+        data.update(ws_endpoint=selected["webSocketDebuggerUrl"], target_id=target_id)
     return _ok(data, seq=ctx.seq)

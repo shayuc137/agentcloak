@@ -58,6 +58,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     async def agentcloak_status(
         query: Literal["health", "cdp_endpoint"] = "health",
+        page: bool = False,
     ) -> str:
         """Query daemon and browser status.
 
@@ -73,7 +74,10 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             cdp_endpoint: ws_endpoint URL for CDP tools.
         """
         if query == "cdp_endpoint":
-            return await format_call(client.cdp_endpoint(), render_cdp_endpoint_text)
+            return await format_call(
+                client.cdp_endpoint(**({"page": True} if page else {})),
+                render_cdp_endpoint_text,
+            )
         return await format_call(client.health(), render_health_text)
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
@@ -336,6 +340,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         action: Literal["list", "new", "close", "switch"] = "list",
         tab_id: int = -1,
         url: str = "",
+        others: bool = False,
     ) -> str:
         """Manage browser tabs — list, create, close, switch.
 
@@ -366,14 +371,14 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             )
 
         if action == "close":
-            if tab_id < 0:
+            if tab_id < 0 and not others:
                 return _error_envelope(
                     error="missing_tab_id",
                     hint="tab_id is required for close action",
                     action="provide a valid tab_id",
                 )
             return await format_call(
-                client.tab_close(tab_id),
+                client.tab_close(tab_id, **({"others": True} if others else {})),
                 lambda d: render_tab_op_text("closed", d),
             )
 

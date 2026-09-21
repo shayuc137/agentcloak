@@ -16,6 +16,8 @@ cli_workspace: ContextVar[str | None] = ContextVar("cli_workspace", default=None
 class WorkspaceIdentity:
     workspace_id: str
     session_scope: str
+    workspace_path: str = ""
+    label: str = ""
 
 
 def _path_id(path: Path) -> str:
@@ -57,7 +59,12 @@ def resolve_workspace(roots: list[str] | None = None) -> WorkspaceIdentity:
     except (OSError, ValueError, subprocess.SubprocessError):
         pass
     root = root or cwd
-    return WorkspaceIdentity(_path_id(root), _path_id(worktree_root or root))
+    return WorkspaceIdentity(
+        _path_id(root),
+        _path_id(worktree_root or root),
+        str(root),
+        (worktree_root or root).name,
+    )
 
 
 def workspace_state_dir(root: Path, workspace_id: str, profile: str | None) -> Path:

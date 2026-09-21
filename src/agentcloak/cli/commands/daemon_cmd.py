@@ -50,6 +50,11 @@ def _wait_for_daemon_ready(base_url: str) -> bool:
 
 @app.command("start")
 def daemon_start(
+    log_level: str | None = typer.Option(
+        None,
+        "--log-level",
+        help="debug, info, warning or error; defaults to daemon.log_level.",
+    ),
     background: bool = typer.Option(
         False, "--background", "-b", help="Run in background."
     ),
@@ -72,6 +77,14 @@ def daemon_start(
     ),
 ) -> None:
     """Start the agentcloak daemon."""
+    if log_level is not None and log_level not in {
+        "debug",
+        "info",
+        "warning",
+        "error",
+        "critical",
+    }:
+        raise typer.BadParameter("Unknown log level", param_hint="--log-level")
     resolved_humanize: bool | None = None
     if humanize:
         resolved_humanize = True
@@ -89,6 +102,7 @@ def daemon_start(
             headless=headless,
             profile=profile,
             humanize=resolved_humanize,
+            **({"log_level": log_level} if log_level is not None else {}),
         )
         _, cfg = load_config()
         resolved_tier = resolve_tier(cfg.browser.default_tier)
@@ -131,6 +145,7 @@ def daemon_start(
             headless=headless,
             profile=profile,
             humanize=resolved_humanize,
+            **({"log_level": log_level} if log_level is not None else {}),
         )
     )
 

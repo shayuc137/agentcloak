@@ -679,7 +679,7 @@ cloak launch --tier cloak --no-profile    # 显式清空当前 profile
 ## Daemon 管理
 
 ```bash
-cloak daemon start [--host HOST] [--port PORT] [--headed] [--profile NAME]
+cloak daemon start [--host HOST] [--port PORT] [--headed] [--profile NAME] [--log-level info]
 cloak daemon stop
 cloak daemon status                # tier | browser status | seq（含 metrics 行）
 ```
@@ -735,3 +735,7 @@ cloak cdp endpoint                 # jshookmcp / 其他 CDP 工具用的裸 ws:/
 ```
 
 `doctor` 任意检查失败时 exit code 为 `1`，方便 shell 脚本组合。
+
+## 恢复与证据
+
+[有界队列、强制关闭、截图身份、URL 断言与页面 CDP 地址](../guides/recovery.md)。`session list --all` 展示标签、工作空间路径、进行中动作与排队数；`tab close --others` 只影响当前会话。

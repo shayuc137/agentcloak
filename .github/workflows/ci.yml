@@ -82,6 +82,7 @@ jobs:
           tests/integration/test_hide_init_document.py
           tests/integration/test_workspace_sessions.py
           tests/integration/test_workspace_cli.py
+          tests/integration/test_recovery_evidence.py
           tests/integration/test_bridge_runtime.py
           -v --tb=short --timeout=100
 

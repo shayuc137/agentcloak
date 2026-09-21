@@ -14,6 +14,7 @@ session, the command is actually run instead of just printed.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import platform
 import shutil
@@ -770,14 +771,12 @@ class DiagnosticService:
             except Exception:
                 data["browser_description"] = None
 
-            # Pull the current URL/title best-effort; failures are non-fatal.
-            # When ``page_valid`` is False the snapshot call will raise
-            # ``NavigationError`` — that's expected, we still want the rest
-            # of the health payload to render.
+            # Health must not rebuild refs or block on a frozen renderer.
             try:
-                snap = await ctx.snapshot(mode="accessible")
-                data["current_url"] = snap.url
-                data["current_title"] = snap.title
+                async with asyncio.timeout(0.1):
+                    url, title = await ctx.page_info()
+                data["current_url"] = url
+                data["current_title"] = title
             except Exception:
                 data["current_url"] = None
                 data["current_title"] = None

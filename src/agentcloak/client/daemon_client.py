@@ -193,6 +193,8 @@ class DaemonClient:
         self._auto_start = auto_start
         identity = resolve_workspace(cfg.browser.workspace_roots)
         self._workspace_id = identity.workspace_id
+        self._workspace_path = identity.workspace_path
+        self._session_label = identity.label
         self._session_id = session_id or auto_detect_session_id(
             session_scope=identity.session_scope
         )
@@ -383,6 +385,10 @@ class DaemonClient:
             # predates multi-session — it falls back to the single ctx.
             headers["X-Agentcloak-Session"] = self._session_id
             headers["X-Agentcloak-Workspace"] = self._workspace_id
+            from urllib.parse import quote
+
+            headers["X-Agentcloak-Workspace-Path"] = quote(self._workspace_path)
+            headers["X-Agentcloak-Session-Label"] = quote(self._session_label)
             kwargs["headers"] = headers
             if params:
                 kwargs["params"] = params
@@ -413,6 +419,10 @@ class DaemonClient:
             headers["Accept"] = "application/json"
             headers["X-Agentcloak-Session"] = self._session_id
             headers["X-Agentcloak-Workspace"] = self._workspace_id
+            from urllib.parse import quote
+
+            headers["X-Agentcloak-Workspace-Path"] = quote(self._workspace_path)
+            headers["X-Agentcloak-Session-Label"] = quote(self._session_label)
             kwargs["headers"] = headers
             if params:
                 kwargs["params"] = params
@@ -423,7 +433,13 @@ class DaemonClient:
 
     def _parse_response(self, resp: httpx.Response) -> dict[str, Any]:
         """Decode a daemon response and raise on error envelope."""
-        if resp.status_code == 404:
+        structured_error = False
+        with contextlib.suppress(ValueError):
+            failure_body = resp.json()
+            structured_error = (
+                isinstance(failure_body, dict) and "error" in failure_body
+            )
+        if resp.status_code == 404 and not structured_error:
             req = resp.request
             service = self._probe_service()
             if service and service != "agentcloak-daemon":
@@ -680,6 +696,7 @@ class DaemonClient:
         headless: bool | None = None,
         profile: str | None = None,
         humanize: bool | None = None,
+        log_level: str | None = None,
     ) -> list[str]:
         """Return the subprocess argv for spawning the daemon."""
         argv: list[str] = [sys.executable, "-m", "agentcloak.daemon"]
@@ -697,6 +714,8 @@ class DaemonClient:
             argv.append("--humanize")
         elif humanize is False:
             argv.append("--no-humanize")
+        if log_level is not None:
+            argv.extend(["--log-level", log_level])
         return argv
 
     def _spawn_daemon(
@@ -707,6 +726,7 @@ class DaemonClient:
         headless: bool | None = None,
         profile: str | None = None,
         humanize: bool | None = None,
+        log_level: str | None = None,
     ) -> subprocess.Popen[bytes]:
         """Launch the daemon as a background subprocess and return the handle."""
         argv = self._build_daemon_argv(
@@ -715,6 +735,7 @@ class DaemonClient:
             headless=headless,
             profile=profile,
             humanize=humanize,
+            **({"log_level": log_level} if log_level is not None else {}),
         )
         env = os.environ.copy()
         # Background daemons should log to a rotating file by default — the
@@ -745,6 +766,7 @@ class DaemonClient:
         headless: bool | None = None,
         profile: str | None = None,
         humanize: bool | None = None,
+        log_level: str | None = None,
     ) -> int:
         """Public API: spawn daemon in background, return PID.
 
@@ -758,6 +780,7 @@ class DaemonClient:
             headless=headless,
             profile=profile,
             humanize=humanize,
+            **({"log_level": log_level} if log_level is not None else {}),
         )
         return proc.pid
 
@@ -1034,6 +1057,7 @@ class DaemonClient:
         hide: str | None = None,
         keep_overlays: bool = False,
         viewport: str | None = None,
+        expect_url: str = "",
     ) -> dict[str, Any]:
         return self._send_sync(
             "GET",
@@ -1051,6 +1075,7 @@ class DaemonClient:
                 hide=hide,
                 keep_overlays=keep_overlays,
                 viewport=viewport,
+                expect_url=expect_url,
             ),
         )
 
@@ -1159,6 +1184,7 @@ class DaemonClient:
         timeout: float | None = None,
         include_snapshot: bool = False,
         snapshot_mode: str = "compact",
+        expect_path: str = "",
     ) -> dict[str, Any]:
         body = _build_navigate_body(
             url=url,
@@ -1170,6 +1196,8 @@ class DaemonClient:
             include_snapshot=include_snapshot,
             snapshot_mode=snapshot_mode,
         )
+        if expect_path:
+            body["expect_path"] = expect_path
         return await self._send_async("POST", "/navigate", json_body=body)
 
     async def screenshot(
@@ -1183,6 +1211,7 @@ class DaemonClient:
         hide: str | None = None,
         keep_overlays: bool = False,
         viewport: str | None = None,
+        expect_url: str = "",
     ) -> dict[str, Any]:
         # MCP defaults to ``mcp_screenshot_quality`` (lower than CLI's 80) so
         # base64 output stays under typical MCP token budgets.
@@ -1200,6 +1229,7 @@ class DaemonClient:
                 hide=hide,
                 keep_overlays=keep_overlays,
                 viewport=viewport,
+                expect_url=expect_url,
             ),
         )
 
@@ -1381,8 +1411,10 @@ class DaemonClient:
             json_body={"method": method, "params": params or {}, "timeout": timeout},
         )
 
-    async def cdp_endpoint(self) -> dict[str, Any]:
-        return await self._send_async("GET", "/cdp/endpoint")
+    async def cdp_endpoint(self, *, page: bool = False) -> dict[str, Any]:
+        return await self._send_async(
+            "GET", "/cdp/endpoint", params={"page": "true"} if page else None
+        )
 
     async def tab_list(self) -> dict[str, Any]:
         return await self._send_async("GET", "/tabs")
@@ -1393,9 +1425,13 @@ class DaemonClient:
             body["url"] = url
         return await self._send_async("POST", "/tab/new", json_body=body)
 
-    async def tab_close(self, tab_id: int) -> dict[str, Any]:
+    async def tab_close(
+        self, tab_id: int = -1, *, others: bool = False
+    ) -> dict[str, Any]:
         return await self._send_async(
-            "POST", "/tab/close", json_body={"tab_id": tab_id}
+            "POST",
+            "/tab/close",
+            json_body={"tab_id": tab_id, **({"others": True} if others else {})},
         )
 
     async def tab_switch(self, tab_id: int) -> dict[str, Any]:
@@ -1963,12 +1999,20 @@ class DaemonClient:
 
     # --- Session management (async) ---
 
-    async def session_list(self) -> dict[str, Any]:
-        return await self._send_async("GET", "/session/list")
-
-    async def session_close(self, *, session_id: str) -> dict[str, Any]:
+    async def session_list(self, *, all_workspaces: bool = False) -> dict[str, Any]:
         return await self._send_async(
-            "POST", "/session/close", json_body={"session_id": session_id}
+            "GET",
+            "/session/list",
+            params={"all_workspaces": str(all_workspaces).lower()},
+        )
+
+    async def session_close(
+        self, *, session_id: str, force: bool = False
+    ) -> dict[str, Any]:
+        return await self._send_async(
+            "POST",
+            "/session/close",
+            json_body={"session_id": session_id, "force": force},
         )
 
 
@@ -2001,6 +2045,7 @@ def _build_screenshot_params(
     hide: str | None = None,
     keep_overlays: bool = False,
     viewport: str | None = None,
+    expect_url: str = "",
 ) -> dict[str, str]:
     params: dict[str, str] = {"quality": str(quality)}
     if format is not None:
@@ -2015,6 +2060,8 @@ def _build_screenshot_params(
         params["hide"] = hide
     if keep_overlays:
         params["keep_overlays"] = "true"
+    if expect_url:
+        params["expect_url"] = expect_url
     if viewport is not None:
         params["viewport"] = viewport
     return params

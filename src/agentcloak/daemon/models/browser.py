@@ -37,6 +37,9 @@ __all__ = [
 
 
 class NavigateRequest(BaseModel):
+    expect_path: str = Field(
+        "", description="Require this exact final URL pathname after redirects."
+    )
     url: str = Field(
         description=(
             "Target URL (http/https/about). file/data/javascript schemes blocked."
@@ -94,6 +97,12 @@ class ScreenshotResponse(BaseModel):
     size: int = 0
     format: str = ""
     path: str | None = None
+    url: str = ""
+    title: str = ""
+    viewport: dict[str, int] = Field(default_factory=dict)
+    dpr: float = 1
+    pixel_width: int = 0
+    pixel_height: int = 0
 
 
 # --- Snapshot ---

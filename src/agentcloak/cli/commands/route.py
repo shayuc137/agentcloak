@@ -27,7 +27,10 @@ app = typer.Typer()
 @app.command("add")
 def route_add(
     pattern: str = typer.Argument(
-        help="URL glob ('*' = any chars; no '*' = substring match)."
+        help=(
+            "URL glob: * spans any characters; ? is a literal query separator. "
+            "Without * uses substring. Include slashes explicitly: */items/?*."
+        )
     ),
     action: str = typer.Option(
         "continue", "--action", help="Disposition: abort, fulfill, hold, or continue."

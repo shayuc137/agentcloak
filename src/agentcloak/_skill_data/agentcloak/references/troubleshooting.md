@@ -24,6 +24,10 @@ Error [element_not_found]: Element [99] not in selector_map (4 entries)
 | `element_not_found` / `[N] not in selector_map` | `[N]` ref is stale (page changed) | Auto-retried once; if still fails, re-snapshot and use the new ref |
 | `element_covered` / visible ref does not react | Overlay intercepted coordinate click | Hide the overlay with `cloak hide add CSS`, then re-snapshot; use `--force` only as a one-off single-left-click fallback |
 | `navigation_timeout` | Page took too long to load | Retry with `--timeout 60`, or check the URL is correct |
+| `session_busy` | Session queue wait exceeded `browser.action_timeout` | Inspect `session list --all` for active actions/queue; `session close --force` cancels work and closes only the selected session |
+| `action_timeout` | Page operation exceeded its execution budget | Navigate again; if the renderer is frozen, close the session with `--force` first |
+| `page_recreated` / `page_lost` | Page or browser disappeared | Navigate to the intended URL before collecting evidence; blank replacement pages are not valid evidence |
+| `url_mismatch` / `page_changed` | Redirect or navigation invalidated capture identity | Check login and final URL, then retry with the expected URL/path |
 | `no_valid_page` | Last `navigate` failed — page is still the previous URL | `cloak navigate <url>` again before screenshot/snapshot/click/evaluate. `fetch` and `network` are unaffected |
 | `blocked_by_dialog` | A dialog is blocking operations | `cloak dialog accept` or `dismiss`, then retry the action |
 | `debugger_paused` | Execution is paused at a breakpoint — page actions can't run | `cloak debugger resume` or `debugger step`, then retry. `debugger`/`console`/`tab` commands stay available while paused |
@@ -169,3 +173,11 @@ JSON envelope shape:
 CLI failures, including argument errors, exit nonzero with one JSON envelope on stdout and a diagnostic on stderr. JavaScript throws and rejected promises fail; ordinary returned strings containing `Error:` do not.
 
 MCP tools return the same human-readable text the CLI prints (rendered locally via `core/text_renderers`). `agentcloak_screenshot` returns `ImageContent` for multimodal LLMs. Direct daemon responses and MCP errors keep the existing string `error` plus `hint` and `action`; CLI JSON exposes the code and explanation as `error.code` and `error.message`.
+
+## Session recovery and diagnostics
+
+`session list --all` shows labels, workspace paths, active actions and queued counts. RemoteBridge force-close returns `force_recovery_unavailable`. On local backends `session close --force` bypasses the queue, cancels that session's requests and terminates frozen page execution before closing its tabs. Other sessions and workspace storage stay alive. Force recovery skips renderer-dependent persistence; normal workspace shutdown still persists storage. Disconnecting an HTTP client cancels its request on the daemon.
+
+Start with `cloak daemon start --log-level info` for request entered/acquired/started/finished timestamps and session IDs. On Unix, `kill -USR1 <daemon-pid>` writes asyncio task stacks to daemon logs without ptrace. `cloak version --json`, `/health` and `daemon.json` expose `build_id`: the source-content fingerprint works for installed wheels; a Git checkout also reports its commit. `--version` prints both release and build identity.
+
+`cdp endpoint --page` selects the exact calling session's target on local backends. It is not a security boundary: browser-level CDP permissions still allow other targets. `tab close --others` closes only sibling tabs in the current session. Actions/evaluations report new popups; a slow popup may initially have `pending: true` without a tab ID, so use `tab list` before targeting it.

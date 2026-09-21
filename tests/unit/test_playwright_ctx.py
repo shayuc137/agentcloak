@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import DEFAULT, AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -15,6 +15,7 @@ from agentcloak.core.errors import (
     NavigationError,
 )
 from agentcloak.core.seq import RingBuffer, SeqCounter
+from tests.image_data import PNG
 
 _NODE_ID_COUNTER = 0
 
@@ -120,7 +121,20 @@ def _default_page() -> MagicMock:
     page.title = AsyncMock(return_value="Example")
     page.goto = AsyncMock(return_value=MagicMock(status=200))
     page.evaluate = AsyncMock(return_value="result")
-    page.screenshot = AsyncMock(return_value=b"\x89PNG\r\n\x1a\nfakedata")
+
+    def evaluate_identity(js: str, *args: Any, **kwargs: Any) -> Any:
+        if "performance.timeOrigin" in js:
+            return {
+                "url": page.url,
+                "title": "Example",
+                "viewport": {"width": 1280, "height": 720},
+                "dpr": 1,
+                "document_id": 123,
+            }
+        return DEFAULT
+
+    page.evaluate.side_effect = evaluate_identity
+    page.screenshot = AsyncMock(return_value=PNG)
     page.content = AsyncMock(return_value="<html><body>Hello</body></html>")
     page.context = MagicMock()
     page.context.new_cdp_session = AsyncMock(return_value=_mock_cdp_session())

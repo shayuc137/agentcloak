@@ -175,3 +175,13 @@ cloak click 5 --snap
 # stdout includes both the action confirmation AND a compact snapshot
 # (header line: # Title | url | N nodes) — no need for a separate cloak snapshot call
 ```
+
+## Capture with a page identity check
+
+```bash
+cloak navigate https://example.com/dashboard --expect-path /dashboard
+cloak screenshot --expect-url 'https://example.com/dashboard*' --viewport 1280x800 -o page.png --json
+cloak cdp endpoint --page
+```
+
+The capture response includes `url`, `title`, `viewport`, `dpr`, `pixel_width` and `pixel_height`. The output directory must exist. URL mismatches fail without writing a screenshot; temporary viewport changes are restored. If recovery reports `page_recreated`, navigate before retrying.

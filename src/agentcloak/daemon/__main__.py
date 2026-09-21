@@ -8,6 +8,11 @@ from agentcloak.daemon.server import start
 
 def main() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--log-level",
+        choices=["debug", "info", "warning", "error"],
+        default=None,
+    )
     parser.add_argument("--host", default=None)
     parser.add_argument("--port", type=int, default=None)
     parser.add_argument("--headless", action="store_true", help="Force headless mode.")
@@ -36,6 +41,7 @@ def main() -> None:
             headless=True if args.headless else (False if args.headed else None),
             profile=args.profile,
             humanize=humanize,
+            log_level=args.log_level,
         )
     )
 

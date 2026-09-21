@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import DEFAULT, AsyncMock, MagicMock
 
 import pytest
 
 from agentcloak.browser.playwright_ctx import PlaywrightContext
 from agentcloak.core.errors import ElementNotFoundError
 from agentcloak.core.seq import RingBuffer, SeqCounter
+from tests.image_data import PNG
 
 
 def _default_page(
@@ -21,7 +22,20 @@ def _default_page(
     page.title = AsyncMock(return_value=title)
     page.goto = AsyncMock(return_value=MagicMock(status=200))
     page.evaluate = AsyncMock(return_value="result")
-    page.screenshot = AsyncMock(return_value=b"\x89PNG\r\n\x1a\nfakedata")
+
+    def evaluate_identity(js: str, *args: Any, **kwargs: Any) -> Any:
+        if "performance.timeOrigin" in js:
+            return {
+                "url": page.url,
+                "title": "Example",
+                "viewport": {"width": 1280, "height": 720},
+                "dpr": 1,
+                "document_id": 123,
+            }
+        return DEFAULT
+
+    page.evaluate.side_effect = evaluate_identity
+    page.screenshot = AsyncMock(return_value=PNG)
     page.content = AsyncMock(return_value="<html><body>Hello</body></html>")
     page.close = AsyncMock()
     page.context = MagicMock()
@@ -299,14 +313,16 @@ class TestActiveTabSemantics:
         """Screenshot reads from the active tab's page."""
         page0 = _default_page()
         page1 = _default_page()
-        page1.screenshot = AsyncMock(return_value=b"tab1png")
+        page1.screenshot = AsyncMock(return_value=PNG)
         browser_ctx = MagicMock()
         browser_ctx.new_page = AsyncMock(return_value=page1)
 
         ctx = _make_ctx(page=page0, browser_context=browser_ctx)
         await ctx.tab_new()  # active is now tab 1
         result = await ctx.screenshot()
-        assert result == b"tab1png"
+        assert result == PNG
+        page1.screenshot.assert_awaited_once()
+        page0.screenshot.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_evaluate_uses_active_tab(self) -> None:

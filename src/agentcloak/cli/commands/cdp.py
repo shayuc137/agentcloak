@@ -19,10 +19,18 @@ app = typer.Typer()
 
 
 @app.command("endpoint")
-def cdp_endpoint() -> None:
+def cdp_endpoint(
+    page: bool = typer.Option(
+        False, "--page", help="Return the current session page target endpoint."
+    ),
+) -> None:
     """Get the CDP WebSocket endpoint URL for jshookmcp browser_attach."""
     dispatch_text_or_json(
-        DaemonClient(), "GET", "/cdp/endpoint", renderer=render_cdp_endpoint_text
+        DaemonClient(),
+        "GET",
+        "/cdp/endpoint",
+        params={"page": "true"} if page else None,
+        renderer=render_cdp_endpoint_text,
     )
 
 

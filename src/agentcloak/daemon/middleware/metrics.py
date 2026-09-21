@@ -16,15 +16,8 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
-
-    from fastapi import FastAPI, Request
-    from starlette.responses import Response
-
-__all__ = ["MetricsState", "install_metrics_middleware"]
+__all__ = ["MetricsState"]
 
 
 @dataclass
@@ -56,25 +49,3 @@ class MetricsState:
             # ``enter`` — the counter should never go negative.
             if self.active_connections > 0:
                 self.active_connections -= 1
-
-
-def install_metrics_middleware(app: FastAPI) -> None:
-    """Register the request-counting middleware.
-
-    Registered as the outermost HTTP middleware (added last in
-    :func:`install_middlewares`) so ``request_count`` includes requests the
-    localhost gate later rejects — those still arrived at the daemon.
-    """
-
-    @app.middleware("http")
-    async def _metrics(  # type: ignore[reportUnusedFunction]
-        request: Request, call_next: Callable[[Request], Awaitable[Response]]
-    ) -> Response:
-        metrics: MetricsState | None = getattr(request.app.state, "metrics", None)
-        if metrics is None:
-            return await call_next(request)
-        metrics.enter()
-        try:
-            return await call_next(request)
-        finally:
-            metrics.exit()

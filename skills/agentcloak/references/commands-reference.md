@@ -31,6 +31,7 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak navigate URL`
 - MCP: `agentcloak_navigate`
 - Body:
+  - `expect_path` (string, default: "") — Require this exact final URL pathname after redirects.
   - `url` (string, default: *required*) — Target URL (http/https/about). file/data/javascript schemes blocked.
   - `timeout` (number, default: 30.0) — Navigation timeout in seconds before giving up.
   - `include_snapshot` (boolean, default: false) — Attach a snapshot so you observe+act in one round-trip.
@@ -58,6 +59,7 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak screenshot`
 - MCP: `agentcloak_screenshot`
 - Query:
+  - `expect_url` (string, default: "") — Require the captured URL to match this glob.
   - `viewport` (string | null, default: —) — Temporary WIDTHxHEIGHT; restored after capture.
   - `full_page` (boolean, default: false) — Capture the full scrollable page instead of the viewport.
   - `format` (string | null, default: —) — Format override: jpeg or png. Unset uses browser.screenshot_format.
@@ -161,7 +163,8 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak tab close`
 - MCP: `agentcloak_tab (action=close)`
 - Body:
-  - `tab_id` (integer, default: *required*) — Tab id (from tab list) to close.
+  - `tab_id` (integer, default: -1) — Tab id (from tab list) to close.
+  - `others` (boolean, default: false) — Close all tabs except the active tab in this session.
 
 ### `POST /tab/switch`
 
@@ -289,6 +292,8 @@ Read this file when you need full parameter detail. For the common path, the qui
 
 - CLI: `cloak cdp endpoint`
 - MCP: `agentcloak_status (query=cdp_endpoint)`
+- Query:
+  - `page` (boolean, default: false)
 
 ## Console
 
@@ -835,12 +840,15 @@ Read this file when you need full parameter detail. For the common path, the qui
 
 - CLI: `cloak session list`
 - MCP: `(session management — CLI only)`
+- Query:
+  - `all_workspaces` (boolean, default: false) — Include every workspace.
 
 ### `POST /session/close`
 
 - CLI: `cloak session close SESSION_ID`
 - MCP: `(session management — CLI only)`
 - Body:
+  - `force` (boolean, default: false) — Cancel session requests and close without waiting in its queue.
   - `session_id` (string, default: "") — Session to close (empty = caller session).
 
 

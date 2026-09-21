@@ -36,6 +36,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         timeout: float = float(cfg.browser.navigation_timeout),
         include_snapshot: bool = False,
         snapshot_mode: str = "compact",
+        expect_path: str = "",
     ) -> str:
         """Navigate the browser to a URL. Changes page state.
 
@@ -60,6 +61,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                 timeout=timeout,
                 include_snapshot=include_snapshot,
                 snapshot_mode=snapshot_mode,
+                **({"expect_path": expect_path} if expect_path else {}),
             ),
             render_navigate_text,
         )
@@ -168,6 +170,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         hide: str | None = None,
         keep_overlays: bool = False,
         viewport: str | None = None,
+        expect_url: str = "",
     ) -> list[ImageContent | TextContent]:
         """Take a screenshot of the current page.
 
@@ -206,7 +209,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                     timeout=wait_timeout,
                     state="visible",
                 )
-            if hide or keep_overlays or viewport is not None:
+            if hide or keep_overlays or viewport is not None or expect_url:
                 envelope = await client.screenshot(
                     full_page=full_page,
                     format=format,
@@ -214,6 +217,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                     wait_selector=wait_selector,
                     wait_timeout=wait_timeout,
                     hide=hide,
+                    **({"expect_url": expect_url} if expect_url else {}),
                     keep_overlays=keep_overlays,
                     **({"viewport": viewport} if viewport is not None else {}),
                 )
@@ -237,6 +241,12 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             ImageContent(type="image", data=b64, mimeType=mime),
             TextContent(
                 type="text",
-                text=f"screenshot {size} bytes | format={resolved_format}",
+                text=(
+                    f"screenshot {size} bytes | format={resolved_format}"
+                    f" | url={data.get('url', '')} | title={data.get('title', '')}"
+                    f" | viewport={data.get('viewport', {})} | dpr={data.get('dpr', 1)}"
+                    f" | pixels={data.get('pixel_width', 0)}"
+                    f"x{data.get('pixel_height', 0)}"
+                ),
             ),
         ]

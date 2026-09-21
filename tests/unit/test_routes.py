@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import DEFAULT, AsyncMock, MagicMock, patch
 
 import orjson
 import pytest
@@ -27,6 +27,7 @@ from agentcloak.daemon.routes import (
     _resolve_action_refs,
     _traverse,
 )
+from tests.image_data import PNG
 
 
 def _mock_cdp() -> MagicMock:
@@ -75,7 +76,20 @@ def _mock_ctx() -> PlaywrightContext:
     page.title = AsyncMock(return_value="Example")
     page.goto = AsyncMock(return_value=MagicMock(status=200))
     page.evaluate = AsyncMock(return_value="hello")
-    page.screenshot = AsyncMock(return_value=b"fakepng")
+
+    def evaluate_identity(js: str, *args: Any, **kwargs: Any) -> Any:
+        if "performance.timeOrigin" in js:
+            return {
+                "url": page.url,
+                "title": "Example",
+                "viewport": {"width": 1280, "height": 720},
+                "dpr": 1,
+                "document_id": 123,
+            }
+        return DEFAULT
+
+    page.evaluate.side_effect = evaluate_identity
+    page.screenshot = AsyncMock(return_value=PNG)
     page.content = AsyncMock(return_value="<html></html>")
     page.context = MagicMock()
     page.context.new_cdp_session = AsyncMock(return_value=_mock_cdp())
@@ -238,7 +252,7 @@ class TestRoutes:
         assert inferred.status_code == 200
         assert inferred.json()["data"]["format"] == "png"
         assert "warning" not in inferred.json()["data"]
-        assert png_path.read_bytes() == b"fakepng"
+        assert png_path.read_bytes() == PNG
 
         unknown_path = tmp_path / "capture.artifact"
         fallback = client.get("/screenshot", params={"output_path": str(unknown_path)})

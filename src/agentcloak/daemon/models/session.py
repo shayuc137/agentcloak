@@ -14,6 +14,10 @@ class SessionListResponse(BaseModel):
 
 
 class SessionCloseRequest(BaseModel):
+    force: bool = Field(
+        False,
+        description="Cancel session requests and close without waiting in its queue.",
+    )
     session_id: str = Field(
         default="", description="Session to close (empty = caller session)."
     )

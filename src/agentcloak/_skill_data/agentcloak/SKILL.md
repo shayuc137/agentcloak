@@ -95,7 +95,7 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak fill N "value"` | Clear and set input value — fast path, but slow under humanize (see Gotchas) |
 | `cloak type N "value"` | Type character by character; pick this when you want the anti-detection typing cadence |
 | `cloak press Enter` | Press key (Enter, Tab, Escape, Backspace, ArrowDown, Space...; `--target N` focuses element [N] first) |
-| `cloak press "Control+a"` | Combo key; modifier aliases Ctrl/Cmd/Command/Opt/Option are case-insensitive |
+| `cloak press "Control+a"` | Combo key; key names and Ctrl/Cmd/Opt aliases are case-insensitive; invalid combos fail before input |
 | `cloak scroll down` | Scroll page (`--amount N` pixels, default 300; `--index N` scrolls element into view) |
 | `cloak hover N [--offset dx,dy]` / `hover --at x,y` | Hover at element center plus offset, or absolute viewport coordinates |
 | `cloak drag N M` / `drag --from x,y --to x,y --steps N` | Drag with real pointer input |
@@ -116,7 +116,7 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak js evaluate --preset vue_inspect\|react_inspect\|jwt_decode\|cookie_parse\|storage_dump` | Run a canned reverse-engineering snippet (component data / JWT decode / cookie + storage dump) instead of hand-writing JS |
 | `cloak fetch URL` | HTTP GET with browser cookies |
 | `cloak fetch URL --method POST --body '{...}'` | HTTP POST with cookies |
-| `cloak network --since N` | Recent network requests (filter by seq; `--since last_action` returns only requests after the most recent action) |
+| `cloak network --since N` | Recent network requests (filter by seq; `--since last_action` includes requests triggered by the most recent action) |
 | `cloak capture start` / `stop` / `export` | Record and export network traffic |
 | `cloak console show [--level error] [--since N]` / `clear` | Logs and uncaught errors accumulate across navigation with page URLs and timestamps; clear explicitly |
 | `cloak storage get [KEY]` / `set KEY VAL` / `delete KEY` / `clear` | localStorage CRUD (`--type session` for sessionStorage; returns `storage_origin_error` on `about:blank` — navigate to a real page first) |
@@ -171,8 +171,8 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak hide add CSS` / `remove ID_OR_CSS` / `list` | Hide overlays across snapshot, screenshot, and click hit-testing; `list` tags each entry `[builtin]`/`[profile]`/`[session]` so you know where it came from; profile sessions persist selectors, other sessions are session-only |
 | `cloak pdf [-o file] [--format A4] [--landscape]` | Export the current page to PDF (headless only) |
 | `cloak serve start DIR [--port P]` / `stop` / `status` | Local http server for previewing local files (`file://` is blocked); navigate to the printed URL |
-| `cloak session list` / `close [SESSION_ID]` | Multi-session management: list named sessions; `close` without an ID closes the current session |
-| `cloak cdp endpoint` | Get CDP WebSocket URL (for jshookmcp) |
+| `cloak session list [--all]` / `close [SESSION_ID] [--force]` | Labels, active actions and queues; --all includes workspace paths; --force cancels stuck session work |
+| `cloak cdp endpoint [--page]` | Browser endpoint, or exact current-session page target for external CDP clients |
 | `cloak config` | Show merged config with value sources (default/env/toml) |
 | `cloak config get KEY` | Print one value (e.g. `cloak config get browser.proxy`) |
 | `cloak config set KEY VAL [K2 V2 ...]` | Set scalar(s) or replace a list (batch supported) |
@@ -220,6 +220,8 @@ cloak screenshot -o page.png
 
 For one selector readiness condition, combine it with capture: `cloak screenshot --wait-for "#ready" --wait-timeout 15000`. A timeout stops before any file is written.
 
+**Evidence**: use `navigate --expect-path /page` and `screenshot --expect-url "*/page" --json` to reject redirects. Screenshot JSON includes URL, title, viewport, DPR and actual pixel dimensions. After `page_recreated`/`page_lost`, navigate again. For `session_busy` or a frozen page use `session close --force`; see troubleshooting.
+
 **Screenshot format**: `.png` / `.jpg` / `.jpeg` output suffixes select encoding without `--format`; unknown suffixes warn and use the live `browser.screenshot_format` (`jpeg` by default). JPEG is ~4-10x smaller for observe-act loops; PNG is lossless for UI design, OCR, and visual comparison. MCP defaults to JPEG quality 50.
 
 **Wait variants**: `--selector ".el"` | `--url "**/path"` | `--load networkidle` | `--js "expr"` | `--ms N` | add `--state hidden` to wait for disappearance. `--js` must return a truthy value — wrap Promises: `.then(() => true)`.
@@ -242,7 +244,7 @@ Counter-intuitive behaviors worth knowing before you hit them:
 
 - **Timeouts**: navigation and actions both default to 30s. For slow pages or large uploads, pass `--timeout 60` on `navigate` or `wait`. If `navigation_timeout` errors persist, set `AGENTCLOAK_NAVIGATION_TIMEOUT=60` globally
 - **Headless by default**: the browser runs headless. For stronger anti-detection, start headed without changing config: `cloak daemon stop && cloak daemon start --headed -b`. Or set `headless = false` in `~/.agentcloak/config.toml` (or `AGENTCLOAK_HEADLESS=false`). Xvfb auto-starts on headless Linux servers
-- **Workspace/session identity**: `--workspace PATH` > `AGENTCLOAK_WORKSPACE` > configured roots > Git repository > cwd. `--session ID` > `AGENTCLOAK_SESSION` > worktree/root path hash. Sessions own pages, refs and managers; list/close stay in the caller workspace. Login storage defaults to shared; set `browser.isolation=workspace` and restart for per-workspace storage. Same-space sessions still share login; RemoteBridge requires shared mode.
+- **Workspace/session identity**: `--workspace PATH` > `AGENTCLOAK_WORKSPACE` > configured roots > Git repository > cwd. `--session ID` > `AGENTCLOAK_SESSION` > worktree/root path hash. Sessions own pages, refs and managers; list/close default to the caller workspace; list --all shows all workspaces. Login storage defaults to shared; set `browser.isolation=workspace` and restart for per-workspace storage. Same-space sessions still share login; RemoteBridge requires shared mode.
 - **Daemon lifecycle**: auto-starts on first command, stays running. `cloak launch --tier X` switches tier without restart when no other sessions are active; changing a shared tier/profile with active siblings fails explicitly. Changing headless/profile requires `cloak daemon stop` + `cloak daemon start`. `cloak daemon status` shows current state
 
 For token-saving command choices and error-recovery sequences, read `references/optimization.md`.

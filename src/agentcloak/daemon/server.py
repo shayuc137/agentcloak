@@ -133,12 +133,14 @@ def _write_daemon_file(
     paths: Paths, *, host: str, port: int, profile: str | None = None
 ) -> None:
     from agentcloak import __version__
+    from agentcloak.core.build import build_id
 
     data: dict[str, object] = {
         "pid": os.getpid(),
         "port": port,
         "host": host,
         "version": __version__,
+        "build_id": build_id(),
         "profile": profile or "",
     }
     paths.ensure_dirs()
@@ -325,6 +327,7 @@ async def start(
     headless: bool | None = None,
     profile: str | None = None,
     humanize: bool | None = None,
+    log_level: str | None = None,
 ) -> None:
     """Start the daemon server (blocking)."""
     paths, cfg = load_config()
@@ -336,6 +339,8 @@ async def start(
         profile_dir_early.mkdir(parents=True, exist_ok=True)
         apply_profile_config(cfg, profile_dir_early)
 
+    if log_level is not None:
+        cfg.daemon.log_level = log_level
     actual_host = host or cfg.daemon.host
     actual_port = port or cfg.daemon.port
 
@@ -437,11 +442,15 @@ async def start(
         log_target = _file_log_handle  # type: ignore[assignment]
 
     structlog.configure(
-        wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+        wrapper_class=structlog.make_filtering_bound_logger(
+            getattr(logging, cfg.daemon.log_level.upper())
+        ),
         processors=[
             structlog.contextvars.merge_contextvars,
             structlog.stdlib.add_log_level,
-            structlog.dev.ConsoleRenderer(),
+            structlog.dev.ConsoleRenderer(
+                exception_formatter=structlog.dev.plain_traceback
+            ),
         ],
         logger_factory=structlog.PrintLoggerFactory(file=log_target),
     )
@@ -612,7 +621,7 @@ async def start(
         app,
         host=actual_host,
         port=actual_port,
-        log_level="warning",
+        log_level=cfg.daemon.log_level,
         access_log=False,
         loop="asyncio",
         ws="websockets",
@@ -664,6 +673,18 @@ async def start(
     # Windows ProactorEventLoop does not support add_signal_handler.
     loop = asyncio.get_running_loop()
     if sys.platform != "win32":
+
+        def dump_tasks() -> None:
+            import io
+
+            output = io.StringIO()
+            for task in sorted(
+                asyncio.all_tasks(loop), key=lambda task: task.get_name()
+            ):
+                task.print_stack(file=output)
+            logger.warning("asyncio_task_dump", stacks=output.getvalue())
+
+        loop.add_signal_handler(signal.SIGUSR1, dump_tasks)
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(
                 sig,

@@ -388,3 +388,41 @@ async def test_another_caller_cannot_detach_bridge_owner_by_explicit_id() -> Non
     assert state.browser_ctx is remote
     assert state.remote_ctx is remote
     assert state.remote_session_id == "bridge-owner"
+
+
+async def test_force_close_bypasses_remote_lock_and_interrupts_cleanup() -> None:
+    from agentcloak.daemon.routes.session import router
+
+    app = FastAPI()
+    manager = SessionManager(AgentcloakConfig(), app_state=app.state)
+    app.state.session_manager = manager
+    remote_close = AsyncMock(side_effect=AssertionError("remote lock must not be used"))
+    app.state.context_manager = SimpleNamespace(close_remote_session=remote_close)
+    app.include_router(router)
+    install_middlewares(app)
+    closed = AsyncMock()
+    manager.slot("alpha").ctx = SimpleNamespace(force_close=closed)
+    started = asyncio.Event()
+
+    @app.post("/evaluate")
+    async def evaluate() -> None:
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            await asyncio.Event().wait()
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://localhost",
+        headers={"x-agentcloak-session": "alpha"},
+    ) as client:
+        pending = asyncio.create_task(client.post("/evaluate"))
+        await asyncio.wait_for(started.wait(), 1)
+        response = await asyncio.wait_for(
+            client.post("/session/close", json={"force": True}), 1
+        )
+        assert response.json()["data"]["closed"] is True
+        assert (await pending).json()["error"] == "session_cancelled"
+        closed.assert_awaited_once()
+        remote_close.assert_not_awaited()

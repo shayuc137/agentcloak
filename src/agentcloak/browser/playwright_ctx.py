@@ -138,6 +138,8 @@ class PlaywrightContext(BrowserContextBase):
 
         # Multi-tab state: map tab_id -> Page, initial page is tab 0
         self._tabs: dict[int, Any] = {0: page}
+        self._popup_requested = False
+        self._popup_arrived = asyncio.Event()
         self._active_tab: int = 0
         self._next_tab_id: int = 1
         self._browser = browser
@@ -347,6 +349,7 @@ class PlaywrightContext(BrowserContextBase):
     def _on_frame_navigated(self, frame: Any) -> None:
         try:
             if frame == self._page.main_frame:
+                self._navigation_generation += 1
                 self._console_page_url = str(frame.url)
                 self._last_navigation_event = {
                     "url": frame.url,
@@ -366,13 +369,19 @@ class PlaywrightContext(BrowserContextBase):
     def _on_popup_page(self, page: Any) -> None:
         if page in self._tabs.values():
             return
+        self._popup_requested = False
+        self._popup_arrived.set()
         new_id = self._next_tab_id
         self._next_tab_id += 1
         self._tabs[new_id] = page
         self._setup_network_listeners(page)
         self._setup_feedback_listeners(page)
         with contextlib.suppress(Exception):
-            self._last_new_tab_event = {"tab_id": new_id, "url": page.url}
+            self._last_new_tab_event = {
+                "tab_id": new_id,
+                "url": page.url,
+                "open_tabs": len(self._tabs),
+            }
 
     # Playwright console types use "warning"; agents/CLI filter on "warn".
     _CONSOLE_LEVEL_MAP: ClassVar[dict[str, str]] = {"warning": "warn"}
@@ -531,6 +540,13 @@ class PlaywrightContext(BrowserContextBase):
             "status": status,
         }
 
+    @staticmethod
+    async def _detach_cdp(cdp: Any) -> None:
+        # Detach is a browser-level command; never await a renderer response here.
+        with contextlib.suppress(Exception):
+            async with asyncio.timeout(0.1):
+                await cdp.detach()
+
     async def _get_ax_tree(self, *, frames: bool = False) -> list[dict[str, Any]]:
         if (
             self._active_frame is not None
@@ -541,7 +557,7 @@ class PlaywrightContext(BrowserContextBase):
         try:
             tree = await cdp.send("Accessibility.getFullAXTree", {"pierce": True})
         finally:
-            await cdp.detach()
+            await self._detach_cdp(cdp)
         return tree.get("nodes", [])
 
     async def _get_frame_ax_tree(self, frame: Any) -> list[dict[str, Any]]:
@@ -552,7 +568,7 @@ class PlaywrightContext(BrowserContextBase):
             try:
                 tree = await cdp.send("Accessibility.getFullAXTree", {"pierce": True})
             finally:
-                await cdp.detach()
+                await self._detach_cdp(cdp)
             return tree.get("nodes", [])
         except Exception:
             pass
@@ -565,7 +581,7 @@ class PlaywrightContext(BrowserContextBase):
                 params["frameId"] = fid
             tree = await cdp.send("Accessibility.getFullAXTree", params)
         finally:
-            await cdp.detach()
+            await self._detach_cdp(cdp)
         return tree.get("nodes", [])
 
     @staticmethod
@@ -602,7 +618,7 @@ class PlaywrightContext(BrowserContextBase):
                         "Accessibility.getFullAXTree", {"pierce": True}
                     )
                 finally:
-                    await cdp.detach()
+                    await self._detach_cdp(cdp)
                 nodes = tree.get("nodes", [])
                 if nodes:
                     frame_name = frame.name or ""
@@ -682,7 +698,7 @@ class PlaywrightContext(BrowserContextBase):
                 },
             )
         finally:
-            await cdp.detach()
+            await self._detach_cdp(cdp)
         locator = self._page.locator(f'[data-cloak-ref="{marker}"]')
         if await locator.count() == 0:
             raise BackendError(
@@ -922,22 +938,48 @@ class PlaywrightContext(BrowserContextBase):
         }
 
     async def _press_impl(self, *, target: str, key: str) -> dict[str, Any]:
-        if target:
-            index = int(target)
-            element = await self._resolve_element(index)
-            await element.press(str(key))
-            ref = self._get_ref(index)
-            return {"pressed": True, "key": key, "index": index, "element": ref}
-        await self._page.keyboard.press(str(key))
-        return {"pressed": True, "key": key}
+        modifiers = [
+            part
+            for part in key.split("+")
+            if part.removesuffix("Left").removesuffix("Right")
+            in {"Control", "Alt", "Meta", "Shift", "ControlOrMeta", "AltGraph"}
+        ]
+        held: set[str] = getattr(self, "_held_keys", set[str]())
+        try:
+            if target:
+                index = int(target)
+                element = await self._resolve_element(index)
+                ref = self._get_ref(index)
+                await element.press(key)
+                return {"pressed": True, "key": key, "index": index, "element": ref}
+            await self._page.keyboard.press(key)
+            return {"pressed": True, "key": key}
+        finally:
+            # Playwright can leave modifiers down when press fails or is cancelled.
+            for modifier in reversed(modifiers):
+                if modifier and modifier not in held:
+                    with contextlib.suppress(Exception):
+                        async with asyncio.timeout(0.2):
+                            await self._page.keyboard.up(modifier)
 
     async def _keydown_impl(self, *, key: str) -> dict[str, Any]:
-        await self._page.keyboard.down(str(key))
+        await self._page.keyboard.down(key)
+        if not hasattr(self, "_held_keys"):
+            self._held_keys: set[str] = set()
+        self._held_keys.add(key)
         return {"keydown": True, "key": key}
 
     async def _keyup_impl(self, *, key: str) -> dict[str, Any]:
-        await self._page.keyboard.up(str(key))
+        await self._page.keyboard.up(key)
+        if hasattr(self, "_held_keys"):
+            self._held_keys.discard(key)
         return {"keyup": True, "key": key}
+
+    async def _settle_feedback(self) -> None:
+        if self._popup_requested:
+            with contextlib.suppress(TimeoutError):
+                async with asyncio.timeout(0.5):
+                    await self._popup_arrived.wait()
 
     async def _post_action_cleanup(self) -> None:
         with contextlib.suppress(Exception):
@@ -1302,7 +1344,7 @@ class PlaywrightContext(BrowserContextBase):
         except Exception:
             logger.debug("clipboard_grant_failed", exc_info=True)
         finally:
-            await cdp.detach()
+            await self._detach_cdp(cdp)
         self._clipboard_granted = True
 
     async def _clipboard_read_impl(self) -> str:
@@ -1483,9 +1525,7 @@ class PlaywrightContext(BrowserContextBase):
                 action="check JS syntax and page context",
             ) from exc
         finally:
-            with contextlib.suppress(Exception):
-                await cdp.send("Runtime.disable")
-            await cdp.detach()
+            await self._detach_cdp(cdp)
 
         if "exceptionDetails" in resp:
             from agentcloak.browser._cdp_errors import format_cdp_exception
@@ -1703,6 +1743,14 @@ class PlaywrightContext(BrowserContextBase):
                 result["title"] = ""
         return result
 
+    async def tab_close_others(self) -> dict[str, Any]:
+        closed: list[int] = []
+        for tab_id in list(self._tabs):
+            if tab_id != self._active_tab:
+                await self._tab_close_impl(tab_id)
+                closed.append(tab_id)
+        return {"closed": closed}
+
     async def _tab_close_impl(self, tab_id: int) -> dict[str, Any]:
         if tab_id not in self._tabs:
             raise ElementNotFoundError(
@@ -1878,8 +1926,17 @@ class PlaywrightContext(BrowserContextBase):
                     else str(page.url)
                 )
                 params = {**params, "pageUrl": origin}
-            self._dispatch_cdp_event(method, params)
+            self._dispatch_cdp_event(
+                method, params, current_page=tab_id == self._active_tab
+            )
 
+        def window_open(params: dict[str, Any]) -> None:
+            self._popup_requested = True
+            self._popup_arrived.clear()
+            self._last_new_tab_event = {"url": params.get("url", ""), "pending": True}
+
+        session.on("Page.windowOpen", window_open)
+        await session.send("Page.enable")
         session.on("event", _forward)
         self._cdp_sessions[tab_id] = session
         return session
@@ -2031,7 +2088,7 @@ class PlaywrightContext(BrowserContextBase):
             # Cancel pending raw calls without dropping manager event subscriptions.
             self._raw_cdp_sessions.pop(tab_id, None)
             with contextlib.suppress(Exception):
-                await cdp.detach()
+                await self._detach_cdp(cdp)
             raise
         except Exception as exc:
             raise BackendError(
@@ -2039,6 +2096,34 @@ class PlaywrightContext(BrowserContextBase):
                 hint=f"{method}: {exc}",
                 action="check CDP method name and parameters",
             ) from exc
+
+    async def force_close(self) -> None:
+        if self._owns_browser or self._owns_context:
+            await super().force_close()
+            return
+        if self._route_mgr is not None:
+            self._route_mgr.release_all()
+
+        async def terminate_and_close(tab_id: int, page: Any) -> None:
+            if page.is_closed():
+                return
+            session = self._raw_cdp_sessions.get(tab_id) or self._cdp_sessions.get(
+                tab_id
+            )
+            if session is not None:
+                with contextlib.suppress(Exception):
+                    async with asyncio.timeout(0.2):
+                        await session.send("Runtime.terminateExecution")
+            await page.close(run_before_unload=False)
+
+        await asyncio.gather(
+            *(
+                terminate_and_close(tab_id, page)
+                for tab_id, page in list(self._tabs.items())
+            )
+        )
+
+        self._tabs.clear()
 
     async def _close_impl(self) -> None:
         # Detach persistent CDP sessions first. Closing the browser/context

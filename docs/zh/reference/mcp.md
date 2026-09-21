@@ -490,3 +490,7 @@ JS 代码覆盖率、CPU 性能分析和堆内存快照——找出哪些代码�
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | （无） | | | 返回所有可用的 `Performance.getMetrics` 计数器 |
+
+## 证据参数
+
+`agentcloak_navigate(expect_path=...)` 检查最终 pathname；`agentcloak_screenshot(expect_url=...)` 检查截图 URL，并随图片返回 URL、标题、视口、DPR 与像素尺寸。`agentcloak_status(query="cdp_endpoint", page=True)` 选择调用方页面 target；`agentcloak_tab(action="close", others=True)` 只关闭同会话其他标签页。会话列表与强制关闭仍是 CLI/HTTP 管理操作，见[恢复与证据](../guides/recovery.md)。

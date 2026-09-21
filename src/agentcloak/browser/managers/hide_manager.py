@@ -163,21 +163,44 @@ class HideManager:
         keep_overlays: bool = False,
     ) -> AsyncGenerator[None]:
         """Temporarily adjust hiding for one snapshot or screenshot."""
-        async with self._lock:
-            if self._script_identifier is None:
-                await self._apply_locked()
-            if keep_overlays:
-                await self._ctx._evaluate_impl(self._toggle_js(True), world="main")
-            elif extra:
-                await self._ctx._evaluate_impl(
-                    self._injection_js(self.css_for(extra) or ""), world="main"
-                )
-            try:
-                yield
-            finally:
-                await self._ctx._evaluate_impl(
-                    self._injection_js(self.css_for() or ""), world="main"
-                )
+        try:
+            async with self._lock:
+                if self._script_identifier is None:
+                    await self._apply_locked()
+                if keep_overlays:
+                    await self._ctx._evaluate_impl(self._toggle_js(True), world="main")
+                elif extra:
+                    await self._ctx._evaluate_impl(
+                        self._injection_js(self.css_for(extra) or ""), world="main"
+                    )
+                failed = False
+                try:
+                    yield
+                except BaseException:
+                    failed = True
+                    raise
+                finally:
+                    task = asyncio.current_task()
+                    cancelling = task is not None and bool(task.cancelling())
+                    try:
+                        async with asyncio.timeout(0.1 if cancelling else 2):
+                            await self._ctx._evaluate_impl(
+                                self._injection_js(self.css_for() or ""), world="main"
+                            )
+                    except Exception as exc:
+                        self._ctx.mark_page_invalid()
+                        if not failed:
+                            self._ctx._translate_browser_closed(exc)
+                            from agentcloak.core.errors import BackendError
+
+                            raise BackendError(
+                                error="observation_cleanup_failed",
+                                hint="Could not restore the page hiding rules",
+                                action="navigate before retrying the observation",
+                            ) from exc
+        except Exception as exc:
+            self._ctx._translate_browser_closed(exc)
+            raise
 
     @classmethod
     def _injection_js(cls, css: str) -> str:

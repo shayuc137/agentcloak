@@ -183,6 +183,11 @@ def _format_feedback(data: dict[str, Any]) -> list[str]:
         dtype = str(dialog.get("type", "") or "dialog")
         msg = str(dialog.get("message", "") or "")
         lines.append(f"dialog: {dtype} {msg!r}" if msg else f"dialog: {dtype}")
+    if data.get("new_tab"):
+        tab = data["new_tab"]
+        lines.append(f"new_tab: {tab.get('tab_id')} {tab.get('url', '')}")
+    if data.get("warning"):
+        lines.append(f"warning: {data['warning']}")
     raw_download = data.get("download")
     if isinstance(raw_download, dict) and raw_download:
         download = _as_dict(raw_download)
@@ -416,6 +421,13 @@ def render_evaluate_text(data: dict[str, Any]) -> str:
     * object/array → pretty JSON so agents can read it
     * truncated marker → forward verbatim so the agent knows
     """
+    if data.get("new_tab"):
+        plain = render_evaluate_text({k: v for k, v in data.items() if k != "new_tab"})
+        tab = data["new_tab"]
+        feedback = f"new tab {tab.get('tab_id')} | {tab.get('url', '')}"
+        if data.get("warning"):
+            feedback += f" | {data['warning']}"
+        return f"{plain}\n{feedback}".lstrip()
     if data.get("truncated"):
         result_text = str(data.get("result", "") or "")
         size = int(data.get("total_size", 0) or 0)
@@ -643,7 +655,13 @@ def render_session_list_text(data: dict[str, Any]) -> str:
         state = str(s.get("state", ""))
         tier = str(s.get("tier", ""))
         idle = s.get("idle_seconds", 0)
-        lines.append(f"{sid} | {state} | {tier} | idle {idle}s")
+        label = s.get("label") or sid
+        active = ", ".join(s.get("active_actions") or []) or "none"
+        lines.append(
+            f"{label} ({sid}) | {state} | {tier} | idle {idle}s "
+            f"| active {active} | queued {s.get('queued', 0)} "
+            f"| {s.get('workspace_path', '')}"
+        )
     return "\n".join(lines) if lines else "no named sessions"
 
 

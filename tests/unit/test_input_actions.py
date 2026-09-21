@@ -62,15 +62,25 @@ async def test_screenshot_restores_viewport_even_on_failure(fails: bool) -> None
     ctx = context()
     ctx._get_viewport_impl = AsyncMock(return_value=(1280, 720))
     ctx._set_viewport_impl = AsyncMock()
+    from io import BytesIO
+
+    from PIL import Image
+
+    image = BytesIO()
+    Image.new("RGB", (1024, 768)).save(image, format="PNG")
+    ctx._evaluate_impl = AsyncMock(
+        return_value={"url": "about:blank", "document_id": 123}
+    )
+    ctx._get_page_info = AsyncMock(return_value=("about:blank", ""))
     ctx._screenshot_impl = AsyncMock(
         side_effect=RuntimeError("capture failed") if fails else None,
-        return_value=b"image",
+        return_value=image.getvalue(),
     )
     if fails:
         with pytest.raises(RuntimeError, match="capture failed"):
             await ctx.screenshot(viewport="1024x768")
     else:
-        assert await ctx.screenshot(viewport="1024x768") == b"image"
+        assert await ctx.screenshot(viewport="1024x768") == image.getvalue()
     assert [call.args for call in ctx._set_viewport_impl.await_args_list] == [
         (1024, 768),
         (1280, 720),
@@ -344,3 +354,115 @@ async def test_tab_cleanup_detaches_only_its_raw_and_manager_channels() -> None:
     raw_channel.detach.assert_awaited_once()
     manager_channel.detach.assert_awaited_once()
     sibling_channel.detach.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "key,expected",
+    [
+        ("ctrl+enter", "Control+Enter"),
+        ("ESC", "Escape"),
+        ("shift+arrowup", "Shift+ArrowUp"),
+        ("SPACE", "Space"),
+        ("ctrl++", "Control++"),
+        ("+", "+"),
+    ],
+)
+def test_normalizes_complete_key_combinations(key: str, expected: str) -> None:
+    assert normalize_key(key) == expected
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "ctrl+unknown",
+        "unknown+x",
+        "ctrl+",
+        "",
+        "alt+enter+x",
+        "ctrl+help",
+        "ctrl+F13",
+        "ctrl+中",
+        "ctrl+\x00",
+    ],
+)
+def test_rejects_unknown_combination_before_dispatch(key: str) -> None:
+    with pytest.raises(AgentBrowserError) as caught:
+        normalize_key(key)
+    assert caught.value.error == "invalid_argument"
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+@pytest.mark.parametrize(
+    "key",
+    [
+        "ctrl+x",
+        "Control",
+        "Control+Shift",
+        "ControlLeft",
+        "ControlRight",
+        "ShiftLeft",
+        "ShiftRight",
+        "AltLeft",
+        "AltRight",
+        "MetaLeft",
+        "MetaRight",
+        "AltGraph",
+        "ControlOrMeta",
+    ],
+)
+async def test_failed_press_releases_new_modifiers(cancel: bool, key: str) -> None:
+    from agentcloak.browser.playwright_ctx import PlaywrightContext
+
+    held: set[str] = set()
+    failure = asyncio.CancelledError() if cancel else RuntimeError("input interrupted")
+
+    async def press(key: str) -> None:
+        held.update(part for part in key.split("+") if part != "x")
+        raise failure
+
+    async def up(key: str) -> None:
+        held.discard(key)
+
+    page = MagicMock()
+    page.keyboard.press = press
+    page.keyboard.up = up
+    from agentcloak.core.seq import RingBuffer, SeqCounter
+
+    ctx = PlaywrightContext(
+        page=page,
+        browser=MagicMock(),
+        playwright=MagicMock(),
+        seq_counter=SeqCounter(),
+        ring_buffer=RingBuffer(),
+    )
+    with pytest.raises(type(failure)):
+        await ctx._run_action("press", "", key=key)
+    assert held == set()
+
+
+async def test_same_url_document_change_rejects_capture() -> None:
+    import json
+
+    from tests.image_data import PNG
+
+    ctx = context()
+    ctx._evaluate_impl = AsyncMock(
+        return_value={"url": "https://example.com", "document_id": 1}
+    )
+
+    async def capture(**kwargs: Any) -> bytes:
+        ctx.feed_message(
+            json.dumps(
+                {
+                    "type": "cdp_event",
+                    "method": "Page.frameNavigated",
+                    "params": {"frame": {"id": "main", "url": "https://example.com"}},
+                }
+            )
+        )
+        return PNG
+
+    ctx._screenshot_impl = capture
+    with pytest.raises(AgentBrowserError) as caught:
+        await ctx.screenshot()
+    assert caught.value.error == "page_changed"

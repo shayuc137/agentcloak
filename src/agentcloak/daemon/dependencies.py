@@ -187,9 +187,21 @@ async def get_browser_ctx(request: Request) -> Any:
         )
     session_mgr = getattr(request.app.state, "session_manager", None)
     if session_mgr is not None:
-        return await session_mgr.get_or_create(
+        ctx = await session_mgr.get_or_create(
             _session_id_of(request), **workspace_scope(request)
         )
+        slot = session_mgr.slot(_session_id_of(request), **workspace_scope(request))
+        if slot.page_recreated and request.url.path != "/navigate":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "ok": False,
+                    "error": "page_recreated",
+                    "hint": "Previous page lost; a blank page was created",
+                    "action": "navigate to the intended URL before capturing",
+                },
+            )
+        return ctx
     ctx = request.app.state.browser_ctx
     if ctx is None:
         raise _browser_not_ready(request)

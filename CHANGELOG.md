@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Add workspace-aware sessions with shared login by default and configurable isolated, persistent workspace storage.
+- Expand browser controls with live viewport changes, drag, keyboard aliases, request hold/release, and bounded raw CDP calls.
+- Add bounded session queues, client-disconnect cancellation, force recovery, readable session diagnostics, popup feedback and source build identification.
+- Add screenshot page identity and pixel dimensions, URL/path assertions, and exact current-page CDP endpoints.
+- Correct keyboard cleanup, recent-action network capture, error hints and lost-page reporting; expand dual-backend browser regression coverage.
+
 ## 0.3.5 (2026-09-09)
 
 Hardened profile subsystem, macOS platform fix, and a security-relevant dependency refresh.

@@ -19,6 +19,7 @@ from agentcloak.cli.output import (
     set_pretty,
     value,
 )
+from agentcloak.core.build import build_id
 from agentcloak.core.errors import AgentBrowserError
 
 __all__ = ["app", "main"]
@@ -99,7 +100,7 @@ def _configure_logging(*, verbosity: int) -> None:
 
 def _version_callback(value: bool) -> None:
     if value:
-        typer.echo(f"agentcloak {__version__}")
+        typer.echo(f"agentcloak {__version__} ({build_id()})")
         raise typer.Exit
 
 
@@ -513,9 +514,15 @@ def show_version() -> None:
     if is_json_mode():
         from agentcloak.cli._dispatch import emit_envelope
 
-        emit_envelope({"ok": True, "seq": 0, "data": {"version": __version__}})
+        emit_envelope(
+            {
+                "ok": True,
+                "seq": 0,
+                "data": {"version": __version__, "build_id": build_id()},
+            }
+        )
         return
-    value(__version__)
+    value(f"{__version__} ({build_id()})")
 
 
 def main() -> None:
@@ -551,7 +558,7 @@ def _run_cli() -> None:
         str(state["workspace"]) if state["workspace"] is not None else None
     )
     if state["version"]:
-        typer.echo(f"agentcloak {__version__}")
+        typer.echo(f"agentcloak {__version__} ({build_id()})")
         return
     verbose = state["verbose"]
     pretty = state["pretty"]

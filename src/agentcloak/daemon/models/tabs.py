@@ -27,7 +27,10 @@ class TabNewRequest(BaseModel):
 
 
 class TabCloseRequest(BaseModel):
-    tab_id: int = Field(description="Tab id (from tab list) to close.")
+    tab_id: int = Field(-1, description="Tab id (from tab list) to close.")
+    others: bool = Field(
+        False, description="Close all tabs except the active tab in this session."
+    )
 
 
 class TabSwitchRequest(BaseModel):

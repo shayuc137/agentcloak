@@ -56,4 +56,74 @@ def normalize_key(key: str) -> str:
         "alt": "Alt",
         "shift": "Shift",
     }
-    return "+".join(aliases.get(part.lower(), part) for part in key.split("+"))
+    names = [
+        "Enter",
+        "Escape",
+        "Tab",
+        "Space",
+        "Backspace",
+        "Delete",
+        "Insert",
+        "Home",
+        "End",
+        "PageUp",
+        "PageDown",
+        "ArrowUp",
+        "ArrowDown",
+        "ArrowLeft",
+        "ArrowRight",
+        "CapsLock",
+        "NumLock",
+        "ScrollLock",
+        "Pause",
+        "PrintScreen",
+        "ContextMenu",
+        "AltGraph",
+        "ControlLeft",
+        "ControlRight",
+        "ShiftLeft",
+        "ShiftRight",
+        "AltLeft",
+        "AltRight",
+        "MetaLeft",
+        "MetaRight",
+        "NumpadAdd",
+        "NumpadSubtract",
+        "NumpadMultiply",
+        "NumpadDivide",
+        "NumpadDecimal",
+        "NumpadEnter",
+        "Backquote",
+        "Minus",
+        "Equal",
+        "BracketLeft",
+        "BracketRight",
+        "Backslash",
+        "Semicolon",
+        "Quote",
+        "Comma",
+        "Period",
+        "Slash",
+    ]
+    names += [f"F{i}" for i in range(1, 13)]
+    names += [f"{prefix}{i}" for prefix in ("Digit", "Numpad") for i in range(10)]
+    names += [f"Key{letter}" for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"]
+    aliases.update({name.lower(): name for name in names})
+    aliases.update({"esc": "Escape", "return": "Enter", "spacebar": "Space"})
+    # A trailing plus is the literal '+' key, including in 'Control++'.
+    parts = key.split("+")
+    if key == "+" or key.endswith("++"):
+        parts = [*parts[:-2], "+"]
+    modifiers = {"Control", "Alt", "Shift", "Meta", "ControlOrMeta"}
+    aliases["controlormeta"] = "ControlOrMeta"
+    normalized = [aliases.get(part.lower(), part) for part in parts]
+    literal = normalized[-1] if normalized else ""
+    printable = len(literal) == 1 and (" " <= literal <= "~" or literal in {"\r", "\n"})
+    if (
+        not normalized
+        or any(part not in modifiers for part in normalized[:-1])
+        or not normalized[-1]
+        or (not printable and normalized[-1] not in {*names, *modifiers})
+    ):
+        raise invalid_input(f"Unknown key combination: {key!r}")
+    return "+".join(normalized)

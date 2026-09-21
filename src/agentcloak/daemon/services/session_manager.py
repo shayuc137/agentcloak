@@ -39,6 +39,16 @@ class SessionSlot:
     resume: ResumeWriter = field(default_factory=ResumeWriter)
     cache: SimpleNamespace = field(default_factory=SimpleNamespace)
     users: int = 0
+    label: str = ""
+    workspace_path: str = ""
+    queued: int = 0
+    tasks: set[asyncio.Task[None]] = field(default_factory=set[asyncio.Task[None]])
+    active: dict[asyncio.Task[None], str] = field(
+        default_factory=dict[asyncio.Task[None], str]
+    )
+    page_recreated: bool = False
+    has_page: bool = False
+    closing: bool = False
 
     @property
     def state(self) -> str:
@@ -60,6 +70,10 @@ class SessionManager:
         self._workspaces: dict[str, Any] = {}
         self._lock = asyncio.Lock()
         self._owner: Any = None
+
+    @property
+    def config(self) -> AgentcloakConfig:
+        return self._config
 
     def slot(self, session_id: str, *, workspace_id: str = "") -> SessionSlot:
         key = (workspace_id, session_id)
@@ -110,8 +124,10 @@ class SessionManager:
                 slot.cache = SimpleNamespace()
                 slot.resume = ResumeWriter()
             if slot.ctx is None:
+                slot.page_recreated = slot.has_page
                 raw = await owner.fork_session()
                 slot.ctx = SecureBrowserContext(raw, self._config)
+                slot.has_page = True
                 slot.tier = raw.stealth_tier
                 selectors = (
                     self._hide_selectors_provider()
@@ -184,12 +200,58 @@ class SessionManager:
             )
             return result
 
+    async def force_close_session(
+        self, session_id: str, *, workspace_id: str = ""
+    ) -> bool:
+        slot = self.slot(session_id, workspace_id=workspace_id)
+        if slot.closing:
+            raise AgentBrowserError(
+                error="session_busy",
+                hint="Session recovery is already in progress",
+                action="retry after recovery",
+            )
+        slot.closing = True
+        try:
+            tasks = list(slot.tasks)
+            for task in tasks:
+                task.cancel()
+            if tasks:
+                try:
+                    async with asyncio.timeout(0.15):
+                        await asyncio.gather(*tasks, return_exceptions=True)
+                except TimeoutError:
+                    logger.warning(
+                        "Interrupted blocked cleanup for session %s", session_id
+                    )
+            ctx = slot.ctx
+            slot.cache = SimpleNamespace()
+            slot.resume = ResumeWriter()
+            slot.has_page = False
+            slot.page_recreated = False
+            if ctx is not None:
+                try:
+                    async with asyncio.timeout(0.7):
+                        await ctx.force_close()
+                except TimeoutError as exc:
+                    raise AgentBrowserError(
+                        error="session_close_timeout",
+                        hint="The browser did not finish closing this session",
+                        action="retry session close --force; session retained",
+                    ) from exc
+            slot.ctx = None
+            # Keep workspace storage alive; frozen renderers cannot serialize it.
+            return ctx is not None
+        finally:
+            slot.closing = False
+
     async def close_session(self, session_id: str, *, workspace_id: str = "") -> bool:
         async with self._lock:
             slot = self._sessions.get((workspace_id, session_id))
             if slot is None or slot.ctx is None:
                 return False
             await self._reset_slot(slot)
+            slot.has_page = False
+            slot.page_recreated = False
             await self._release_unused_workspaces()
             return True
 
@@ -219,18 +281,24 @@ class SessionManager:
             await self._close_slots()
             self._sessions.clear()
 
-    def list_sessions(self, *, workspace_id: str = "") -> list[dict[str, Any]]:
+    def list_sessions(
+        self, *, workspace_id: str = "", all_workspaces: bool = False
+    ) -> list[dict[str, Any]]:
         now = time.monotonic()
         return [
             {
                 "session_id": slot.session_id,
                 "workspace_id": slot.workspace_id,
                 "state": slot.state,
+                "label": slot.label or slot.session_id,
+                "workspace_path": slot.workspace_path,
+                "active_actions": list(slot.active.values()),
+                "queued": slot.queued,
                 "tier": slot.tier.value,
                 "idle_seconds": round(now - slot.last_request_time, 1),
             }
             for slot in self._sessions.values()
-            if slot.workspace_id == workspace_id
+            if all_workspaces or slot.workspace_id == workspace_id
         ]
 
     async def cleanup_idle(self, timeout: float) -> list[str]:

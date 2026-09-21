@@ -39,6 +39,9 @@ class _FakeSessionManager:
         self.calls: list[str] = []
         self.ctx = SimpleNamespace(name="session_local_browser")
 
+    def slot(self, session_id: str) -> Any:
+        return SimpleNamespace(page_recreated=False)
+
     async def get_or_create(self, session_id: str) -> Any:
         self.calls.append(session_id)
         return self.ctx

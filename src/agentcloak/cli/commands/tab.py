@@ -40,14 +40,19 @@ def tab_new(
 
 @app.command("close")
 def tab_close(
-    tab_id: int = typer.Argument(help="ID of the tab to close."),
+    tab_id: int = typer.Argument(-1, help="ID of the tab to close."),
+    others: bool = typer.Option(
+        False, "--others", help="Close sibling tabs in this session."
+    ),
 ) -> None:
-    """Close a tab by ID."""
+    """Close a tab by ID or all other tabs in this session."""
+    if (tab_id < 0) == (not others):
+        raise typer.BadParameter("Provide a tab id or --others")
     dispatch_text_or_json(
         DaemonClient(),
         "POST",
         "/tab/close",
-        json_body={"tab_id": tab_id},
+        json_body={"tab_id": tab_id, **({"others": True} if others else {})},
         renderer=lambda d: render_tab_op_text("closed", d),
     )
 

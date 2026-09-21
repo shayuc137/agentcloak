@@ -19,6 +19,7 @@ You need a browser. Your agents do too.
 
 ## Highlights
 
+- **Recoverable sessions and verifiable captures** -- force-close stuck sessions, inspect queues, assert page URLs, capture page/viewport metadata, and attach CDP clients to the exact session page
 - **Pages as structured text** -- every page becomes an accessibility tree with `[N]` indexed elements; agents interact by index, not fragile CSS selectors
 - **CLI + Skill on-demand loading** -- agents call `cloak` via Bash; the Skill lazy-loads at ~300 tokens (vs ~6,000 for MCP tool definitions)
 - **CloakBrowser built-in stealth** -- 57 C++ patches on Chromium for realistic browser fingerprinting; agents browse without being misidentified as bots

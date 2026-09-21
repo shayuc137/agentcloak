@@ -9,17 +9,19 @@ from typing import Any
 
 import orjson
 import structlog
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 
 # ``screenshot_to_base64`` lives on the abstract base module so daemon code
 # stays backend-agnostic (layer isolation: daemon → BrowserContextBase).
 from agentcloak.browser.base import screenshot_to_base64
 from agentcloak.core.screenshot_format import resolve_screenshot_format
-from agentcloak.daemon.dependencies import (  # noqa: TC001
+from agentcloak.daemon.dependencies import (
     BrowserCtxDep,
     ConfigDep,
     ResumeWriterDep,
     SnapshotCacheDep,
+    session_id_of,
+    workspace_scope,
 )
 from agentcloak.daemon.models import (
     ActionRequest,
@@ -57,11 +59,29 @@ router = APIRouter()
 @router.post("/navigate", response_model=OkEnvelope[NavigateResponse])
 async def handle_navigate(
     body: NavigateRequest,
+    request: Request,
     ctx: BrowserCtxDep,
     config: ConfigDep,
     resume_writer: ResumeWriterDep,
 ) -> dict[str, Any]:
     result = await ctx.navigate(body.url, timeout=body.timeout)
+    manager = getattr(request.app.state, "session_manager", None)
+    if manager is not None:
+        manager.slot(
+            session_id_of(request), **workspace_scope(request)
+        ).page_recreated = False
+    if body.expect_path:
+        from urllib.parse import urlsplit
+
+        from agentcloak.core.errors import AgentBrowserError
+
+        actual = urlsplit(str(result.get("url", ""))).path
+        if actual != body.expect_path:
+            raise AgentBrowserError(
+                error="url_mismatch",
+                hint=f"Expected path {body.expect_path!r}, got {actual!r}",
+                action="check redirects and login state",
+            )
     await _update_resume(
         resume_writer, ctx, action_summary={"kind": "navigate", "url": body.url}
     )
@@ -84,6 +104,9 @@ async def handle_navigate(
 async def handle_screenshot(
     ctx: BrowserCtxDep,
     config: ConfigDep,
+    expect_url: str = Query(
+        "", description="Require the captured URL to match this glob."
+    ),
     viewport: str | None = Query(
         None, description="Temporary WIDTHxHEIGHT; restored after capture."
     ),
@@ -150,8 +173,11 @@ async def handle_screenshot(
             full_page=full_page,
             format=resolved_format,
             quality=quality,
+            **({"expect_url": expect_url} if expect_url else {}),
             **({"viewport": viewport} if viewport is not None else {}),
         )
+
+    metadata = getattr(ctx, "screenshot_metadata", {})
 
     # ``output_path`` lets an API/MCP caller driving a same-host daemon get a
     # file directly. The CLI keeps its own base64→file path (it may target a
@@ -160,16 +186,26 @@ async def handle_screenshot(
         from pathlib import Path
 
         dest = Path(output_path).expanduser()
-        dest.parent.mkdir(parents=True, exist_ok=True)
+        from agentcloak.core.input import invalid_input
+
+        if not dest.parent.is_dir():
+            raise invalid_input(
+                f"Screenshot parent directory does not exist: {dest.parent}"
+            )
         dest.write_bytes(raw)
-        data = {"path": str(dest), "size": len(raw), "format": resolved_format}
+        data = {
+            "path": str(dest),
+            "size": len(raw),
+            "format": resolved_format,
+            **metadata,
+        }
         warning = resolution.warning_for(resolved_format)
         if warning:
             data["warning"] = warning
         return _ok(data, seq=ctx.seq)
 
     b64 = screenshot_to_base64(raw)
-    data = {"base64": b64, "size": len(raw), "format": resolved_format}
+    data = {"base64": b64, "size": len(raw), "format": resolved_format, **metadata}
     return _ok(data, seq=ctx.seq)
 
 
@@ -299,7 +335,12 @@ async def handle_evaluate(
         data = {"result": result_repr, "truncated": True, "total_size": total_size}
         return _ok(data, seq=ctx.seq)
 
-    data = {"result": result, "truncated": False, "total_size": total_size}
+    data = {
+        "result": result,
+        "truncated": False,
+        "total_size": total_size,
+        **ctx.take_feedback(),
+    }
     return _ok(data, seq=ctx.seq)
 
 

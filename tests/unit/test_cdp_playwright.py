@@ -110,7 +110,7 @@ class TestSessionCache:
 
         received: list[tuple[str, dict[str, Any]]] = []
         ctx._dispatch_cdp_event = (  # type: ignore[method-assign]
-            lambda method, params: received.append((method, params))
+            lambda method, params, **kwargs: received.append((method, params))
         )
 
         await ctx._get_or_create_cdp_session()
@@ -128,7 +128,7 @@ class TestSessionCache:
 
         received: list[tuple[str, dict[str, Any]]] = []
         ctx._dispatch_cdp_event = (  # type: ignore[method-assign]
-            lambda method, params: received.append((method, params))
+            lambda method, params, **kwargs: received.append((method, params))
         )
 
         await ctx._get_or_create_cdp_session()
@@ -209,7 +209,7 @@ class TestCdpImplAtoms:
         result = await ctx._cdp_send_impl("Debugger.enable", {"k": "v"})
 
         assert result == {"result": 42}
-        session.send.assert_awaited_once_with("Debugger.enable", {"k": "v"})
+        session.send.assert_any_await("Debugger.enable", {"k": "v"})
 
     @pytest.mark.asyncio
     async def test_cdp_send_impl_coerces_non_dict(self) -> None:
@@ -229,4 +229,33 @@ class TestCdpImplAtoms:
 
         await ctx._cdp_enable_domain_impl("Network")
 
-        session.send.assert_awaited_once_with("Network.enable")
+        session.send.assert_any_await("Network.enable")
+
+
+async def test_background_navigation_does_not_invalidate_active_capture() -> None:
+    from tests.image_data import PNG
+
+    session = _make_session()
+    ctx = _make_ctx(_make_page(session))
+    await ctx._get_or_create_cdp_session()
+    forward = session._listeners["event"][0]
+    other = _make_page(_make_session())
+    ctx._page.context.new_page = AsyncMock(return_value=other)
+    await ctx.tab_new()
+    ctx._evaluate_impl = AsyncMock(
+        return_value={"url": "https://example.com", "document_id": 1}
+    )
+
+    async def capture(**kwargs: Any) -> bytes:
+        forward(
+            {
+                "method": "Page.frameNavigated",
+                "params": {
+                    "frame": {"id": "background", "url": "https://example.com/reloaded"}
+                },
+            }
+        )
+        return PNG
+
+    ctx._screenshot_impl = capture
+    assert await ctx.screenshot() == PNG

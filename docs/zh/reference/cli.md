@@ -784,3 +784,21 @@ cloak batch --calls-file calls.jsonl --json
 每行是一个 daemon JSON 请求：`method`、相对 `path`，以及可选的 `params`、`body`。整个序列复用一个进程和 HTTP 连接池；会话/工作空间沿用全局参数与配置，不能逐行切换。不接受完整 URL 或任意 headers；查询字段放入 `params`。
 
 `--json` 每条输出一个紧凑信封，增加从零开始的 `index` 和从一开始的输入 `line`，读取下一行前立即刷新输出（`--pretty` 不展开 JSONL）。遇到第一条非法输入或请求失败，输出 `ok:false` 并非零退出；已经执行的操作保留，不回滚、不自动重放动作。空输入不执行操作。请求字段见生成的 HTTP 路由参考。原有 `cloak do batch --calls-file` 保留动作批处理、结果引用和导航/对话框中断规则。
+
+## record
+
+```bash
+cloak record start --format webm --max-seconds 120 --max-frames 600
+cloak record status
+cloak record stop -o transition.webm
+# No encoder required:
+cloak record start --format zip
+cloak record stop -o frames.zip
+cloak screenshot --annotate --dpr 2 -o annotated.png --json
+```
+
+录屏使用独立 CDP screencast，固定录制启动时的活动标签页。该页导航继续录制，切换标签不会切换录制目标；每个 session 独立持有录屏。不录制音频。支持本地 Playwright/CloakBrowser，RemoteBridge 明确拒绝。
+
+WebM 导出要求 daemon 所在机器安装含 VP9 编码器的 `ffmpeg`。ZIP 包含 JPEG 帧和 `manifest.json`，记录逐帧 URL、经过时间和 CDP 元数据。screencast 记录合成器更新，并非固定 FPS；WebM 保留时间间隔。帧尺寸上限 1920×1080，视口变化时按首帧尺寸等比缩放并补边。默认最多 600 帧/120 秒，可配置到 3000 帧/600 秒，帧数据另有固定 64 MiB 上限。达到限制或录制页关闭后停止采集、保留帧直到 `record stop`；关闭 session 则丢弃未导出的录屏。未导出的录屏会阻止再次 start。stop 将文件写到 CLI/MCP 客户端机器，HTTP 返回 base64。
+
+`--annotate` 生成新的 snapshot 引用，在图片上绘制元素框及 `[N]`，不向页面添加覆盖层。JSON 增加 `annotated` 和 `annotations`（`ref`、`role`、`name`、`box`）。box 单位为 CSS 像素，视口截图相对视口，全页截图相对文档，绘图按实际 DPR 缩放。几何信息来自原生 CDP，避免 JavaScript 指纹扰动。已移除或未渲染的节点没有框。返回引用对应此次截图的页面状态，之后 DOM 变化需重新 snapshot；临时视口和 DPR 仍会恢复。

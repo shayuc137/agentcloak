@@ -138,7 +138,7 @@ async def test_cli_and_mcp_targeting(private_api, local_server, tmp_path):
     from mcp.server.fastmcp import FastMCP
 
     from agentcloak.client import DaemonClient
-    from agentcloak.mcp.tools import interaction, navigation, network
+    from agentcloak.mcp.tools import interaction, navigation, network, record
 
     http, _ = private_api
     root = tmp_path / "state"
@@ -174,6 +174,7 @@ async def test_cli_and_mcp_targeting(private_api, local_server, tmp_path):
 
     await cli("navigate", f"{local_server}/input-actions.html")
     await cli("fill", "--selector", "#editor", "--text", "from-cli")
+    await cli("fill", "positional value", "--selector", "#editor")
     found = await cli("snapshot", "--find", "Editor")
     assert "Editor" in found["data"]["tree_text"]
     await cli("network", "--pending", "--filter", "*/missing")
@@ -192,6 +193,20 @@ async def test_cli_and_mcp_targeting(private_api, local_server, tmp_path):
         "--sample",
         "1",
     )
+
+    annotated = await cli(
+        "screenshot",
+        "--annotate",
+        "--format",
+        "png",
+        "-o",
+        str(tmp_path / "annotated.png"),
+    )
+    assert annotated["data"]["annotated"] and annotated["data"]["annotations"]
+    await cli("record", "start", "--format", "zip")
+    await cli("js", "evaluate", "document.body.style.background='blue'")
+    video = await cli("record", "stop", "-o", str(tmp_path / "screen.zip"))
+    assert video["data"]["frames"] >= 1 and (tmp_path / "screen.zip").is_file()
 
     calls = [
         {
@@ -287,13 +302,30 @@ async def test_cli_and_mcp_targeting(private_api, local_server, tmp_path):
         auto_start=False,
     )
     mcp = FastMCP("surfaces")
-    for register in (navigation.register, interaction.register, network.register):
+    for register in (
+        navigation.register,
+        interaction.register,
+        network.register,
+        record.register,
+    ):
         register(mcp, client)
     await client.navigate(f"{local_server}/input-actions.html")
     await mcp.call_tool(
         "agentcloak_action", {"kind": "fill", "selector": "#editor", "text": "from-mcp"}
     )
     assert (await client.evaluate("editor.value"))["data"]["result"] == "from-mcp"
+    await mcp.call_tool("agentcloak_record", {"action": "start", "format": "zip"})
+    await client.evaluate("document.body.style.background='green'")
+    await asyncio.sleep(0.15)
+    await mcp.call_tool(
+        "agentcloak_record",
+        {"action": "stop", "output_path": str(tmp_path / "mcp.zip")},
+    )
+    assert (tmp_path / "mcp.zip").is_file()
+    annotated = await mcp.call_tool(
+        "agentcloak_screenshot", {"annotate": True, "format": "png"}
+    )
+    assert "image" in str(annotated).lower()
     result = await mcp.call_tool("agentcloak_snapshot", {"find": "Editor"})
     assert "Editor" in str(result)
     await mcp.call_tool("agentcloak_network", {"pending": True, "filter": "*/missing"})

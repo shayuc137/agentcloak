@@ -68,6 +68,8 @@ jobs:
         run: uv run --locked playwright install --with-deps --only-shell chromium
       # The shared fixture also launches CloakBrowser, which downloads its
       # binary on first use. Use local pages so navigation needs no website.
+      - name: Install recording encoder
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Navigate, screenshot, and evaluate on both backends
         run: >-
           uv run --locked pytest tests/integration/test_navigation.py
@@ -78,6 +80,7 @@ jobs:
           uv run --locked pytest
           tests/integration/test_page_emulation.py
           tests/integration/test_storage_lifecycle.py
+          tests/integration/test_visual_evidence.py
           tests/integration/test_interaction_observation.py
           tests/integration/test_input_actions.py
           tests/integration/test_network_controls.py

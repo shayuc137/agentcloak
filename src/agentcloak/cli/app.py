@@ -40,7 +40,7 @@ _GROUPS = (
     "launch, network, fetch, bridge, cookies, skill, cdp, dialog, wait, "
     "upload, config, console, download, storage, clipboard, pdf, serve, diff, "
     "script, route, emulation, graphql, debugger, ws, sse, sourcemap, "
-    "profiler, performance, session, hide, viewport, emulate, batch"
+    "profiler, performance, session, hide, viewport, emulate, batch, record"
 )
 _EPILOG = (
     f"Shortcuts (top-level, also documented under their groups):\n  {_SHORTCUTS}\n"
@@ -258,6 +258,7 @@ def _register_commands() -> None:
         performance,
         profile,
         profiler,
+        record,
         route,
         script,
         serve_cmd,
@@ -300,6 +301,9 @@ def _register_commands() -> None:
     app.add_typer(js.app, name="js", help="JavaScript execution.")
     app.add_typer(
         batch.app, name="batch", help="Sequential mixed daemon requests from JSONL."
+    )
+    app.add_typer(
+        record.app, name="record", help="Record session screen video or frame archives."
     )
     app.add_typer(network.app, name="network", help="Network request monitoring.")
     app.add_typer(

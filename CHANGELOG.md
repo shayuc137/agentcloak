@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add bounded, session-owned screen recording with WebM or timestamped frame archives, and DPR-aware screenshot annotations using native geometry and actionable refs.
+
 - Add streaming JSONL request batches with a shared HTTP connection pool, fixed workspace/session identity and fail-fast indexed results.
 
 - Add unique CSS interaction targets, accessible snapshot text search, timed drag with per-step samples, and session-scoped pending network observations with URL glob filters across CLI, HTTP and MCP.

@@ -103,6 +103,8 @@ class ScreenshotResponse(BaseModel):
     dpr: float = 1
     pixel_width: int = 0
     pixel_height: int = 0
+    annotated: bool = False
+    annotations: list[dict[str, Any]] = Field(default_factory=list[dict[str, Any]])
 
 
 # --- Snapshot ---

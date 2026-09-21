@@ -337,14 +337,14 @@ class TestMCPServerCreation:
         assert result == ("closed 2 tabs | ids: 2, 4" if closed else "closed 0 tabs")
         client.tab_close.assert_awaited_once_with(-1, others=True)
 
-    def test_tool_count_is_42(self) -> None:
+    def test_tool_count_is_43(self) -> None:
         try:
             from agentcloak.mcp.server import create_server
 
             mcp = create_server()
             tools = mcp._tool_manager._tools  # type: ignore[union-attr]
-            assert len(tools) == 42, (
-                f"Expected 42 tools, got {len(tools)}: {sorted(tools.keys())}"
+            assert len(tools) == 43, (
+                f"Expected 43 tools, got {len(tools)}: {sorted(tools.keys())}"
             )
         except ImportError:
             pytest.skip("mcp package not installed")
@@ -403,6 +403,7 @@ class TestMCPServerCreation:
                 "agentcloak_headers",
                 "agentcloak_viewport",
                 "agentcloak_emulate",
+                "agentcloak_record",
                 "agentcloak_cdp_send",
                 "agentcloak_graphql",
                 "agentcloak_streaming",

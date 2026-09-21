@@ -104,6 +104,9 @@ async def handle_navigate(
 async def handle_screenshot(
     ctx: BrowserCtxDep,
     config: ConfigDep,
+    annotate: bool = Query(
+        False, description="Draw fresh snapshot refs and return CSS boxes."
+    ),
     expect_url: str = Query(
         "", description="Require the captured URL to match this glob."
     ),
@@ -181,6 +184,7 @@ async def handle_screenshot(
             full_page=full_page,
             format=resolved_format,
             quality=quality,
+            **({"annotate": True} if annotate else {}),
             **({"expect_url": expect_url} if expect_url else {}),
             **({"viewport": viewport} if viewport is not None else {}),
             **({"dpr": dpr} if dpr is not None else {}),

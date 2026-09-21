@@ -150,6 +150,8 @@ def do_fill(
     ),
 ) -> None:
     """Fill an input element (clear then set value)."""
+    if selector is not None and text is None and text_pos is None:
+        text, target = target, None
     resolved = (
         index
         if index is not None

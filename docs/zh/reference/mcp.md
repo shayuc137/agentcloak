@@ -1,6 +1,6 @@
 # MCP 工具参考
 
-agentcloak 的 MCP server 通过 stdio 传输暴露 39 个工具。已包含在基础安装中（`pip install agentcloak`），运行命令：`agentcloak-mcp`。
+agentcloak 的 MCP server 通过 stdio 传输暴露 43 个工具。已包含在基础安装中（`pip install agentcloak`），运行命令：`agentcloak-mcp`。
 
 配置说明参见 [MCP 配置指南](../guides/mcp-setup.md)。
 
@@ -494,3 +494,11 @@ JS 代码覆盖率、CPU 性能分析和堆内存快照——找出哪些代码�
 ## 证据参数
 
 `agentcloak_navigate(expect_path=...)` 检查最终 pathname；`agentcloak_screenshot(expect_url=...)` 检查截图 URL，并随图片返回 URL、标题、视口、DPR 与像素尺寸。`agentcloak_status(query="cdp_endpoint", page=True)` 选择调用方页面 target；`agentcloak_tab(action="close", others=True)` 只关闭同会话其他标签页。会话列表与强制关闭仍是 CLI/HTTP 管理操作，见[恢复与证据](../guides/recovery.md)。
+
+## agentcloak_record
+
+`action`: `start` / `status` / `stop`; `format`: `webm` (default) / `zip`; `max_frames`: 600; `max_seconds`: 120; `output_path`: "".
+
+start 固定当前 session 的活动标签页。status 返回采集状态和限制；stop 在 MCP 客户端机器写入文件（默认临时路径），返回路径、帧数和时长。WebM 要求 daemon 安装 ffmpeg，ZIP 不需要。关闭 session 会丢弃未导出的录屏。限制与归属见[录屏说明](cli.md#record)。
+
+`agentcloak_screenshot(annotate=true)` 返回标注图片及引用/框元数据。`agentcloak_snapshot(find="文本")` 在分页前搜索可访问名称/值。`agentcloak_action` 的 click/fill/hover 支持 `selector`，drag 支持 `hold`、`duration`、`sample`；`agentcloak_network` 支持 `pending` 和 URL `filter`。

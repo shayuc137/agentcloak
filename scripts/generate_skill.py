@@ -39,6 +39,7 @@ GROUPS: list[tuple[str, list[str]]] = [
         ["/navigate", "/snapshot", "/screenshot", "/network"],
     ),
     ("Interaction", ["/action", "/action/batch"]),
+    ("Screen recording", ["/record/start", "/record/status", "/record/stop"]),
     ("Dialog & Wait", ["/dialog/status", "/dialog/handle", "/wait"]),
     (
         "Frames & Tabs",
@@ -169,6 +170,9 @@ ROUTE_TO_CLI: dict[str, str] = {
     "/network": "cloak network",
     "/action": "cloak click|fill|type|scroll|hover|select|press|keydown|keyup N",
     "/action/batch": "cloak do batch --calls-file FILE",
+    "/record/start": "cloak record start",
+    "/record/status": "cloak record status",
+    "/record/stop": "cloak record stop",
     "/dialog/status": "cloak dialog status",
     "/dialog/handle": "cloak dialog accept|dismiss",
     "/wait": "cloak wait --<condition>",
@@ -285,6 +289,9 @@ ROUTE_TO_MCP: dict[str, str] = {
     # single-action ``agentcloak_action`` and lets the orchestrator drive the
     # loop. A batch MCP tool can be added when there's a clear need.
     "/action/batch": "(CLI-only — not exposed via MCP)",
+    "/record/start": "agentcloak_record",
+    "/record/status": "agentcloak_record",
+    "/record/stop": "agentcloak_record",
     "/dialog/status": "agentcloak_dialog (action=status)",
     "/dialog/handle": "agentcloak_dialog (action=accept|dismiss)",
     "/wait": "agentcloak_wait",

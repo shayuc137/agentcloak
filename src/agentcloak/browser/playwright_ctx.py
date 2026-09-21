@@ -2240,7 +2240,15 @@ class PlaywrightContext(BrowserContextBase):
         await asyncio.gather(*self._emulation_tasks, return_exceptions=True)
         self._emulation_tasks.clear()
 
+    async def _start_recording_impl(self, **kwargs: Any) -> Any:
+        from agentcloak.browser.recording import ScreenRecording
+
+        recorder = ScreenRecording(self._page, self._active_tab, **kwargs)
+        await recorder.start()
+        return recorder
+
     async def force_close(self) -> None:
+        await self._discard_recording()
         await self._cancel_emulation_tasks()
         if self._owns_browser or self._owns_context:
             await super().force_close()

@@ -1,6 +1,6 @@
 # MCP tools reference
 
-agentcloak's MCP server exposes 39 tools via stdio transport. It is included in the base install (`pip install agentcloak`) and run with `agentcloak-mcp`.
+agentcloak's MCP server exposes 43 tools via stdio transport. It is included in the base install (`pip install agentcloak`) and run with `agentcloak-mcp`.
 
 For setup instructions, see the [MCP setup guide](../guides/mcp-setup.md).
 
@@ -496,3 +496,11 @@ Page runtime performance metrics (DOM node count, JS heap size, layout count, et
 ## Evidence parameters
 
 `agentcloak_navigate(expect_path=...)` checks the final pathname. `agentcloak_screenshot(expect_url=...)` checks the capture URL and returns URL/title/viewport/DPR/pixel dimensions alongside the image. `agentcloak_status(query="cdp_endpoint", page=True)` selects the caller page target. `agentcloak_tab(action="close", others=True)` closes only sibling tabs. Session list/force close remain CLI/HTTP management operations. See [recovery and evidence](../guides/recovery.md).
+
+## agentcloak_record
+
+`action`: `start` / `status` / `stop`; `format`: `webm` (default) / `zip`; `max_frames`: 600; `max_seconds`: 120; `output_path`: "".
+
+Start pins this session's current tab. Status reports capture state and limits; stop writes the artifact on the MCP host (temporary path by default) and returns its path/frame count/duration. WebM requires ffmpeg on the daemon; ZIP does not. Session close discards unfinished recordings. See [recording](cli.md#record) for limits and ownership.
+
+`agentcloak_screenshot(annotate=true)` returns the labeled image plus ref/box metadata. `agentcloak_snapshot(find="text")` searches accessible names/values before pagination. `agentcloak_action` accepts `selector` for click/fill/hover and `hold`, `duration`, `sample` for drag; `agentcloak_network` accepts `pending` and URL `filter`.

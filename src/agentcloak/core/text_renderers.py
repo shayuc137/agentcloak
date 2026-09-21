@@ -1987,3 +1987,12 @@ def render_cdp_send_text(data: dict[str, Any]) -> str:
 def render_emulation_text(data: dict[str, Any]) -> str:
     overrides = [f"{key}={value}" for key, value in data.items() if value is not None]
     return "emulation " + (" | ".join(overrides) if overrides else "default")
+
+
+def render_record_text(data: dict[str, Any]) -> str:
+    state = "recording" if data.get("recording") else "stopped"
+    target = str(data.get("saved") or state)
+    return (
+        f"{target} | {data.get('frames', 0)} frames | "
+        f"{data.get('duration_ms', 0)}ms | {data.get('reason', '')}"
+    )

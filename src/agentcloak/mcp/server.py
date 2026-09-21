@@ -105,6 +105,7 @@ def create_server(session_id: str | None = None) -> object:
         pdf,
         performance,
         profiler,
+        record,
         route,
         script,
         serve,
@@ -165,6 +166,7 @@ def create_server(session_id: str | None = None) -> object:
     debugger.register(mcp, client)
     sourcemap.register(mcp, client)
     # 7f profiling / reverse-engineering aids.
+    record.register(mcp, client)
     profiler.register(mcp, client)
     performance.register(mcp, client)
 

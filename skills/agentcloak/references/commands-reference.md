@@ -60,6 +60,7 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak screenshot`
 - MCP: `agentcloak_screenshot`
 - Query:
+  - `annotate` (boolean, default: false) — Draw fresh snapshot refs and return CSS boxes.
   - `expect_url` (string, default: "") — Require the captured URL to match this glob.
   - `dpr` (number | null, default: —) — Temporary device pixel ratio; restored after capture.
   - `viewport` (string | null, default: —) — Temporary WIDTHxHEIGHT; restored after capture.
@@ -112,6 +113,27 @@ Read this file when you need full parameter detail. For the common path, the qui
   - `actions` (array<object>, default: —) — Ordered action objects; may reference prior results via $N.path.
   - `sleep` (number, default: 0.0) — Seconds to pause between actions to let the page settle.
   - `settle_timeout` (integer | null, default: —) — Max ms to wait for navigation/network to settle per action; unset uses browser.batch_settle_timeout.
+
+## Screen recording
+
+### `POST /record/start`
+
+- CLI: `cloak record start`
+- MCP: `agentcloak_record`
+- Body:
+  - `format` (enum("webm" | "zip"), default: "webm")
+  - `max_frames` (integer, default: 600)
+  - `max_seconds` (integer, default: 120)
+
+### `GET /record/status`
+
+- CLI: `cloak record status`
+- MCP: `agentcloak_record`
+
+### `POST /record/stop`
+
+- CLI: `cloak record stop`
+- MCP: `agentcloak_record`
 
 ## Dialog & Wait
 

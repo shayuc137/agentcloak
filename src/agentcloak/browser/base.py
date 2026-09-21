@@ -228,6 +228,7 @@ class BrowserContextBase(ABC):
         # Element + snapshot caches populated by snapshot()
         self._selector_map: dict[int, ElementRef] = {}
         self._direct_selector_index: int | None = None
+        self._recording: Any = None
         self._backend_node_map: dict[int, int] = {}
         self._cached_lines: list[tuple[int, str, int | None]] = []
         self._cached_mode: str = ""
@@ -1275,6 +1276,52 @@ class BrowserContextBase(ABC):
         extra = await self._network_entries(since_seq=since_seq)
         return [*base, *extra] if extra else base
 
+    async def _annotation_boxes(self, *, full_page: bool) -> list[dict[str, Any]]:
+        await self.snapshot(
+            mode="compact", max_nodes=self._browser_config.snapshot_max_nodes
+        )
+        metrics = await self._cdp_send("Page.getLayoutMetrics", {})
+        viewport = metrics.get("cssLayoutViewport", {})
+        dx, dy = (
+            (viewport.get("pageX", 0), viewport.get("pageY", 0))
+            if full_page
+            else (0, 0)
+        )
+        boxes: list[dict[str, Any]] = []
+        for index, backend_id in self._backend_node_map.items():
+            try:
+                # Native geometry avoids JS bounding-rect fingerprint noise.
+                model = await self._cdp_send(
+                    "DOM.getBoxModel", {"backendNodeId": backend_id}
+                )
+                quad = model["model"]["border"]
+                xs, ys = quad[0::2], quad[1::2]
+                width, height = max(xs) - min(xs), max(ys) - min(ys)
+                if width > 0 and height > 0:
+                    ref = self._selector_map[index]
+                    boxes.append(
+                        {
+                            "ref": index,
+                            "box": [min(xs) + dx, min(ys) + dy, width, height],
+                            "role": ref.role,
+                            "name": ref.text,
+                        }
+                    )
+            except Exception as exc:
+                detail = str(getattr(exc, "hint", exc)).lower()
+                if any(
+                    marker in detail
+                    for marker in (
+                        "could not compute box model",
+                        "could not find node",
+                        "no node with given id",
+                        "does not have a layout object",
+                    )
+                ):
+                    continue
+                raise
+        return boxes
+
     async def screenshot(
         self,
         *,
@@ -1285,6 +1332,7 @@ class BrowserContextBase(ABC):
         viewport: str | None = None,
         dpr: float | None = None,
         expect_url: str = "",
+        annotate: bool = False,
     ) -> bytes:
         # ``output_path`` writes the capture to disk in addition to returning
         # the bytes. Writing lives here rather than in ``_screenshot_impl`` so
@@ -1328,6 +1376,9 @@ class BrowserContextBase(ABC):
                     hint=f"Expected URL {expect_url!r}, got {identity['url']!r}",
                     action="navigate to the intended page before capturing",
                 )
+            annotations = (
+                await self._annotation_boxes(full_page=full_page) if annotate else []
+            )
             data = await self._screenshot_impl(
                 full_page=full_page, fmt=format, quality=quality
             )
@@ -1345,6 +1396,17 @@ class BrowserContextBase(ABC):
                     hint="Page navigated during capture",
                     action="wait for navigation and retry",
                 )
+            if annotate:
+                from agentcloak.core.annotation import annotate_image
+
+                data = annotate_image(
+                    data,
+                    annotations,
+                    dpr=identity["dpr"],
+                    format=format,
+                    quality=quality,
+                )
+                identity.update(annotated=True, annotations=annotations)
             with Image.open(BytesIO(data)) as image:
                 identity.update(pixel_width=image.width, pixel_height=image.height)
             self.screenshot_metadata: dict[str, Any] = {
@@ -1846,13 +1908,65 @@ class BrowserContextBase(ABC):
             with contextlib.suppress(Exception):
                 await self.tab_switch(active_tab)
 
+    async def record_start(
+        self, *, format: str = "webm", max_frames: int = 600, max_seconds: int = 120
+    ) -> dict[str, Any]:
+        self._check_browser_alive()
+        self._check_page_valid()
+        if self._recording is not None:
+            raise BackendError(
+                error="record_already_started",
+                hint="This session has an unfinished recording",
+                action="stop and save it before starting another",
+            )
+        recorder = await self._start_recording_impl(
+            format=format, max_frames=max_frames, max_seconds=max_seconds
+        )
+        self._recording = recorder
+        return recorder.status()
+
+    async def _start_recording_impl(self, **kwargs: Any) -> Any:
+        raise BackendError(
+            error="unsupported_operation",
+            hint="Recording requires a local browser backend",
+            action="use Playwright or CloakBrowser",
+        )
+
+    async def record_status(self) -> dict[str, Any]:
+        return (
+            self._recording.status()
+            if self._recording is not None
+            else {"recording": False, "frames": 0}
+        )
+
+    async def record_stop(self) -> dict[str, Any]:
+        if self._recording is None:
+            raise BackendError(
+                error="record_not_started",
+                hint="No recording in this session",
+                action="run record start first",
+            )
+        recorder = self._recording
+        try:
+            return await recorder.export()
+        finally:
+            await recorder.discard()
+            self._recording = None
+
+    async def _discard_recording(self) -> None:
+        if self._recording is not None:
+            await self._recording.discard()
+            self._recording = None
+
     async def force_close(self) -> None:
         """Close without renderer-dependent persistence during recovery."""
+        await self._discard_recording()
         if self._route_mgr is not None:
             self._route_mgr.release_all()
         await self._close_impl()
 
     async def close(self) -> None:
+        await self._discard_recording()
         if self._route_mgr is not None:
             self._route_mgr.release_all()
         with contextlib.suppress(Exception):

@@ -92,6 +92,9 @@ def browser_screenshot(
     viewport: str | None = typer.Option(
         None, "--viewport", help="Temporary WIDTHxHEIGHT, restored after capture."
     ),
+    annotate: bool = typer.Option(
+        False, "--annotate", help="Draw fresh [N] refs on the screenshot."
+    ),
     full_page: bool = typer.Option(
         False, "--full-page", help="Capture full scrollable page."
     ),
@@ -171,6 +174,7 @@ def browser_screenshot(
             or viewport is not None
             or dpr is not None
             or expect_url
+            or annotate
         ):
             result = client.screenshot_sync(
                 full_page=full_page,
@@ -180,6 +184,7 @@ def browser_screenshot(
                 wait_timeout=wait_timeout,
                 hide=hide,
                 **({"expect_url": expect_url} if expect_url else {}),
+                annotate=annotate,
                 keep_overlays=keep_overlays,
                 **({"viewport": viewport} if viewport is not None else {}),
                 dpr=dpr,

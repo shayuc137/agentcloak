@@ -19,9 +19,10 @@ Agent 原生隐身浏览器 -- 看见、交互、自动化。
 
 ## 亮点
 
+- **视觉证据与高效调用** -- 会话 WebM/帧序列录屏、标注截图、唯一 CSS 定位、定时拖动采样、在途请求和 JSONL 批量调用
 - **视觉模拟** -- 支持 DPR 截图、会话级深浅色与减少动画，以及有头浏览器的触摸/指针模拟和 reset
 - **可恢复会话与可靠截图** -- 强制关闭卡住的会话、检查排队、断言页面 URL、返回页面与视口元数据，并将 CDP 客户端连接到准确的会话页面
-- **页面即结构化文本** -- 页面转化为无障碍树，每个可交互元素带有 `[N]` 索引，agent 通过索引操作而非脆弱的 CSS 选择器
+- **页面即结构化文本** -- 页面转化为无障碍树，每个可交互元素带有 `[N]` 索引，agent 可通过引用或显式的唯一 CSS 选择器操作
 - **CLI + Skill 按需加载** -- agent 通过 Bash 调用 `cloak` 命令，Skill 按需加载仅占 ~300 tokens（MCP 工具定义常驻 ~6,000 tokens）
 - **CloakBrowser 内置隐身** -- 基于 57 个 C++ 补丁的 Chromium，呈现真实浏览器指纹，让 agent 浏览时不会被误判为机器人
 - **登录态复用** -- 保存/恢复登录 profile（cookies + localStorage 跨启动自动持久化，把 auth token 塞在客户端存储的 SPA 也能保持登录状态），或通过 RemoteBridge 操控真实 Chrome 浏览器
@@ -29,7 +30,7 @@ Agent 原生隐身浏览器 -- 看见、交互、自动化。
 - **工作空间会话** -- Git worktree 和普通目录均可隔离页面；默认共享登录，可开启按空间隔离存储，支持热切视口、拖拽与请求暂停/放行
 - **Spell + API 流量捕获** -- 常见站点操作封装为一行命令；捕获流量，分析模式，自动生成 spell
 - **网页逆向** -- CDP 原生调试器、网络路由拦截、WebSocket/SSE 捕获、init script hook、source map 解码 -- 一个工具覆盖 90%+ 的网页逆向场景
-- **MCP server 42 个工具** -- 完整兼容 MCP 原生客户端（Claude Code、Codex、Cursor 等）
+- **MCP server 43 个工具** -- 完整兼容 MCP 原生客户端（Claude Code、Codex、Cursor 等）
 
 ## 安装
 
@@ -126,7 +127,7 @@ cloak --json snapshot | jq -r '.data.tree_text'
 
 | | Skill + CLI（推荐） | MCP Server |
 |---|---|---|
-| **工作方式** | Skill 在需要浏览器时自动加载，agent 通过 Bash 调用 `cloak` | `agentcloak-mcp` 通过 stdio 暴露 39 个工具 |
+| **工作方式** | Skill 在需要浏览器时自动加载，agent 通过 Bash 调用 `cloak` | `agentcloak-mcp` 通过 stdio 暴露 43 个工具 |
 | **上下文开销** | ~300 tokens（按需加载） | ~6,000 tokens（常驻） |
 | **适用场景** | Claude Code 及任何支持 Bash 的 agent | 没有 Bash 能力的纯 MCP 客户端 |
 
@@ -240,7 +241,7 @@ extra_args = ["--disable-background-networking"]
 graph TD
     subgraph Surface["Surface Layer"]
         Skill["Skill + CLI<br/>~300 tokens"]
-        MCP["MCP Server<br/>39 tools"]
+        MCP["MCP Server<br/>43 tools"]
     end
 
     subgraph Engine["Engine"]

@@ -19,9 +19,10 @@ You need a browser. Your agents do too.
 
 ## Highlights
 
+- **Visual evidence and fast runners** -- session WebM/frame recordings, annotated screenshots, unique CSS targets, timed drag samples, pending requests, and streaming JSONL batches
 - **Visual emulation** -- DPR-aware screenshots, session color scheme and reduced motion, plus headed-browser touch/pointer emulation with reset
 - **Recoverable sessions and verifiable captures** -- force-close stuck sessions, inspect queues, assert page URLs, capture page/viewport metadata, and attach CDP clients to the exact session page
-- **Pages as structured text** -- every page becomes an accessibility tree with `[N]` indexed elements; agents interact by index, not fragile CSS selectors
+- **Pages as structured text** -- every page becomes an accessibility tree with `[N]` indexed elements; agents interact by refs or explicit unique CSS targets
 - **CLI + Skill on-demand loading** -- agents call `cloak` via Bash; the Skill lazy-loads at ~300 tokens (vs ~6,000 for MCP tool definitions)
 - **CloakBrowser built-in stealth** -- 57 C++ patches on Chromium for realistic browser fingerprinting; agents browse without being misidentified as bots
 - **Session reuse** -- save/restore login profiles (cookies + localStorage auto-persisted across launches, so SPAs that stash auth tokens client-side stay logged in) + RemoteBridge to operate your real Chrome browser
@@ -29,7 +30,7 @@ You need a browser. Your agents do too.
 - **Workspace-aware sessions** -- isolated pages for Git worktrees or ordinary directories; shared login by default, opt-in per-workspace storage, live viewport changes, drag, and request hold/release
 - **Spells + API capture** -- wrap common site operations as one-liners; capture traffic, analyze patterns, generate spells automatically
 - **Web reverse engineering** -- CDP-native debugger, network route interception, WebSocket/SSE capture, init-script hooks, and source-map decode -- one tool covers 90%+ of browser RE
-- **MCP server with 42 tools** -- full compatibility with MCP-native clients (Claude Code, Codex, Cursor, etc.)
+- **MCP server with 43 tools** -- full compatibility with MCP-native clients (Claude Code, Codex, Cursor, etc.)
 
 ## Installation
 
@@ -126,7 +127,7 @@ See the full [Quick Start tutorial](docs/en/getting-started/quickstart.md) for l
 
 | | Skill + CLI (recommended) | MCP Server |
 |---|---|---|
-| **How it works** | Skill auto-loads when browser is needed; agent calls `cloak` via Bash | `agentcloak-mcp` exposes 39 tools over stdio |
+| **How it works** | Skill auto-loads when browser is needed; agent calls `cloak` via Bash | `agentcloak-mcp` exposes 43 tools over stdio |
 | **Context cost** | ~300 tokens (on-demand) | ~6,000 tokens (persistent) |
 | **Best for** | Claude Code, any Bash-capable agent | MCP-native clients without Bash |
 
@@ -244,7 +245,7 @@ All settings also accept environment variables (`AGENTCLOAK_PROXY`, `AGENTCLOAK_
 graph TD
     subgraph Surface["Surface Layer"]
         Skill["Skill + CLI<br/>~300 tokens"]
-        MCP["MCP Server<br/>39 tools"]
+        MCP["MCP Server<br/>43 tools"]
     end
 
     subgraph Engine["Engine"]

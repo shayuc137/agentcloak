@@ -1,6 +1,6 @@
 # MCP setup
 
-agentcloak provides an MCP (Model Context Protocol) server with 39 tools for AI clients that support native tool discovery.
+agentcloak provides an MCP (Model Context Protocol) server with 43 tools for AI clients that support native tool discovery.
 
 ## Skill + CLI vs MCP
 
@@ -96,7 +96,7 @@ Run the MCP server on-the-fly without installing agentcloak globally:
 
 ## Available MCP tools
 
-The MCP server exposes 39 tools. See the [MCP reference](../reference/mcp.md) for the full list with parameters.
+The MCP server exposes 43 tools. See the [MCP reference](../reference/mcp.md) for the full list with parameters.
 
 | Category | Tools |
 |----------|-------|

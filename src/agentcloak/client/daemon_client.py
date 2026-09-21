@@ -1087,6 +1087,7 @@ class DaemonClient:
         viewport: str | None = None,
         dpr: float | None = None,
         expect_url: str = "",
+        annotate: bool = False,
     ) -> dict[str, Any]:
         return self._send_sync(
             "GET",
@@ -1106,6 +1107,7 @@ class DaemonClient:
                 viewport=viewport,
                 dpr=dpr,
                 expect_url=expect_url,
+                annotate=annotate,
             ),
         )
 
@@ -1243,6 +1245,7 @@ class DaemonClient:
         viewport: str | None = None,
         dpr: float | None = None,
         expect_url: str = "",
+        annotate: bool = False,
     ) -> dict[str, Any]:
         # MCP defaults to ``mcp_screenshot_quality`` (lower than CLI's 80) so
         # base64 output stays under typical MCP token budgets.
@@ -1262,6 +1265,7 @@ class DaemonClient:
                 viewport=viewport,
                 dpr=dpr,
                 expect_url=expect_url,
+                annotate=annotate,
             ),
         )
 
@@ -1353,6 +1357,25 @@ class DaemonClient:
             extras=kwargs,
         )
         return await self._send_async("POST", "/action", json_body=body)
+
+    async def record_start(
+        self, *, format: str = "webm", max_frames: int = 600, max_seconds: int = 120
+    ) -> dict[str, Any]:
+        return await self._send_async(
+            "POST",
+            "/record/start",
+            json_body={
+                "format": format,
+                "max_frames": max_frames,
+                "max_seconds": max_seconds,
+            },
+        )
+
+    async def record_status(self) -> dict[str, Any]:
+        return await self._send_async("GET", "/record/status")
+
+    async def record_stop(self) -> dict[str, Any]:
+        return await self._send_async("POST", "/record/stop")
 
     async def action_batch(
         self,
@@ -2118,6 +2141,7 @@ def _build_screenshot_params(
     viewport: str | None = None,
     dpr: float | None = None,
     expect_url: str = "",
+    annotate: bool = False,
 ) -> dict[str, str]:
     params: dict[str, str] = {"quality": str(quality)}
     if format is not None:
@@ -2132,6 +2156,8 @@ def _build_screenshot_params(
         params["hide"] = hide
     if keep_overlays:
         params["keep_overlays"] = "true"
+    if annotate:
+        params["annotate"] = "true"
     if expect_url:
         params["expect_url"] = expect_url
     if viewport is not None:

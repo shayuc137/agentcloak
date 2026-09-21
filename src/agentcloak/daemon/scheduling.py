@@ -25,6 +25,8 @@ PATHS: dict[Scheduling, frozenset[str]] = {
     ),
     Scheduling.RELEASE: frozenset(
         {
+            "/network",
+            "/record/status",
             "/route/list",
             "/route/release",
         }
@@ -56,6 +58,8 @@ PATHS: dict[Scheduling, frozenset[str]] = {
             "/capture/export",
             "/capture/replay",
             "/capture/start",
+            "/record/start",
+            "/record/stop",
             "/capture/status",
             "/capture/stop",
             "/cdp/endpoint",
@@ -103,7 +107,6 @@ PATHS: dict[Scheduling, frozenset[str]] = {
             "/hide/list",
             "/hide/remove",
             "/navigate",
-            "/network",
             "/pdf",
             "/performance/metrics",
             "/profile/create",

@@ -804,3 +804,21 @@ cloak batch --calls-file calls.jsonl --json
 Each line is one daemon JSON request: `method`, relative `path`, optional `params` and `body`. One process and HTTP connection pool serve the sequence. Session/workspace come from the usual global flags/config and cannot change per record. Full URLs and arbitrary headers are rejected; use `params` for query strings.
 
 `--json` emits one compact envelope per record, adding zero-based `index` and one-based input `line`; each is flushed before reading the next record (`--pretty` does not expand JSONL). The first invalid input or failed request emits `ok:false` and exits nonzero. Earlier operations remain applied; no rollback or automatic action replay occurs. An empty input is a no-op. Use generated HTTP route references for request fields. This complements `cloak do batch --calls-file`, which remains the action-only batch with result references and navigation/dialog stopping rules.
+
+## record
+
+```bash
+cloak record start --format webm --max-seconds 120 --max-frames 600
+cloak record status
+cloak record stop -o transition.webm
+# No encoder required:
+cloak record start --format zip
+cloak record stop -o frames.zip
+cloak screenshot --annotate --dpr 2 -o annotated.png --json
+```
+
+Screen recording uses a dedicated CDP screencast pinned to the tab active at start. Navigation on that tab stays recorded; switching tabs does not switch the recording target. Each session owns its recording. No audio is recorded. Local Playwright and CloakBrowser are supported; RemoteBridge rejects recording.
+
+WebM export requires `ffmpeg` with the VP9 encoder on the daemon host. ZIP contains JPEG frames and `manifest.json` with per-frame URLs, elapsed timestamps and CDP metadata. Screencast captures compositor updates, not a fixed FPS; WebM preserves their timing. Frames are capped at 1920×1080 and letterboxed to the first frame's dimensions if the viewport changes. Limits are 600 frames/120 seconds by default, configurable up to 3000 frames/600 seconds, with a fixed 64 MiB frame-data cap. A limit or tab close stops capture but retains frames until `record stop`; session close discards unfinished recordings. Start rejects an unfinished recording. Stop writes on the CLI/MCP client host, or returns base64 over HTTP.
+
+`--annotate` creates fresh snapshot refs and draws their boxes and `[N]` labels on the image, without adding page overlays. JSON includes `annotated` and `annotations` (`ref`, `role`, `name`, `box`). Boxes use CSS pixels relative to the viewport, or the document for full-page captures; the drawing scales by the captured DPR. Native CDP geometry avoids JavaScript fingerprint noise. Detached/non-rendered nodes have no box. Returned refs belong to this capture's page state; re-snapshot after subsequent DOM changes. Temporary viewport/DPR still restore after capture.

@@ -192,6 +192,8 @@ async def test_busy_force_close_and_disconnect(private_api, local_server):
         if any("/cdp/send" in item["active_actions"] for item in sessions):
             break
         await asyncio.sleep(0.01)
+    assert (await client.get("/network", params={"pending": True})).is_success
+    assert (await client.get("/record/status")).is_success
     busy = await client.get("/snapshot")
     assert busy.json()["error"] == "session_busy", busy.text
     assert "/cdp/send" in busy.json()["hint"]

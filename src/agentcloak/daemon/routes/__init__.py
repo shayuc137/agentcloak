@@ -40,6 +40,7 @@ from agentcloak.daemon.routes import (
     pdf,
     performance,
     profiler,
+    record,
     script,
     serve,
     session,
@@ -90,6 +91,7 @@ def _build_router() -> APIRouter:
         sourcemap,
         # 7f profiling / reverse-engineering aids.
         profiler,
+        record,
         performance,
         # multi-session management
         session,

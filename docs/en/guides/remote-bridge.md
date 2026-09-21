@@ -163,3 +163,5 @@ This checks: extension reachable, WebSocket connected, daemon `/ext` endpoint li
 | Commands hang on `navigate` | Chrome may have a permission popup blocking — focus the Chrome window and dismiss it |
 | Token mismatch on remote LAN | Re-read the token from `~/.agentcloak/session.json` and paste into extension options |
 | Extension drops after Chrome restart | The extension uses `chrome.alarms` keepalive but Chrome sometimes suspends MV3 service workers — click the icon once to wake it |
+
+RemoteBridge requires `browser.isolation="shared"`. A connected user tab has one `(workspace, session)` owner: other callers cannot claim it or take it over by launching the same tier again. Close it from the owning session before handing it over. Local MV3 smoke coverage and unverified cross-machine behavior are listed in the [backend matrix](backends.md#workspace-and-verification-boundaries).

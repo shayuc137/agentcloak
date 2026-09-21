@@ -129,11 +129,17 @@ def _extract_global_flags(argv: list[str]) -> tuple[list[str], dict[str, object]
     version = False
     json_mode = False
     session = None
+    workspace = None
     args = iter(argv)
     for arg in args:
         if arg == "--":
             cleaned.extend([arg, *args])
             break
+        if arg == "--workspace" or arg.startswith("--workspace="):
+            workspace = arg.partition("=")[2] if "=" in arg else next(args, None)
+            if not workspace or workspace.startswith("--"):
+                raise typer.BadParameter("--workspace requires a directory path")
+            continue
         if arg == "--session":
             session = next(args, None)
             if not session or session.startswith("--"):
@@ -160,6 +166,7 @@ def _extract_global_flags(argv: list[str]) -> tuple[list[str], dict[str, object]
         "version": version,
         "json": json_mode,
         "session": session,
+        "workspace": workspace,
     }
     return cleaned, state
 
@@ -167,7 +174,12 @@ def _extract_global_flags(argv: list[str]) -> tuple[list[str], dict[str, object]
 @app.callback()
 def _root_callback(  # pyright: ignore[reportUnusedFunction]
     session: str | None = typer.Option(
-        None, "--session", help="Caller session (defaults to worktree name)."
+        None, "--session", help="Caller session (defaults to worktree/root path hash)."
+    ),
+    workspace: str | None = typer.Option(
+        None,
+        "--workspace",
+        help="Workspace root directory, including its subdirectories.",
     ),
     verbose: int = typer.Option(
         0, "--verbose", "-v", count=True, help="Increase log verbosity."
@@ -200,6 +212,10 @@ def _root_callback(  # pyright: ignore[reportUnusedFunction]
     # runs and Typer parses ``--json`` itself. We OR-merge so a True coming
     # from either path wins; we never *clear* an already-enabled flag because
     # ``main()`` may have set it from argv or AGENTCLOAK_OUTPUT before us.
+    if workspace is not None:
+        from agentcloak.core.workspace import cli_workspace
+
+        cli_workspace.set(workspace)
     if session is not None:
         from agentcloak.core.session import cli_session_id
 
@@ -529,6 +545,11 @@ def _run_cli() -> None:
     from agentcloak.core.session import cli_session_id
 
     cli_session_id.set(str(state["session"]) if state["session"] is not None else None)
+    from agentcloak.core.workspace import cli_workspace
+
+    cli_workspace.set(
+        str(state["workspace"]) if state["workspace"] is not None else None
+    )
     if state["version"]:
         typer.echo(f"agentcloak {__version__}")
         return

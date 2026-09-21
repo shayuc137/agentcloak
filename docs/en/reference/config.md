@@ -34,6 +34,8 @@ log_backup_count = 3
 [browser]
 default_tier = "auto"
 default_profile = ""
+isolation = "shared"
+workspace_roots = []
 viewport_width = 1280
 viewport_height = 720
 navigation_timeout = 30
@@ -290,3 +292,24 @@ Request-time defaults (`browser.screenshot_format`, `screenshot_quality`,
 the next relevant daemon request. Process- and browser-launch keys under
 `[daemon]` / `[browser]` still require a restart; mixed updates print
 `(restart daemon to apply)` when any changed key is launch-bound.
+
+## Workspace isolation
+
+The default `browser.isolation = "shared"` preserves shared profile login data. Set `workspace` explicitly and restart the daemon to give each workspace a separate browser context:
+
+```bash
+cloak config set browser.isolation workspace
+cloak config add browser.workspace_roots ~/work/assistant
+cloak daemon stop
+cloak daemon start
+```
+
+`AGENTCLOAK_ISOLATION` overrides the global mode. The running daemon keeps its startup mode; `/health` reports the effective `isolation` and the caller's `workspace_id`. `workspace_roots` is a list of directory paths used by clients; prefer absolute paths or `~` paths. A configured root includes its descendants, with the longest matching root winning. These client roots belong in global config, not a profile overlay.
+
+Workspace identity resolves from `--workspace PATH`, then `AGENTCLOAK_WORKSPACE`, then configured roots, then the Git repository shared by its worktrees, then the current directory outside Git. Canonical full-path hashes prevent same-name collisions. Without an explicit/configured root, different non-Git subdirectories are separate workspaces. Git worktrees share workspace storage but have different default sessions. Separate `--workspace` roots can also isolate worktrees from one another.
+
+In both modes, `(workspace_id, session_id)` identifies a page session. `session list` and `session close` operate only inside the caller's workspace. In `workspace` mode, sessions in the same workspace share cookies, localStorage and IndexedDB. Other workspaces cannot see that context's storage. Shared mode retains the existing profile store; switching modes does not copy it into workspace stores.
+
+Workspace state is stored under `~/.agentcloak/workspaces/<workspace-and-profile-hash>/storage.json` on last-session close, idle reclamation or normal daemon shutdown, and restored when reopened. POSIX files use mode 0600. The default cookie export/restore snapshot is beside this file; explicit file overrides remain supported. Browser crashes can lose changes since the last saved state; sessionStorage, page DOM, history, cache and service workers are not restored. This is storage/page isolation, not a security boundary against raw CDP or filesystem access. Browser process, launch flags and proxy are still shared; changing tier/profile with active siblings is rejected. RemoteBridge rejects workspace mode because it uses the user's existing browser storage.
+
+Workspace mode persists even without a named profile. `profile create --from-current` explicitly exports a profile seed; launching that profile in workspace mode does not seed every workspace with its cookies/localStorage. Use an explicit cookie export/restore file when transferring cookies between these stores.

@@ -89,6 +89,7 @@ from agentcloak.core.errors import (
     DaemonConnectionError,
 )
 from agentcloak.core.session import auto_detect_session_id
+from agentcloak.core.workspace import resolve_workspace
 
 __all__ = ["DaemonClient"]
 
@@ -165,7 +166,7 @@ class DaemonClient:
         Multi-session identity sent as the ``X-Agentcloak-Session`` header
         so the daemon hands this client an isolated browser. ``None``
         (default) auto-detects via :func:`auto_detect_session_id`
-        (``AGENTCLOAK_SESSION`` > worktree basename > cwd hash),
+        (``--session`` > ``AGENTCLOAK_SESSION`` > worktree/root path hash),
         so callers in different worktrees get separate tabs with no
         configuration. The MCP server passes an explicit per-process id.
     """
@@ -190,7 +191,11 @@ class DaemonClient:
         self._port = resolved_port
         self._base = f"http://{self._host}:{self._port}"
         self._auto_start = auto_start
-        self._session_id = session_id or auto_detect_session_id()
+        identity = resolve_workspace(cfg.browser.workspace_roots)
+        self._workspace_id = identity.workspace_id
+        self._session_id = session_id or auto_detect_session_id(
+            session_scope=identity.session_scope
+        )
         # Once we have spawned the daemon (or detected one was reachable), we
         # don't repeatedly retry the spawn within a single client lifetime —
         # otherwise a tight loop of failing requests would fork many daemons.
@@ -377,6 +382,7 @@ class DaemonClient:
             # an isolated browser. ``"default"`` is harmless on a daemon that
             # predates multi-session — it falls back to the single ctx.
             headers["X-Agentcloak-Session"] = self._session_id
+            headers["X-Agentcloak-Workspace"] = self._workspace_id
             kwargs["headers"] = headers
             if params:
                 kwargs["params"] = params
@@ -406,6 +412,7 @@ class DaemonClient:
                 headers["Content-Type"] = "application/json"
             headers["Accept"] = "application/json"
             headers["X-Agentcloak-Session"] = self._session_id
+            headers["X-Agentcloak-Workspace"] = self._workspace_id
             kwargs["headers"] = headers
             if params:
                 kwargs["params"] = params
@@ -1004,6 +1011,11 @@ class DaemonClient:
 
     def health_sync(self) -> dict[str, Any]:
         return self._send_sync("GET", "/health")
+
+    def session_close_sync(self, *, session_id: str) -> dict[str, Any]:
+        return self._send_sync(
+            "POST", "/session/close", json_body={"session_id": session_id}
+        )
 
     def shutdown_sync(self) -> dict[str, Any]:
         try:

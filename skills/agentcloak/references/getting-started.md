@@ -212,7 +212,7 @@ when applicable.
 
 ## Sessions
 
-CLI commands use `--session ID` > `AGENTCLOAK_SESSION` > git worktree root basename, or a cwd hash outside git. Different worktrees get separate tabs without configuration; a shared profile retains login cookies. `cloak session close` closes only the caller's tabs. Explicit ids disambiguate unrelated worktrees with the same basename.
+CLI commands resolve `--workspace PATH` > `AGENTCLOAK_WORKSPACE` > configured `browser.workspace_roots` > Git repository > cwd. Roots cover subdirectories; Git worktrees share a workspace. Sessions use `--session ID` > `AGENTCLOAK_SESSION` > worktree/root path hash, avoiding same-name collisions. `session list/close` stay in that workspace. Default `browser.isolation=shared` retains shared profile login; set `workspace` and restart for independent storage per workspace, saved on normal close. RemoteBridge requires shared mode. Cookie export/restore defaults are also workspace-scoped in isolated mode.
 
 ## Daemon Management
 

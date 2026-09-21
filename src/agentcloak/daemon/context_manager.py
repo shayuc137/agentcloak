@@ -140,12 +140,16 @@ class ContextManager:
     # Tier switching
     # ------------------------------------------------------------------
 
-    async def close_remote_session(self, session_id: str) -> bool:
+    async def close_remote_session(
+        self, session_id: str, *, workspace_id: str = ""
+    ) -> bool:
         async with self._switching:
             owner = getattr(self._state, "remote_session_id", None) or "default"
             if (
                 self._state.active_tier != StealthTier.REMOTE_BRIDGE
                 or owner != session_id
+                or (getattr(self._state, "remote_workspace_id", "") or "")
+                != workspace_id
             ):
                 return False
             if self._state.browser_ctx is None:
@@ -153,6 +157,7 @@ class ContextManager:
             self._cancel_idle_timer()
             self._state.remote_ctx = None
             self._state.remote_session_id = None
+            self._state.remote_workspace_id = ""
             self._state.browser_ctx = None
             if self._state.local_ctx is not None:
                 self._state.active_tier = self._state.local_tier

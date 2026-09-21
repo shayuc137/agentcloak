@@ -124,3 +124,5 @@ cloak cookies export --output cookies.json  # write to file instead of stdout
 # Import back into a browser session (preserves httpOnly):
 cloak cookies import -c '[{"name":"token","value":"abc","domain":".example.com","path":"/"}]'
 ```
+
+RemoteBridge requires `browser.isolation=shared`. Launch from the intended workspace/session, claim the tab by ID or URL pattern, then operate it. Other workspaces/sessions cannot claim or relaunch over that owner; close from the owning session before handover. Local MV3 smoke does not prove Windows/network or complete route/script parity.

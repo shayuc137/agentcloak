@@ -24,7 +24,7 @@ Agent 原生隐身浏览器 -- 看见、交互、自动化。
 - **CloakBrowser 内置隐身** -- 基于 57 个 C++ 补丁的 Chromium，呈现真实浏览器指纹，让 agent 浏览时不会被误判为机器人
 - **登录态复用** -- 保存/恢复登录 profile（cookies + localStorage 跨启动自动持久化，把 auth token 塞在客户端存储的 SPA 也能保持登录状态），或通过 RemoteBridge 操控真实 Chrome 浏览器
 - **网络配置** -- 代理（SOCKS5/HTTP）、DNS-over-HTTPS 控制、自定义 Chromium 参数，通过 `cloak config set` 管理
-- **Worktree 并行会话** -- 一个 daemon 共享登录 profile，按 worktree 自动隔离 tab；热切视口、拖拽、请求暂停与放行支持前端验收
+- **工作空间会话** -- Git worktree 和普通目录均可隔离页面；默认共享登录，可开启按空间隔离存储，支持热切视口、拖拽与请求暂停/放行
 - **Spell + API 流量捕获** -- 常见站点操作封装为一行命令；捕获流量，分析模式，自动生成 spell
 - **网页逆向** -- CDP 原生调试器、网络路由拦截、WebSocket/SSE 捕获、init script hook、source map 解码 -- 一个工具覆盖 90%+ 的网页逆向场景
 - **MCP server 41 个工具** -- 完整兼容 MCP 原生客户端（Claude Code、Codex、Cursor 等）

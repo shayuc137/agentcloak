@@ -350,7 +350,7 @@ async def start(
     actual_headless = headless if headless is not None else cfg.browser.headless
     actual_humanize = humanize if humanize is not None else cfg.browser.humanize
     # Write the CLI overrides back into the shared config snapshot: the lazy
-    # launch paths (SessionManager per-session browsers, ContextManager
+    # launch paths (workspace/session page facades, ContextManager
     # hot-switch) resolve headless/humanize from ``cfg.browser``, and would
     # otherwise diverge from this startup launch — e.g. a ``--headless``
     # daemon spawning a headed session browser on a display-less host.
@@ -631,6 +631,8 @@ async def start(
             range_end=actual_port + _PORT_RANGE_SIZE - 1,
         )
         with contextlib.suppress(Exception):
+            await session_manager.close_all()
+        with contextlib.suppress(Exception):
             await context_manager.shutdown()
         _clear_pid(paths)
         _clear_session(paths)
@@ -678,7 +680,7 @@ async def start(
     ]
 
     # The watchdog drives two independent timers (global daemon shutdown +
-    # per-session browser reclamation). Start it if *either* is enabled — a
+    # per-session page reclamation). Start it if *either* is enabled — a
     # user who disables global idle (idle_timeout_min=0) to keep the daemon
     # resident still wants idle named-session browsers reclaimed.
     session_idle_timeout = cfg.daemon.session_idle_timeout
@@ -701,13 +703,11 @@ async def start(
         from agentcloak.core.discovery import unregister_daemon
 
         unregister_daemon()
-        with contextlib.suppress(Exception):
-            await context_manager.shutdown()
-        # Close every named session's browser too — ContextManager only owns
-        # the default session, so without this each per-session Chromium would
-        # outlive the daemon as an orphan process.
+        # Workspace storage must be saved while the owning browser is still live.
         with contextlib.suppress(Exception):
             await session_manager.close_all()
+        with contextlib.suppress(Exception):
+            await context_manager.shutdown()
         # Stop the embedded ``cloak serve`` file server (7a R7) so its
         # listener never outlives the daemon.
         file_server = getattr(app.state, "file_server", None)

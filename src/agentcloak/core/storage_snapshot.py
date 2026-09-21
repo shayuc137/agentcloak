@@ -20,7 +20,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
-import sys
+import tempfile
 from typing import TYPE_CHECKING, Any, cast
 
 import orjson
@@ -33,6 +33,7 @@ __all__ = [
     "build_localstorage_restore_js",
     "read_storage_snapshot",
     "resolve_storage_snapshot_path",
+    "write_browser_state",
     "write_storage_snapshot",
 ]
 
@@ -110,27 +111,15 @@ def write_storage_snapshot(
 
 
 def _atomic_write_secure(path: Path, payload: bytes) -> None:
-    """Atomically write ``payload`` to ``path`` with 0600 permissions.
-
-    Opens a temp file next to the target with ``O_CREAT|O_EXCL`` at mode 0600
-    so the file is never world-readable, writes the payload, then atomically
-    renames over the target. Windows silently ignores the mode bits (POSIX
-    perms are a no-op there) but ``os.replace`` still gives us atomic swap.
-    """
-    tmp_path = path.with_suffix(path.suffix + ".tmp")
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-    if sys.platform != "win32":
-        # ``0o600`` mode is only honored on POSIX; on Windows the file inherits
-        # the parent directory ACLs. Users on Windows should keep the profile
-        # dir under their home to constrain access.
-        fd = os.open(str(tmp_path), flags, 0o600)
-    else:
-        fd = os.open(str(tmp_path), flags)
+    """Write a private temporary file, then replace the previous complete state."""
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
-        os.write(fd, payload)
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(payload)
+        os.replace(temporary, path)
     finally:
-        os.close(fd)
-    os.replace(str(tmp_path), str(path))
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(temporary)
 
 
 def read_storage_snapshot(path: Path) -> dict[str, dict[str, str]]:
@@ -149,3 +138,9 @@ def _read_raw(path: Path) -> dict[str, Any]:
         if isinstance(payload, dict):
             return cast("dict[str, Any]", payload)
     return {}
+
+
+def write_browser_state(path: Path, state: dict[str, Any]) -> None:
+    """Persist a workspace's browser state without exposing a partial file."""
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    _atomic_write_secure(path, orjson.dumps(state))

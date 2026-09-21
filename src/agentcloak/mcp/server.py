@@ -133,7 +133,7 @@ def create_server(session_id: str | None = None) -> object:
 
     # Single shared client instance — auto-start state lives on this object,
     # so reusing one prevents redundant subprocess spawns across tools. The
-    # explicit session id gives this MCP server its own browser, independent
+    # explicit session id gives this MCP server its own pages, independent
     # of any other client talking to the same daemon.
     client = DaemonClient(session_id=session_id or _mcp_session_id())
 
@@ -177,11 +177,7 @@ def _register_exit_hook(session_id: str) -> None:
     Two best-effort calls fire on exit, both swallowing every error (the
     interpreter is tearing down — a failed cleanup must never raise):
 
-    * ``POST /session/close`` for *this server's* session — frees the
-      per-session browser promptly instead of waiting on the daemon's idle
-      timeout. Always attempted, because a named session left around just
-      wastes ~300MB until reclamation. Carries the session header so the
-      daemon closes the right slot.
+    * ``POST /session/close`` frees this server's pages in its workspace.
     * ``POST /shutdown`` to stop the whole daemon, but only when
       ``stop_on_exit`` is set. In multi-session mode other clients may share
       this daemon, so tearing it down is opt-in; the default leaves it running
@@ -189,24 +185,16 @@ def _register_exit_hook(session_id: str) -> None:
     """
     import contextlib
 
-    from agentcloak.core.config import load_config
+    from agentcloak.client import DaemonClient
 
-    _, cfg = load_config()
-    base = f"http://{cfg.daemon.host}:{cfg.daemon.port}"
+    client = DaemonClient(session_id=session_id, auto_start=False)
 
     def _stop() -> None:
-        import httpx
-
         with contextlib.suppress(Exception):
-            httpx.post(
-                f"{base}/session/close",
-                json={"session_id": session_id},
-                headers={"X-Agentcloak-Session": session_id},
-                timeout=2.0,
-            )
-        if cfg.browser.stop_on_exit:
+            client.session_close_sync(session_id=session_id)
+        if client.config.browser.stop_on_exit:
             with contextlib.suppress(Exception):
-                httpx.post(f"{base}/shutdown", timeout=2.0)
+                client.shutdown_sync()
 
     atexit.register(_stop)
 

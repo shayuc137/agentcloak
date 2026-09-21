@@ -105,13 +105,35 @@ def session_id_of(request: Request) -> str:
     return _session_id_of(request)
 
 
+def workspace_scope(request: Request) -> dict[str, str]:
+    workspace_id = request.headers.get("x-agentcloak-workspace", "").strip()
+    return {"workspace_id": workspace_id} if workspace_id else {}
+
+
+def _reject_workspace_bridge(request: Request) -> None:
+    config = getattr(request.app.state, "config", None)
+    if config is not None and config.browser.isolation == "workspace":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "workspace_isolation_unavailable",
+                "hint": "RemoteBridge cannot isolate browser storage by workspace",
+                "action": "use a local backend or restart with isolation=shared",
+            },
+        )
+
+
 def _routes_to_remote(request: Request) -> bool:
     """Only the Bridge owner may operate the connected user tab."""
     state = request.app.state
     if getattr(state, "active_tier", None) != StealthTier.REMOTE_BRIDGE:
         return False
     launching_session = getattr(state, "remote_session_id", None) or DEFAULT_SESSION_ID
-    return _session_id_of(request) == launching_session
+    workspace = getattr(state, "remote_workspace_id", "") or ""
+    return (
+        _session_id_of(request) == launching_session
+        and workspace_scope(request).get("workspace_id", "") == workspace
+    )
 
 
 def _browser_not_ready(request: Request) -> HTTPException:
@@ -149,6 +171,7 @@ def _browser_not_ready(request: Request) -> HTTPException:
 async def get_browser_ctx(request: Request) -> Any:
     """Resolve the caller's tab facade without sharing mutable page state."""
     if _routes_to_remote(request):
+        _reject_workspace_bridge(request)
         ctx = request.app.state.browser_ctx
         if ctx is None:
             raise _browser_not_ready(request)
@@ -164,7 +187,9 @@ async def get_browser_ctx(request: Request) -> Any:
         )
     session_mgr = getattr(request.app.state, "session_manager", None)
     if session_mgr is not None:
-        return await session_mgr.get_or_create(_session_id_of(request))
+        return await session_mgr.get_or_create(
+            _session_id_of(request), **workspace_scope(request)
+        )
     ctx = request.app.state.browser_ctx
     if ctx is None:
         raise _browser_not_ready(request)
@@ -177,7 +202,7 @@ async def get_optional_browser_ctx(request: Request) -> Any:
         return getattr(request.app.state, "browser_ctx", None)
     manager = getattr(request.app.state, "session_manager", None)
     if manager is not None:
-        return manager.peek(_session_id_of(request))
+        return manager.peek(_session_id_of(request), **workspace_scope(request))
     return getattr(request.app.state, "browser_ctx", None)
 
 
@@ -205,11 +230,20 @@ def get_context_manager(request: Request) -> Any:
 
 def get_remote_ctx(request: Request) -> Any:
     """Get the bridge/extension remote context if connected, else None."""
-    return getattr(request.app.state, "remote_ctx", None)
+    state = request.app.state
+    cfg = getattr(state, "config", None)
+    if cfg is not None and cfg.browser.isolation == "workspace":
+        return None
+    if getattr(state, "session_manager", None) is not None and not _routes_to_remote(
+        request
+    ):
+        return None
+    return getattr(state, "remote_ctx", None)
 
 
 def require_remote_ctx(request: Request) -> Any:
     """Get the remote ctx, raising a 400 envelope if no bridge is connected."""
+    _reject_workspace_bridge(request)
     remote = getattr(request.app.state, "remote_ctx", None)
     if remote is None:
         raise HTTPException(
@@ -219,6 +253,17 @@ def require_remote_ctx(request: Request) -> Any:
                 "error": "no_bridge_connected",
                 "hint": "No Chrome Extension connected via bridge or /ext",
                 "action": "ensure the Chrome Extension is connected",
+            },
+        )
+    if getattr(
+        request.app.state, "session_manager", None
+    ) is not None and not _routes_to_remote(request):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "bridge_session_mismatch",
+                "hint": "The connected tab belongs to another workspace or session",
+                "action": "launch remote_bridge from the owning session",
             },
         )
     return remote
@@ -253,7 +298,7 @@ def get_resume_writer(request: Request) -> ResumeWriter | None:
     """Keep each caller's URL and recent actions out of sibling resume data."""
     manager = getattr(request.app.state, "session_manager", None)
     if manager is not None:
-        return manager.slot(_session_id_of(request)).resume
+        return manager.slot(_session_id_of(request), **workspace_scope(request)).resume
     return getattr(request.app.state, "resume_writer", None)
 
 
@@ -281,7 +326,7 @@ def get_snapshot_cache(request: Request) -> SnapshotCache:
     """Keep snapshot diffs scoped to the caller session."""
     manager = getattr(request.app.state, "session_manager", None)
     state = (
-        manager.slot(_session_id_of(request)).cache
+        manager.slot(_session_id_of(request), **workspace_scope(request)).cache
         if manager is not None
         else request.app.state
     )

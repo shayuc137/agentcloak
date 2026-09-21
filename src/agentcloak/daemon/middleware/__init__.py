@@ -18,10 +18,12 @@ from typing import TYPE_CHECKING, cast
 
 from fastapi.responses import JSONResponse
 
+from agentcloak.daemon.dependencies import workspace_scope
 from agentcloak.daemon.middleware.metrics import (
     MetricsState,
     install_metrics_middleware,
 )
+from agentcloak.daemon.scheduling import Scheduling, scheduling_for
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -79,14 +81,8 @@ def install_middlewares(app: FastAPI) -> None:
 
         app.state.last_request_time = time.monotonic()
         manager = getattr(app.state, "session_manager", None)
-        if manager is None or request.url.path in {
-            "/health",
-            "/shutdown",
-            "/session/list",
-            "/openapi.json",
-            "/docs",
-            "/redoc",
-        }:
+        policy = scheduling_for(request.url.path)
+        if manager is None or policy == Scheduling.BYPASS:
             return await call_next(request)
         session_id = request.headers.get("x-agentcloak-session", "default")
         if request.url.path == "/session/close":
@@ -100,29 +96,20 @@ def install_middlewares(app: FastAPI) -> None:
                         session_id = target
             except ValueError:
                 pass
-        slot = manager.slot(session_id)
+        slot = manager.slot(session_id, **workspace_scope(request))
         slot.users += 1
         try:
-            path = request.url.path
-            if path in {"/route/release", "/route/list"}:
+            if policy == Scheduling.RELEASE:
                 return await call_next(request)
             route_manager = getattr(slot.ctx, "_route_mgr", None)
-            if path in {"/snapshot", "/screenshot"} and (
+            if policy == Scheduling.OBSERVE and (
                 route_manager is not None and route_manager.pending()
             ):
                 # Held navigation cannot own the lock needed to observe or release it.
                 async with slot.observation_lock:
                     return await call_next(request)
             async with slot.lock:
-                if path in {
-                    "/snapshot",
-                    "/screenshot",
-                    "/viewport",
-                    "/session/close",
-                    "/launch",
-                    "/tab/switch",
-                    "/tab/close",
-                }:
+                if policy in {Scheduling.OBSERVE, Scheduling.LIFECYCLE}:
                     async with slot.observation_lock:
                         return await call_next(request)
                 async with slot.observation_lock:

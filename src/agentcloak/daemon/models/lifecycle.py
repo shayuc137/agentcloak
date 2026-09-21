@@ -62,6 +62,8 @@ class HealthResponse(BaseModel):
     proxy: str | None = None
     # Empty string when no profile is attached (ephemeral mode).
     active_profile: str | None = None
+    isolation: str = "shared"
+    workspace_id: str = ""
     # Runtime metrics from the metrics middleware (None when the daemon was
     # constructed without app.state.metrics, e.g. some unit-test apps).
     # ``uptime_seconds`` is monotonic seconds since process start.

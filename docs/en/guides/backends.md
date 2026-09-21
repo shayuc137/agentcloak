@@ -190,3 +190,17 @@ All three backends support the Phase 7b reverse-engineering capabilities — deb
 CloakBrowser and Playwright keep a per-tab persistent CDP channel for manager events (debugger pauses, WebSocket frames). `cdp send` uses a separate persistent channel, retaining settings such as viewport overrides across successful calls. A raw-call timeout or cancellation closes only that channel; reapply its CDP settings after recovery. Closing a tab/session cleans up its channels. RemoteBridge sends CDP through its existing extension connection. Domains are enabled lazily.
 
 CloakBrowser suppresses live Runtime console events. Console capture uses the native CDP Console domain and adds `error`/`unhandledrejection` listeners for uncaught errors. These listeners preserve console methods and browser launch settings; their internal debug message can appear in DevTools, while agentcloak exposes it as a regular error entry.
+
+## Workspace and verification boundaries
+
+Both local backends run one browser process. `browser.isolation` defaults to `shared`; `workspace` creates one context per canonical workspace, with page sessions inside it. Git repositories and ordinary assistant directories are supported. See [configuration](../reference/config.md#workspace-isolation) for identity priority and saved-state limits. Extra contexts do not provide separate launch flags or proxies, and persistent-profile extensions may not run inside them.
+
+| Capability | Playwright | CloakBrowser | RemoteBridge |
+|---|---|---|---|
+| Input, viewport, local snapshots and JavaScript errors | Real-browser regression | Real-browser regression | Real MV3 smoke covers navigation, snapshot, viewport, evaluate and screenshot; detailed input/error parity remains unverified |
+| Scripts, interception and request hold/release | Real-browser regression | Real-browser regression | Full parity remains unverified |
+| Workspace storage and normal daemon restart | Real-browser + CLI regression | Real-browser + CLI regression | Unsupported; workspace mode is rejected |
+| Same-name sessions in distinct workspaces | Independent pages | Independent pages | Single owner; cross-workspace claim/relaunch is rejected |
+| Remote deployment | Not applicable | Not applicable | Local Chromium MV3 → WebSocket → daemon tested; external Windows/network deployment remains unverified |
+
+The CI browser job runs the local control suites, workspace persistence and CLI recovery tests, plus a real extension smoke test. That test copies the extension and narrows only its discovery ports to a private daemon. It does not mock Chrome/CDP or use an existing user profile.

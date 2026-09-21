@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, cast
 import orjson
 
 from agentcloak.core.errors import AgentBrowserError
+from agentcloak.core.workspace import workspace_state_dir
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -82,8 +83,15 @@ def normalize_cookies_for_playwright(
     return normalized, skipped
 
 
-def resolve_cookie_snapshot_path(paths: Paths, active_profile: str | None) -> Path:
+def resolve_cookie_snapshot_path(
+    paths: Paths, active_profile: str | None, *, workspace_id: str | None = None
+) -> Path:
     """Resolve the snapshot beside an active profile or under the data root."""
+    if workspace_id is not None:
+        return (
+            workspace_state_dir(paths.root, workspace_id, active_profile)
+            / _SNAPSHOT_NAME
+        )
     if active_profile:
         return paths.profiles_dir / active_profile / _SNAPSHOT_NAME
     return paths.root / _SNAPSHOT_NAME

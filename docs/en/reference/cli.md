@@ -62,6 +62,7 @@ Other domain codes, such as `element_not_found`, pass through unchanged. Direct 
 
 | Flag | Effect |
 |------|--------|
+| `--workspace PATH` | Use this root and its descendants as the workspace (accepted before or after the command) |
 | `--session ID` | Bind this invocation to a named browser session (accepted before or after the command) |
 | `--json` | Switch to JSON envelope output for the whole command |
 | `--pretty` | Indent JSON output (no-op without `--json`; warns on stderr) |
@@ -690,7 +691,7 @@ cloak launch --tier cloak --no-profile    # explicitly drop the current profile
 | `--profile` / `-p` | keep current | Load a named profile (local tiers only; ignored for `remote_bridge`) |
 | `--no-profile` | off | Explicitly switch to no profile, discarding the current one |
 
-Omitting `--profile` keeps whatever profile the daemon is currently attached to — a plain `cloak launch --tier cloak` no longer silently drops it. Pass `--no-profile` when you want an ephemeral browser; `--profile` and `--no-profile` are mutually exclusive and passing both raises a usage error.
+Omitting `--profile` keeps whatever profile the daemon is currently attached to — a plain `cloak launch --tier cloak` no longer silently drops it. Pass `--no-profile` to detach the named profile; shared mode then uses ephemeral storage, while workspace mode still persists under its workspace identity; `--profile` and `--no-profile` are mutually exclusive and passing both raises a usage error.
 
 ## Daemon management
 
@@ -709,9 +710,9 @@ daemon predates the metrics fields.
 
 ## Session management
 
-A single daemon shares one browser and profile between callers. Each session owns its tabs, element references, viewport, interception rules, scripts, and console buffer; cookies and profile login state are shared. Commands in one session are queued while different sessions can run concurrently. Snapshot, screenshot, and request release remain available during pending work.
+One daemon hosts workspace-scoped sessions. Each session owns its tabs, references, viewport, routes, scripts and console buffer. Commands queue per session; held navigation permits snapshot/screenshot observation and route release. Sessions in different workspaces remain distinct even with the same explicit ID.
 
-CLI identity resolves in this order: `--session ID` > `AGENTCLOAK_SESSION` > the basename of the current git worktree root. Outside git it uses a stable hash of the working directory. Thus workers in distinct worktrees are isolated without flags. Use an explicit id if unrelated worktrees have identical basenames. MCP servers retain their own process-scoped identity.
+`--session ID` overrides `AGENTCLOAK_SESSION`, then defaults to a canonical worktree/root path hash. `--workspace PATH` overrides `AGENTCLOAK_WORKSPACE`, configured `browser.workspace_roots`, Git repository identity and finally a non-Git working directory. Matching configured roots include subdirectories. MCP servers keep process-scoped sessions in their startup workspace. See [workspace configuration](config.md#workspace-isolation) for storage sharing, persistence and recovery limits.
 
 ```bash
 cloak navigate http://localhost:5173 --session panel-a
@@ -723,7 +724,7 @@ cloak session close panel-a            # explicitly close this session
 
 An idle session releases its own tabs after `daemon.session_idle_timeout` seconds (default 300s); the next request recreates them. A closed page or disconnected local browser is rebuilt on the next request. A shared browser failure loses volatile page state, so navigate again as needed. Changing the shared tier/profile while other sessions are active is rejected rather than changing those callers' browser. RemoteBridge does not silently share its user tab between callers.
 
-Clients discover the daemon by probing the recorded `/health` endpoint. They only read `daemon.json`; PID visibility or a read-only state directory does not invalidate a live daemon. Header-less raw HTTP requests use `default`; ordinary CLI calls send their resolved identity.
+Clients discover the daemon by probing the recorded `/health` endpoint. They only read `daemon.json`; PID visibility or a read-only state directory does not invalidate a live daemon. Raw HTTP callers can send `X-Agentcloak-Workspace` and `X-Agentcloak-Session`; omitted headers use the legacy empty workspace and `default` session. CLI/MCP send their resolved identities.
 
 ## Configuration
 

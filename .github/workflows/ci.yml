@@ -56,7 +56,7 @@ jobs:
   browser-smoke:
     name: Browser Smoke / Playwright + CloakBrowser
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: astral-sh/setup-uv@v10.0.1
@@ -73,6 +73,17 @@ jobs:
           uv run --locked pytest tests/integration/test_navigation.py
           -k "navigate_local_page or screenshot_default_jpeg or evaluate_js"
           -v --tb=short --timeout=60
+      - name: Browser controls, workspace isolation, and CLI recovery
+        run: >-
+          uv run --locked pytest
+          tests/integration/test_input_actions.py
+          tests/integration/test_network_controls.py
+          tests/integration/test_snapshot_errors.py
+          tests/integration/test_hide_init_document.py
+          tests/integration/test_workspace_sessions.py
+          tests/integration/test_workspace_cli.py
+          tests/integration/test_bridge_runtime.py
+          -v --tb=short --timeout=100
 
   build:
     name: Build Verification

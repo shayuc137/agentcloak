@@ -465,19 +465,36 @@ class TestMCPExitHook:
         paths, cfg = cfg_mod.load_config()
         cfg.browser.stop_on_exit = stop_on_exit
         monkeypatch.setattr(cfg_mod, "load_config", lambda *_a, **_k: (paths, cfg))
+        monkeypatch.setattr(
+            "agentcloak.client.daemon_client.load_config",
+            lambda *_a, **_k: (paths, cfg),
+        )
 
     def test_exit_hook_closes_session_not_daemon_by_default(
         self, monkeypatch: Any
     ) -> None:
-        import httpx
-
+        from agentcloak.client import DaemonClient
         from agentcloak.mcp import server as mcp_server
 
         self._patch_config(monkeypatch, stop_on_exit=False)
         calls: list[tuple[str, dict[str, Any]]] = []
-        monkeypatch.setattr(
-            httpx, "post", lambda url, **kw: calls.append((url, kw)) or None
-        )
+
+        def send(client, method, path, **kw):
+            calls.append(
+                (
+                    path,
+                    {
+                        "json": kw.get("json_body"),
+                        "headers": {
+                            "X-Agentcloak-Session": client._session_id,
+                            "X-Agentcloak-Workspace": client._workspace_id,
+                        },
+                    },
+                )
+            )
+            return {"ok": True}
+
+        monkeypatch.setattr(DaemonClient, "_do_request_sync", send)
         registered: list[Any] = []
         monkeypatch.setattr(
             mcp_server.atexit, "register", lambda fn: registered.append(fn)
@@ -493,17 +510,21 @@ class TestMCPExitHook:
         close_call = next(c for c in calls if c[0].endswith("/session/close"))
         assert close_call[1]["json"]["session_id"] == "mcp-test"
         assert close_call[1]["headers"]["X-Agentcloak-Session"] == "mcp-test"
+        assert close_call[1]["headers"]["X-Agentcloak-Workspace"]
 
     def test_exit_hook_also_stops_daemon_when_configured(
         self, monkeypatch: Any
     ) -> None:
-        import httpx
-
+        from agentcloak.client import DaemonClient
         from agentcloak.mcp import server as mcp_server
 
         self._patch_config(monkeypatch, stop_on_exit=True)
         calls: list[str] = []
-        monkeypatch.setattr(httpx, "post", lambda url, **_kw: calls.append(url) or None)
+        monkeypatch.setattr(
+            DaemonClient,
+            "_do_request_sync",
+            lambda _self, _method, path, **_kw: calls.append(path) or {"ok": True},
+        )
         registered: list[Any] = []
         monkeypatch.setattr(
             mcp_server.atexit, "register", lambda fn: registered.append(fn)

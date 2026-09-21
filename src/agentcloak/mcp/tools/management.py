@@ -120,7 +120,13 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                 health = await client.health()
                 paths, _ = load_config()
                 snapshot = resolve_cookie_snapshot_path(
-                    paths, str(health.get("active_profile") or "") or None
+                    paths,
+                    str(health.get("active_profile") or "") or None,
+                    workspace_id=(
+                        str(health.get("workspace_id") or "")
+                        if health.get("isolation") == "workspace"
+                        else None
+                    ),
                 )
                 data = result.get("data", result)
                 write_cookie_snapshot(snapshot, data)
@@ -150,7 +156,13 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                     health = await client.health()
                     paths, _ = load_config()
                     snapshot = resolve_cookie_snapshot_path(
-                        paths, str(health.get("active_profile") or "") or None
+                        paths,
+                        str(health.get("active_profile") or "") or None,
+                        workspace_id=(
+                            str(health.get("workspace_id") or "")
+                            if health.get("isolation") == "workspace"
+                            else None
+                        ),
                     )
                 cookies = read_cookie_snapshot(snapshot)
             except AgentBrowserError as exc:

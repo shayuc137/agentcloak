@@ -159,3 +159,5 @@ cloak bridge doctor
 | `navigate` 命令挂起 | Chrome 可能弹了权限框堵住——聚焦 Chrome 窗口处理掉 |
 | 远程 LAN token 不匹配 | 从 `~/.agentcloak/session.json` 重新读 token 粘到扩展选项 |
 | 重启 Chrome 后扩展掉线 | 扩展用了 `chrome.alarms` keepalive 但 Chrome 偶尔挂起 MV3 service worker——点一下扩展图标唤醒 |
+
+RemoteBridge 要求 `browser.isolation="shared"`。已连接的用户 tab 只有一个 `(workspace, session)` 归属；其他调用方不能认领，也不能通过重复 launch 同一 tier 抢占。交接前须由原会话关闭。真实本地 MV3 冒烟与尚未验证的跨机器范围见[后端矩阵](backends.md#工作空间与验证边界)。

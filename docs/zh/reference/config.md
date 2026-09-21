@@ -32,6 +32,8 @@ log_backup_count = 3
 [browser]
 default_tier = "auto"
 default_profile = ""
+isolation = "shared"
+workspace_roots = []
 viewport_width = 1280
 viewport_height = 720
 navigation_timeout = 30
@@ -276,3 +278,24 @@ cloak config keys                                               # 列出可用 k
 `batch_settle_timeout` 和 `max_return_size`）会在下一次相关 daemon 请求时重新
 加载。`[daemon]` / `[browser]` 中影响进程或浏览器启动的配置仍需重启；批量
 修改包含任一启动期配置时会输出 `(restart daemon to apply)`。
+
+## 工作空间隔离
+
+默认 `browser.isolation = "shared"`，继续共享 profile 的登录数据。显式改为 `workspace` 并重启 daemon 后，每个工作空间使用独立浏览器 context：
+
+```bash
+cloak config set browser.isolation workspace
+cloak config add browser.workspace_roots ~/work/assistant
+cloak daemon stop
+cloak daemon start
+```
+
+`AGENTCLOAK_ISOLATION` 可覆盖全局模式。运行中的 daemon 保持启动时的模式；`/health` 返回实际生效的 `isolation` 和调用方的 `workspace_id`。`workspace_roots` 是客户端读取的目录列表，建议使用绝对路径或 `~` 路径。根目录覆盖所有子目录，多个根匹配时取最长路径。客户端根目录应放在全局配置中，不放在 profile 配置中。
+
+工作空间按以下优先级识别：`--workspace PATH`、`AGENTCLOAK_WORKSPACE`、配置根目录、worktree 所属的 Git 仓库、无 Git 时的当前目录。规范化完整路径的哈希可避免同名目录碰撞。未指定根目录时，不同的非 Git 子目录分别视为独立空间。Git worktree 共享所属空间的存储，默认 session 则各自独立；分别指定 `--workspace` 也能隔离 worktree 的存储。
+
+两种模式都使用 `(workspace_id, session_id)` 标识页面会话。`session list` 和 `session close` 只作用于调用方的工作空间。`workspace` 模式中，同空间各 session 共享 cookie、localStorage 和 IndexedDB，其他空间使用独立存储。`shared` 保留原有 profile 存储；切换模式不会将它复制到工作空间中。
+
+工作空间在最后一个 session 关闭、空闲回收或 daemon 正常退出时，将状态保存到 `~/.agentcloak/workspaces/<工作空间与-profile-哈希>/storage.json`，再次打开时恢复；POSIX 文件权限为 0600。默认 cookie 导出/恢复快照也放在这个目录，仍可显式指定文件。浏览器崩溃可能丢失上次保存后的变更；sessionStorage、页面 DOM、历史、缓存和 service worker 不会恢复。这是存储和页面隔离，不能防范原始 CDP 或文件系统访问。浏览器进程、启动参数和代理仍共享；存在其他活跃 session 时拒绝切换 tier/profile。RemoteBridge 使用用户现有浏览器存储，因此明确拒绝 workspace 模式。
+
+workspace 模式在没有命名 profile 时也会持久化。`profile create --from-current` 会按显式请求导出 profile 种子；在 workspace 模式启动这个 profile，不会把其中的 cookie/localStorage 灌入每个空间。需要迁移 cookie 时，显式指定导出/恢复文件。

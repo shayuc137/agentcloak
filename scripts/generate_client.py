@@ -21,7 +21,7 @@ Sync vs async surface
 ---------------------
 CLI commands dispatch most routes through ``DaemonClient._send_sync(method,
 path, body)`` and render JSON locally, so they don't need a typed sync
-wrapper per route. Only the nine commands in :data:`KEEP_SYNC_METHODS`
+wrapper per route. Only the explicit commands in :data:`KEEP_SYNC_METHODS`
 genuinely need their own sync entry point — usually because they reshape
 the daemon's response (base64 decode, custom file output, etc.) before the
 renderer sees it.
@@ -68,6 +68,7 @@ KEEP_SYNC_METHODS: set[str] = {
     "screenshot_sync",
     "health_sync",
     "shutdown_sync",
+    "session_close_sync",
     "bridge_token_reset_sync",
     "capture_export_sync",
     "capture_analyze_sync",

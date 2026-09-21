@@ -52,6 +52,7 @@ from agentcloak.core.errors import (
     NavigationError,
 )
 from agentcloak.core.seq import RingBuffer, SeqCounter, SeqEvent
+from agentcloak.core.storage_snapshot import write_browser_state
 from agentcloak.core.types import StealthTier
 
 if TYPE_CHECKING:
@@ -124,6 +125,8 @@ class PlaywrightContext(BrowserContextBase):
         browser_config: BrowserConfig | None = None,
         profile_dir: Path | None = None,
         owns_browser: bool = True,
+        owns_context: bool = False,
+        workspace_state_path: Path | None = None,
     ) -> None:
         super().__init__(
             seq_counter=seq_counter,
@@ -139,6 +142,8 @@ class PlaywrightContext(BrowserContextBase):
         self._next_tab_id: int = 1
         self._browser = browser
         self._owns_browser = owns_browser
+        self._owns_context = owns_context
+        self._workspace_state_path = workspace_state_path
         self._playwright = playwright
         self._browser_context = browser_context
         self._proxy_url = proxy_url
@@ -185,6 +190,38 @@ class PlaywrightContext(BrowserContextBase):
             profile_dir=self._profile_dir,
             owns_browser=False,
         )
+
+    async def fork_workspace(self, state_path: Path | None = None) -> PlaywrightContext:
+        browser = self._browser or self._get_browser_context().browser
+        config = self._browser_config
+        options: dict[str, Any] = {
+            "viewport": {
+                "width": config.viewport_width,
+                "height": config.viewport_height,
+            }
+        }
+        if state_path is not None and state_path.is_file():
+            options["storage_state"] = str(state_path)
+        context = await browser.new_context(**options)
+        try:
+            page = await context.new_page()
+            return type(self)(
+                page=page,
+                browser=browser,
+                playwright=None,
+                seq_counter=SeqCounter(),
+                ring_buffer=RingBuffer(),
+                browser_context=context,
+                proxy_url=self._proxy_url,
+                cdp_port=self._cdp_port,
+                browser_config=config,
+                owns_browser=False,
+                owns_context=True,
+                workspace_state_path=state_path,
+            )
+        except BaseException:
+            await context.close()
+            raise
 
     # ------------------------------------------------------------------
     # Active page / target frame
@@ -2010,6 +2047,21 @@ class PlaywrightContext(BrowserContextBase):
         # keeps the cache from outliving the browser if close() is retried.
         for tab_id in set(self._cdp_sessions) | set(self._raw_cdp_sessions):
             await self._invalidate_cdp_session(tab_id)
+        if self._owns_context:
+            try:
+                if self._workspace_state_path is not None:
+                    state = await self._get_browser_context().storage_state(
+                        indexed_db=True
+                    )
+                    write_browser_state(self._workspace_state_path, state)
+            except Exception:
+                logger.exception(
+                    "workspace_state_save_failed", path=str(self._workspace_state_path)
+                )
+            finally:
+                await self._get_browser_context().close()
+                self._tabs.clear()
+            return
         if not self._owns_browser:
             for page in self._tabs.values():
                 if not page.is_closed():

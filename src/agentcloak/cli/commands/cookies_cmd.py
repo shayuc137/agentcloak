@@ -67,7 +67,13 @@ def cookies_export(
         health = client.health_sync()
         paths, _ = load_config()
         snapshot = resolve_cookie_snapshot_path(
-            paths, str(health.get("active_profile") or "") or None
+            paths,
+            str(health.get("active_profile") or "") or None,
+            workspace_id=(
+                str(health.get("workspace_id") or "")
+                if health.get("isolation") == "workspace"
+                else None
+            ),
         )
         write_cookie_snapshot(snapshot, data)
     except AgentBrowserError as exc:
@@ -121,7 +127,13 @@ def cookies_restore(
             health = client.health_sync()
             paths, _ = load_config()
             snapshot = resolve_cookie_snapshot_path(
-                paths, str(health.get("active_profile") or "") or None
+                paths,
+                str(health.get("active_profile") or "") or None,
+                workspace_id=(
+                    str(health.get("workspace_id") or "")
+                    if health.get("isolation") == "workspace"
+                    else None
+                ),
             )
         cookies = read_cookie_snapshot(snapshot)
     except AgentBrowserError as exc:

@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Request
 from agentcloak.daemon.dependencies import (
     ContextManagerDep,
     session_id_of,
+    workspace_scope,
 )
 from agentcloak.daemon.models import OkEnvelope
 from agentcloak.daemon.models.session import (
@@ -29,9 +30,12 @@ def _get_session_manager(request: Request) -> Any:
 
 @router.get("/session/list", response_model=OkEnvelope[SessionListResponse])
 async def handle_session_list(
+    request: Request,
     mgr: Annotated[Any, Depends(_get_session_manager)],
 ) -> dict[str, Any]:
-    sessions: list[dict[str, Any]] = mgr.list_sessions() if mgr is not None else []
+    sessions: list[dict[str, Any]] = (
+        mgr.list_sessions(**workspace_scope(request)) if mgr is not None else []
+    )
     return _ok({"sessions": sessions}, seq=0)
 
 
@@ -45,8 +49,10 @@ async def handle_session_close(
     caller = session_id_of(request)
     session_id = body.session_id or caller
     closed = (
-        await ctx_mgr.close_remote_session(caller) if session_id == caller else False
+        await ctx_mgr.close_remote_session(caller, **workspace_scope(request))
+        if session_id == caller
+        else False
     )
     if not closed and mgr is not None:
-        closed = await mgr.close_session(session_id)
+        closed = await mgr.close_session(session_id, **workspace_scope(request))
     return _ok({"closed": closed, "session_id": session_id}, seq=0)

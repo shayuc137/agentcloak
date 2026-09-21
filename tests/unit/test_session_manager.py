@@ -174,7 +174,7 @@ class TestIdleReclamation:
         try:
             await mgr.get_or_create("alpha")
             # Backdate the last-request time so the slot is well past timeout.
-            mgr._sessions["alpha"].last_request_time = time.monotonic() - 1000
+            mgr.slot("alpha").last_request_time = time.monotonic() - 1000
             suspended = await mgr.cleanup_idle(timeout=300.0)
             assert suspended == ["alpha"]
             # Browser closed (RAM freed) but the slot survives as suspended.
@@ -203,7 +203,7 @@ class TestIdleReclamation:
         mgr, created = _make()
         try:
             await mgr.get_or_create("alpha")
-            mgr._sessions["alpha"].last_request_time = time.monotonic() - 1000
+            mgr.slot("alpha").last_request_time = time.monotonic() - 1000
             assert await mgr.cleanup_idle(timeout=0.0) == []
             assert created[0].closed is False
         finally:
@@ -214,7 +214,7 @@ class TestIdleReclamation:
         mgr, created = _make()
         try:
             await mgr.get_or_create("alpha")
-            mgr._sessions["alpha"].last_request_time = time.monotonic() - 1000
+            mgr.slot("alpha").last_request_time = time.monotonic() - 1000
             await mgr.cleanup_idle(timeout=300.0)
             # Next request transparently relaunches a fresh browser.
             ctx = await mgr.get_or_create("alpha")
@@ -240,7 +240,7 @@ class TestIdleReclamation:
             # Fresh session → not idle.
             assert mgr.all_idle(timeout=300.0) is False
             # Backdate → idle again.
-            mgr._sessions["alpha"].last_request_time = time.monotonic() - 1000
+            mgr.slot("alpha").last_request_time = time.monotonic() - 1000
             assert mgr.all_idle(timeout=300.0) is True
         finally:
             _teardown(mgr)
@@ -263,7 +263,7 @@ class TestCloseRobustness:
             await mgr.get_or_create("alpha")
             await mgr.get_or_create("beta")
             # Make alpha's close blow up; close_all must still clear everything.
-            bad = mgr._sessions["alpha"].ctx
+            bad = mgr.slot("alpha").ctx
             bad.close = AsyncMock(side_effect=RuntimeError("wedged"))  # type: ignore[union-attr]
             await mgr.close_all()
             assert mgr.list_sessions() == []

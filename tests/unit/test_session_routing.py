@@ -30,11 +30,13 @@ def test_identity_priority_and_worktree(
     monkeypatch.setattr(
         subprocess,
         "run",
-        MagicMock(return_value=SimpleNamespace(stdout="/code/feature-ui\n")),
+        MagicMock(
+            return_value=SimpleNamespace(stdout="/code/feature-ui\n/code/main/.git\n")
+        ),
     )
     token = cli_session_id.set(None)
     try:
-        assert auto_detect_session_id() == "feature-ui"
+        assert auto_detect_session_id().startswith("session-")
         monkeypatch.setenv("AGENTCLOAK_SESSION", "explicit-env")
         assert auto_detect_session_id() == "explicit-env"
         cli_session_id.set("explicit-cli")

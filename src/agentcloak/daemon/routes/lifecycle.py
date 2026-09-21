@@ -19,10 +19,10 @@ from agentcloak.daemon.dependencies import (
     ContextManagerDep,
     LocalProxyDep,
     OptionalBrowserCtxDep,
-    RemoteCtxDep,
     ResumeWriterDep,
     ShutdownEventDep,
     session_id_of,
+    workspace_scope,
 )
 from agentcloak.daemon.models import (
     CDPEndpointResponse,
@@ -50,7 +50,6 @@ async def handle_health(
     ctx: OptionalBrowserCtxDep,
     local_proxy: LocalProxyDep,
     active_tier: ActiveTierDep,
-    remote_ctx: RemoteCtxDep,
     config: ConfigDep,
 ) -> dict[str, Any]:
     # ``local_profile`` is recorded on app.state by ContextManager whenever a
@@ -65,13 +64,16 @@ async def handle_health(
         ctx,
         local_proxy=local_proxy,
         active_tier=active_tier,
-        remote_connected=remote_ctx is not None,
+        remote_connected=getattr(request.app.state, "remote_ctx", None) is not None,
         config=config,
         active_profile=active_profile,
         route_count=route_count,
         started_at=started_at,
         metrics=metrics,
     )
+    startup_config = getattr(request.app.state, "config", None) or config
+    data["isolation"] = startup_config.browser.isolation
+    data["workspace_id"] = workspace_scope(request).get("workspace_id", "")
     return data
 
 
@@ -131,15 +133,22 @@ async def handle_launch(
     session_mgr = getattr(request.app.state, "session_manager", None)
     if session_mgr is not None:
         result = await session_mgr.launch_session(
-            session_id_of(request), tier_enum, **profile_kwarg
+            session_id_of(request),
+            tier_enum,
+            **workspace_scope(request),
+            **profile_kwarg,
         )
     else:
         result = await manager.switch_tier(tier_enum, **profile_kwarg)
 
-    if tier_enum == StealthTier.REMOTE_BRIDGE:
-        request.app.state.remote_session_id = session_id_of(request)
-    else:
-        request.app.state.remote_session_id = None
+        if tier_enum == StealthTier.REMOTE_BRIDGE:
+            request.app.state.remote_session_id = session_id_of(request)
+            request.app.state.remote_workspace_id = workspace_scope(request).get(
+                "workspace_id", ""
+            )
+        else:
+            request.app.state.remote_session_id = None
+            request.app.state.remote_workspace_id = ""
 
     return _ok(result, seq=0)
 

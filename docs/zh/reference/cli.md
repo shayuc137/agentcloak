@@ -62,6 +62,7 @@ AGENTCLOAK_OUTPUT=json cloak snapshot
 
 | 参数 | 效果 |
 |------|------|
+| `--workspace PATH` | 指定工作空间根目录，覆盖子目录；支持放在命令前后 |
 | `--session ID` | 将本次调用绑定到命名浏览器会话，可放在命令前后 |
 | `--json` | 整个命令切回 JSON envelope 输出 |
 | `--pretty` | 缩进 JSON 输出（无 `--json` 时空操作并 stderr 警告） |
@@ -673,7 +674,7 @@ cloak launch --tier cloak --no-profile    # 显式清空当前 profile
 | `--profile` / `-p` | 保留当前 | 加载命名 profile（仅本地 tier 生效，`remote_bridge` 忽略此项） |
 | `--no-profile` | 关闭 | 显式切换到无 profile，丢弃当前 profile |
 
-省略 `--profile` 会保留 daemon 当前挂载的 profile——单独执行 `cloak launch --tier cloak` 不会再静默丢掉它。需要临时无 profile 浏览器时传 `--no-profile`；`--profile` 和 `--no-profile` 互斥，同时传会报用法错误。
+省略 `--profile` 会保留 daemon 当前挂载的 profile——单独执行 `cloak launch --tier cloak` 不会再静默丢掉它。传 `--no-profile` 可解除命名 profile；shared 模式此时使用临时存储，workspace 模式仍按工作空间身份持久化；`--profile` 和 `--no-profile` 互斥，同时传会报用法错误。
 
 ## Daemon 管理
 
@@ -689,9 +690,9 @@ cloak daemon status                # tier | browser status | seq（含 metrics �
 
 ## Session 管理
 
-单个 daemon 让多个调用方共享一个浏览器和 profile。每个 session 独立拥有 tab、元素引用、视口、拦截规则、脚本与 console 缓冲；cookies 和 profile 登录态共享。同一 session 的命令排队，不同 session 可以并行；请求等待期间仍可执行快照、截图与放行。
+一个 daemon 承载多个工作空间中的 session。每个 session 独立拥有 tab、元素引用、视口、路由、脚本与 console 缓冲。同 session 请求排队；请求暂停期间仍可截图、snapshot 与放行。同名 session 在不同工作空间也互不混用页面。
 
-CLI 会话按 `--session ID` > `AGENTCLOAK_SESSION` > 当前 git worktree 根目录名解析；不在 git 中则使用工作目录的稳定哈希。不同 worktree 的 worker 无需传参即可隔离。无关 worktree 目录同名时请显式指定 id。MCP server 保留独立的进程级会话标识。
+`--session ID` 优先于 `AGENTCLOAK_SESSION`，默认使用规范化 worktree 或根目录的路径哈希。`--workspace PATH` 优先于 `AGENTCLOAK_WORKSPACE`、`browser.workspace_roots`、Git 仓库身份，最后回落到无 Git 的当前目录。配置根目录可覆盖子目录。MCP 在启动时识别工作空间，保留进程级 session。存储模式、持久化及恢复边界见[工作空间配置](config.md#工作空间隔离)。
 
 ```bash
 cloak navigate http://localhost:5173 --session panel-a
@@ -703,7 +704,7 @@ cloak session close panel-a            # 显式关闭指定 session
 
 session 闲置 `daemon.session_idle_timeout` 秒（默认 300s）后仅回收自己的 tab，下次请求重新创建。页面关闭或本地浏览器断开后，下次请求会重建；浏览器整体故障会丢失临时页面状态，必要时需重新导航。其他 session 活跃时，切换共享 tier/profile 会报错，避免改变其他调用方的浏览器。RemoteBridge 不会把多个调用方静默映射到同一个用户 tab。
 
-客户端探测记录中的 `/health` 来发现 daemon，只读取 `daemon.json`；PID 不可见或状态目录只读不会让活着的 daemon 被判死。无 header 的原始 HTTP 请求使用 `default`，普通 CLI 调用会发送解析后的会话标识。
+客户端探测记录中的 `/health` 来发现 daemon，只读取 `daemon.json`；PID 不可见或状态目录只读不会让活着的 daemon 被判死。原始 HTTP 可发送 `X-Agentcloak-Workspace` 和 `X-Agentcloak-Session`；缺省时使用兼容的空工作空间和 `default` session。CLI/MCP 发送解析后的身份。
 
 ## 配置
 

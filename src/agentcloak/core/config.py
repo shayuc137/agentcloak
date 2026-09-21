@@ -119,6 +119,8 @@ class BrowserConfig:
 
     default_tier: str = "auto"
     default_profile: str = ""
+    isolation: str = "shared"
+    workspace_roots: list[str] = field(default_factory=list[str])
     headless: bool = True
     humanize: bool = True
     viewport_width: int = 1280
@@ -300,6 +302,8 @@ def load_config(*, root: Path | None = None) -> tuple[Paths, AgentcloakConfig]:
         or _env("PROFILE")
         or browser_tbl.get("default_profile", cfg.browser.default_profile)
     )
+    cfg.browser.isolation = _env("ISOLATION") or browser_tbl.get("isolation", "shared")
+    cfg.browser.workspace_roots = browser_tbl.get("workspace_roots", [])
     headless_env = _env("HEADLESS")
     if headless_env is not None:
         cfg.browser.headless = headless_env.lower() in ("true", "1", "yes")
@@ -523,6 +527,9 @@ def apply_profile_config(cfg: AgentcloakConfig, profile_dir: Path) -> None:
 
     def _merge_section(subcfg: Any, section: str, table: dict[str, Any]) -> None:
         for key, value in table.items():
+            if section == "browser" and key == "workspace_roots":
+                _log.warning("workspace_roots_require_global_config")
+                continue
             if not hasattr(subcfg, key):
                 _log.warning(
                     "profile_config_unknown_key",
@@ -561,6 +568,13 @@ _VALID_SCREENSHOT_FORMATS = {"jpeg", "png"}
 
 def _validate(cfg: AgentcloakConfig) -> None:
     """Validate config values; raise :class:`ConfigError` on bad input."""
+    if cfg.browser.isolation not in ("shared", "workspace"):
+        raise ConfigError("browser.isolation must be shared or workspace")
+    roots: Any = cfg.browser.workspace_roots
+    if not isinstance(roots, list) or not all(
+        isinstance(root, str) and root.strip() for root in cast("list[Any]", roots)
+    ):
+        raise ConfigError("browser.workspace_roots must be a list of directory paths")
     if not 1 <= cfg.daemon.port <= 65535:
         raise ConfigError(f"daemon.port must be 1-65535, got {cfg.daemon.port}")
     if cfg.browser.default_tier not in _VALID_TIERS:
@@ -611,6 +625,7 @@ _ENV_KEYS: dict[str, list[str]] = {
     "daemon_port": ["PORT"],
     "default_tier": ["DEFAULT_TIER", "TIER"],
     "default_profile": ["DEFAULT_PROFILE", "PROFILE"],
+    "isolation": ["ISOLATION"],
     "viewport_width": ["VIEWPORT_WIDTH"],
     "viewport_height": ["VIEWPORT_HEIGHT"],
     "navigation_timeout": ["NAVIGATION_TIMEOUT_SEC", "NAVIGATION_TIMEOUT"],
@@ -667,6 +682,8 @@ _FIELD_SCHEMA: dict[str, tuple[str, str, type]] = {
     # [browser]
     "browser.default_tier": ("browser", "default_tier", str),
     "browser.default_profile": ("browser", "default_profile", str),
+    "browser.isolation": ("browser", "isolation", str),
+    "browser.workspace_roots": ("browser", "workspace_roots", list),
     "browser.headless": ("browser", "headless", bool),
     "browser.humanize": ("browser", "humanize", bool),
     "browser.viewport_width": ("browser", "viewport_width", int),
@@ -717,6 +734,8 @@ _FLAT_FIELD_MAP: list[tuple[str, str, str]] = [
     # [browser]
     ("default_tier", "browser", "default_tier"),
     ("default_profile", "browser", "default_profile"),
+    ("isolation", "browser", "isolation"),
+    ("workspace_roots", "browser", "workspace_roots"),
     ("headless", "browser", "headless"),
     ("humanize", "browser", "humanize"),
     ("viewport_width", "browser", "viewport_width"),

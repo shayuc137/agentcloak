@@ -189,3 +189,17 @@ cloak navigate "https://example.com"
 CloakBrowser 和 Playwright 为 manager 事件（调试器暂停、WebSocket 帧）维护 per-tab 持久 CDP 通道。`cdp send` 使用另一条持久通道，成功调用后保留视口覆盖等状态。raw 调用超时或取消仅关闭该通道，恢复后需重新设置其 CDP 状态；关闭 tab/session 会清理所属通道。RemoteBridge 通过现有扩展连接传递 CDP 命令，各域按需启用。
 
 CloakBrowser 会抑制实时 Runtime 日志。日志采集使用原生 CDP Console 域，并添加 `error` / `unhandledrejection` 监听以捕获未处理异常。监听不替换 console 方法，也不改变浏览器启动参数；内部 debug 消息可能出现在 DevTools 中，agentcloak 输出会将其还原成普通错误记录。
+
+## 工作空间与验证边界
+
+两个本地后端都共用一个浏览器进程。`browser.isolation` 默认 `shared`；`workspace` 按规范化工作空间创建独立 context，内部承载各 session 页面。Git 仓库和普通助手目录均受支持；身份优先级与保存范围见[配置](../reference/config.md#工作空间隔离)。独立 context 不提供独立启动参数或代理，持久 profile 的扩展也未必在这些 context 中运行。
+
+| 能力 | Playwright | CloakBrowser | RemoteBridge |
+|---|---|---|---|
+| 输入、视口、本地 snapshot 和 JS 错误 | 真实浏览器回归 | 真实浏览器回归 | 真实 MV3 冒烟覆盖导航、snapshot、视口、evaluate 和截图；完整输入/错误对齐尚未验证 |
+| 脚本、拦截与请求暂停/放行 | 真实浏览器回归 | 真实浏览器回归 | 完整对齐尚未验证 |
+| 工作空间存储与 daemon 正常重启 | 真实浏览器与 CLI 回归 | 真实浏览器与 CLI 回归 | 不支持，明确拒绝 workspace 模式 |
+| 不同空间中的同名 session | 独立页面 | 独立页面 | 单一归属，拒绝跨空间认领和重复 launch 抢占 |
+| 远程部署 | 不适用 | 不适用 | 已验证本地 Chromium MV3 → WebSocket → daemon；外部 Windows 和跨机器网络尚未验证 |
+
+CI 浏览器任务包含本地操作回归、工作空间持久化、CLI 恢复和真实扩展冒烟。扩展测试使用临时副本，只将自动发现端口收窄到独立测试 daemon；Chrome/CDP 未使用 mock，也不使用现有用户 profile。

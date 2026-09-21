@@ -70,6 +70,7 @@ def create_app() -> FastAPI:
     app.state.local_profile = None
     app.state.active_tier = None
     app.state.remote_session_id = None
+    app.state.remote_workspace_id = ""
     app.state.session_manager = None
     # Embedded static file server for ``cloak serve`` (7a R7). Lazily created
     # on first ``/serve/start`` and torn down by the daemon shutdown path.

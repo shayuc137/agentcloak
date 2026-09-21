@@ -87,9 +87,6 @@ class SnapshotCache:
         self._state.prev_snapshot_signature = value
 
 
-# Header carrying the caller's session identity. Absent header (every
-# legacy CLI invocation, curl, etc.) maps to the default session so the
-# multi-session change is fully backward compatible.
 _SESSION_HEADER = "x-agentcloak-session"
 DEFAULT_SESSION_ID = "default"
 
@@ -109,21 +106,7 @@ def session_id_of(request: Request) -> str:
 
 
 def _routes_to_remote(request: Request) -> bool:
-    """Return ``True`` if this request must hit the shared ``remote_ctx``.
-
-    ``/launch --tier remote_bridge`` records the launching session id on
-    ``app.state.remote_session_id``. Because every Claude Code request carries
-    a non-``default`` ``X-Agentcloak-Session`` header, the tier switch alone is
-    invisible to :func:`get_browser_ctx` — without this hook the launching
-    session would silently fall through to :class:`SessionManager` and get an
-    isolated *local* browser instead of the extension-backed remote one.
-
-    Only the session that launched remote_bridge is routed to ``remote_ctx``;
-    every other session keeps its own local browser, so multi-session
-    isolation is preserved. When ``remote_session_id`` is unset we fall back to
-    ``"default"`` so a daemon that booted straight into remote_bridge tier
-    still serves header-less / default callers from the shared context.
-    """
+    """Only the Bridge owner may operate the connected user tab."""
     state = request.app.state
     if getattr(state, "active_tier", None) != StealthTier.REMOTE_BRIDGE:
         return False
@@ -164,45 +147,24 @@ def _browser_not_ready(request: Request) -> HTTPException:
 
 
 async def get_browser_ctx(request: Request) -> Any:
-    """Get the live SecureBrowserContext for the caller's session.
-
-    Multi-session routing (Child A): a named ``X-Agentcloak-Session`` header
-    is multiplexed through :class:`SessionManager`, which lazily launches an
-    isolated browser per session. The ``"default"`` session (and any request
-    that arrives with no header) keeps using ``app.state.browser_ctx`` so the
-    mature :class:`ContextManager` tier-switch / remote-bridge / proxy
-    machinery is reused verbatim — that path is provably unchanged.
-
-    The provider is ``async`` because launching a session browser awaits;
-    FastAPI supports async dependency providers natively.
-
-    remote_bridge override: the session that launched remote_bridge is routed
-    to the shared ``browser_ctx`` (the extension-backed remote ctx) *before*
-    the SessionManager fork, so it never gets a local browser by mistake. See
-    :func:`_routes_to_remote`.
-    """
+    """Resolve the caller's tab facade without sharing mutable page state."""
     if _routes_to_remote(request):
         ctx = request.app.state.browser_ctx
         if ctx is None:
             raise _browser_not_ready(request)
         return ctx
-
-    # Profile mode: route all requests to the profile browser. A named
-    # session would create a separate ephemeral browser that lacks the
-    # profile's cookies, localStorage, and httpcloak proxy.
-    if getattr(request.app.state, "local_profile", None):
-        ctx = request.app.state.browser_ctx
-        if ctx is None:
-            raise _browser_not_ready(request)
-        return ctx
-
+    if getattr(request.app.state, "active_tier", None) == StealthTier.REMOTE_BRIDGE:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "session_isolation_unavailable",
+                "hint": "The connected Bridge tab belongs to another session",
+                "action": "use the owning session or launch a local browser",
+            },
+        )
     session_mgr = getattr(request.app.state, "session_manager", None)
-    session_id = _session_id_of(request)
-    if session_mgr is not None and session_id != DEFAULT_SESSION_ID:
-        return await session_mgr.get_or_create(session_id)
-
-    # Default session, or a daemon/test app with no SessionManager wired —
-    # both resolve to the single ContextManager-owned slot.
+    if session_mgr is not None:
+        return await session_mgr.get_or_create(_session_id_of(request))
     ctx = request.app.state.browser_ctx
     if ctx is None:
         raise _browser_not_ready(request)
@@ -210,25 +172,12 @@ async def get_browser_ctx(request: Request) -> Any:
 
 
 async def get_optional_browser_ctx(request: Request) -> Any:
-    """Get the active context if one exists, else ``None``.
-
-    Used by routes that should answer even when no browser is up — most
-    notably ``/health`` so an agent can introspect the daemon's tier
-    while waiting for the extension to connect.
-
-    For a named session this lazily launches the browser (same as
-    :func:`get_browser_ctx`); for the default session it returns whatever is
-    on ``app.state.browser_ctx`` without raising. The remote_bridge launcher is
-    routed to the shared ``browser_ctx`` (may be ``None`` while the extension
-    is still connecting — ``/health`` reports that state happily).
-    """
+    """Health discovery must never allocate a tab or start a browser."""
     if _routes_to_remote(request):
         return getattr(request.app.state, "browser_ctx", None)
-
-    session_mgr = getattr(request.app.state, "session_manager", None)
-    session_id = _session_id_of(request)
-    if session_mgr is not None and session_id != DEFAULT_SESSION_ID:
-        return await session_mgr.get_or_create(session_id)
+    manager = getattr(request.app.state, "session_manager", None)
+    if manager is not None:
+        return manager.peek(_session_id_of(request))
     return getattr(request.app.state, "browser_ctx", None)
 
 
@@ -301,12 +250,10 @@ def get_config(request: Request) -> AgentcloakConfig:
 
 
 def get_resume_writer(request: Request) -> ResumeWriter | None:
-    """Return the daemon's :class:`ResumeWriter`, or ``None`` if uninitialized.
-
-    Routes that touch the resume snapshot file (``_update_resume`` helper,
-    ``GET /resume``) depend on this so tests can inject a stub writer via
-    ``app.dependency_overrides``.
-    """
+    """Keep each caller's URL and recent actions out of sibling resume data."""
+    manager = getattr(request.app.state, "session_manager", None)
+    if manager is not None:
+        return manager.slot(_session_id_of(request)).resume
     return getattr(request.app.state, "resume_writer", None)
 
 
@@ -331,14 +278,14 @@ def get_active_tier(request: Request) -> Any:
 
 
 def get_snapshot_cache(request: Request) -> SnapshotCache:
-    """Return the snapshot-diff cache for the current daemon.
-
-    The wrapper exposes a single ``prev_lines`` property that reads and
-    writes ``app.state.prev_snapshot_lines``. Routes never touch the raw
-    ``app.state`` attribute — they go through this Depends-provided
-    helper so the access is explicit and unit-testable.
-    """
-    return SnapshotCache(request.app.state)
+    """Keep snapshot diffs scoped to the caller session."""
+    manager = getattr(request.app.state, "session_manager", None)
+    state = (
+        manager.slot(_session_id_of(request)).cache
+        if manager is not None
+        else request.app.state
+    )
+    return SnapshotCache(state)
 
 
 def get_shutdown_event(request: Request) -> asyncio.Event | None:

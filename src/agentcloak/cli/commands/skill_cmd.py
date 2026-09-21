@@ -285,6 +285,7 @@ def skill_uninstall(
     """Remove skill installations from every known platform directory."""
     removed: list[Path] = []
     skipped: list[tuple[Path, str]] = []
+    failures: list[str] = []
 
     for p in _all_platforms(Path.cwd()):
         target = p.target
@@ -296,6 +297,7 @@ def skill_uninstall(
                 resolved = target.readlink()
             except OSError as exc:
                 skipped.append((target, f"readlink failed: {exc}"))
+                failures.append(f"{target}: {exc}")
                 continue
             if Path(resolved) != CANONICAL:
                 skipped.append((target, f"symlink points to {resolved}"))
@@ -305,6 +307,7 @@ def skill_uninstall(
                 removed.append(target)
             except OSError as exc:
                 skipped.append((target, f"unlink failed: {exc}"))
+                failures.append(f"{target}: {exc}")
         elif target.is_dir():
             # Copy-installed (Windows fallback). Use a sentinel file before
             # ``rmtree`` so we never blow away an unrelated directory that
@@ -318,6 +321,7 @@ def skill_uninstall(
                 removed.append(target)
             except OSError as exc:
                 skipped.append((target, f"rmtree failed: {exc}"))
+                failures.append(f"{target}: {exc}")
 
     if remove_canonical and CANONICAL.exists():
         try:
@@ -325,6 +329,14 @@ def skill_uninstall(
             removed.append(CANONICAL)
         except OSError as exc:
             skipped.append((CANONICAL, f"rmtree failed: {exc}"))
+            failures.append(f"{CANONICAL}: {exc}")
+
+    if failures:
+        error(
+            "; ".join(failures),
+            code="skill_uninstall_failed",
+            data={"removed": [str(path) for path in removed]},
+        )
 
     if not removed and not skipped:
         info("no skill installations found.")

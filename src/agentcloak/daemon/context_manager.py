@@ -140,6 +140,27 @@ class ContextManager:
     # Tier switching
     # ------------------------------------------------------------------
 
+    async def close_remote_session(self, session_id: str) -> bool:
+        async with self._switching:
+            owner = getattr(self._state, "remote_session_id", None) or "default"
+            if (
+                self._state.active_tier != StealthTier.REMOTE_BRIDGE
+                or owner != session_id
+            ):
+                return False
+            if self._state.browser_ctx is None:
+                return False
+            self._cancel_idle_timer()
+            self._state.remote_ctx = None
+            self._state.remote_session_id = None
+            self._state.browser_ctx = None
+            if self._state.local_ctx is not None:
+                self._state.active_tier = self._state.local_tier
+                self._state.browser_ctx = SecureBrowserContext(
+                    self._state.local_ctx, self._config
+                )
+            return True
+
     async def switch_tier(
         self,
         tier: StealthTier,
@@ -181,6 +202,16 @@ class ContextManager:
                 "profile": resolved_profile,
             }
 
+    async def ensure_local(self) -> Any:
+        async with self._switching:
+            owner = self._state.local_ctx
+            if owner is not None and owner.browser_alive():
+                return owner
+            tier = self._state.local_tier or self._state.active_tier
+            profile = self._state.local_profile
+            await self._activate_local(tier, profile)
+            return self._state.local_ctx
+
     async def _activate_remote(self) -> None:
         """Activate the remote-bridge backend, keeping the local cache warm."""
         self._cancel_idle_timer()
@@ -210,7 +241,12 @@ class ContextManager:
         self._cancel_idle_timer()
         same_tier = self._state.local_tier == tier
         same_profile = (self._state.local_profile or None) == (profile or None)
-        cache_hit = self._state.local_ctx is not None and same_tier and same_profile
+        cache_hit = (
+            self._state.local_ctx is not None
+            and same_tier
+            and same_profile
+            and self._state.local_ctx.browser_alive()
+        )
 
         if not cache_hit:
             # Different tier or different profile — old cache is no longer
@@ -229,7 +265,7 @@ class ContextManager:
         from agentcloak.core.config import load_config
         from agentcloak.daemon.services import ProfileService
 
-        paths, _ = load_config()
+        paths, _ = load_config(root=getattr(self._state, "config_root", None))
         selectors = (
             ProfileService(paths.profiles_dir).read_hide_selectors(profile)
             if profile
@@ -252,7 +288,7 @@ class ContextManager:
         """Launch a new local backend for ``tier``/``profile``."""
         from agentcloak.core.config import load_config
 
-        paths, _ = load_config()
+        paths, _ = load_config(root=getattr(self._state, "config_root", None))
         profile_dir: Path | None = None
         if profile:
             profile_dir = paths.profiles_dir / profile
@@ -275,10 +311,9 @@ class ContextManager:
             profile_dir=profile_dir,
             humanize=self._config.browser.humanize,
             extensions=extensions,
-            # Switch-time launches don't bind to the local TLS proxy —
-            # only the initial server start wires httpcloak in. Spelling
-            # this out keeps the manager free of httpcloak fallbacks.
-            proxy_url=None,
+            proxy_url=getattr(
+                getattr(self._state, "local_proxy", None), "proxy_url", None
+            ),
             browser_proxy=self._config.browser.proxy or None,
             extra_args=chromium_args,
             browser_config=self._config.browser,

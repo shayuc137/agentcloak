@@ -185,11 +185,17 @@ class HideManager:
         css_value = json.dumps(css)
         return (
             "(() => {"
+            "const apply=()=>{"
             f"const id={style_id};"
             "let style=document.getElementById(id);"
             "if(!style){style=document.createElement('style');style.id=id;"
-            "(document.documentElement||document).appendChild(style);}"
+            "(document.head||document.documentElement).appendChild(style);}"
             f"style.textContent={css_value};style.disabled=false;"
+            "};"
+            # An init script can run before HTML parsing; a style must not
+            # become the document's root element and prevent the page loading.
+            "if(document.documentElement){apply();}"
+            "else{document.addEventListener('DOMContentLoaded',apply,{once:true});}"
             "})()"
         )
 

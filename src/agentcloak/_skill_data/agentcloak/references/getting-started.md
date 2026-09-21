@@ -210,6 +210,10 @@ defaults are never modified. Daemon must be restarted for `[browser]` /
 `[daemon]` changes to take effect — the command prints the restart hint
 when applicable.
 
+## Sessions
+
+CLI commands use `--session ID` > `AGENTCLOAK_SESSION` > git worktree root basename, or a cwd hash outside git. Different worktrees get separate tabs without configuration; a shared profile retains login cookies. `cloak session close` closes only the caller's tabs. Explicit ids disambiguate unrelated worktrees with the same basename.
+
 ## Daemon Management
 
 The daemon auto-starts and auto-stops. Manual control:

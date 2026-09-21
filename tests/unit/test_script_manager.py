@@ -51,9 +51,8 @@ class TestAdd:
 
         assert ident == "abc"
         assert mgr.list_scripts() == {"abc": "console.log(1)"}
-        send.assert_awaited_once_with(
-            "Page.addScriptToEvaluateOnNewDocument", {"source": "console.log(1)"}
-        )
+        assert send.await_args.args[0] == "Page.addScriptToEvaluateOnNewDocument"
+        assert send.await_args.args[1]["source"].startswith("console.log(1)\n")
 
     @pytest.mark.asyncio
     async def test_add_multiple_distinct_ids(self) -> None:
@@ -75,7 +74,7 @@ class TestPreset:
         assert ident == "p1"
         # The injected source is the preset template, not a bare name.
         sent_source = send.await_args.args[1]["source"]
-        assert sent_source == PRESET_TEMPLATES["fetch"]
+        assert sent_source.startswith(PRESET_TEMPLATES["fetch"])
         assert "fetch" in sent_source
 
     @pytest.mark.asyncio

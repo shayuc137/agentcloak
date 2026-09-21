@@ -76,7 +76,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import orjson
@@ -112,20 +112,20 @@ _WILDCARD_HOSTS = frozenset({"0.0.0.0", "::", ""})
 
 def _read_daemon_file(paths: Any) -> tuple[str | None, int | None, str | None]:
     """Read host/port/profile from the daemon portfile, if it exists and is fresh."""
-    from agentcloak.core.process import pid_alive
-
     try:
         data = orjson.loads(paths.daemon_file.read_bytes())
-        pid = data.get("pid")
-        if pid is not None and not pid_alive(pid):
-            paths.daemon_file.unlink(missing_ok=True)
-            return None, None, None
         host = data.get("host")
         if host in _WILDCARD_HOSTS:
             host = "127.0.0.1"
-        profile = data.get("profile") or None
-        return host, data.get("port"), profile
-    except (FileNotFoundError, orjson.JSONDecodeError, KeyError):
+        port = data.get("port")
+        if not isinstance(host, str) or not isinstance(port, int):
+            return None, None, None
+        response = httpx.get(f"http://{host}:{port}/health", timeout=1.0)
+        response.raise_for_status()
+        if response.json().get("ok") is not True:
+            return None, None, None
+        return host, port, data.get("profile") or None
+    except (OSError, ValueError, AttributeError, httpx.HTTPError):
         return None, None, None
 
 
@@ -165,8 +165,8 @@ class DaemonClient:
         Multi-session identity sent as the ``X-Agentcloak-Session`` header
         so the daemon hands this client an isolated browser. ``None``
         (default) auto-detects via :func:`auto_detect_session_id`
-        (``AGENTCLOAK_SESSION`` > ``CLAUDE_CODE_SESSION_ID`` > ``"default"``),
-        so two concurrent Claude Code sessions get separate browsers with no
+        (``AGENTCLOAK_SESSION`` > worktree basename > cwd hash),
+        so callers in different worktrees get separate tabs with no
         configuration. The MCP server passes an explicit per-process id.
     """
 
@@ -319,7 +319,9 @@ class DaemonClient:
                 action="check daemon status with 'agentcloak daemon status'",
             ) from exc
 
-    def _request_timeout(self) -> httpx.Timeout:
+    def _request_timeout(
+        self, path: str = "", json_body: dict[str, Any] | None = None
+    ) -> httpx.Timeout:
         """Phase-split timeout shared by the sync + async request paths.
 
         ``connect`` is short (``http_connect_timeout``) so a dead/remote daemon
@@ -328,9 +330,14 @@ class DaemonClient:
         small fixed budgets — we never upload large bodies and the per-request
         client never queues on a shared pool.
         """
+        read_timeout = self._request_timeout_s
+        if path == "/cdp/send" and json_body:
+            read_timeout = max(
+                read_timeout, float(json_body.get("timeout", 30000)) / 1000 + 5
+            )
         return httpx.Timeout(
             connect=self._connect_timeout_s,
-            read=self._request_timeout_s,
+            read=read_timeout,
             write=10.0,
             pool=5.0,
         )
@@ -350,7 +357,7 @@ class DaemonClient:
         transport = httpx.HTTPTransport(retries=2)
         with httpx.Client(
             base_url=self._base,
-            timeout=self._request_timeout(),
+            timeout=self._request_timeout(path, json_body),
             transport=transport,
         ) as client:
             kwargs: dict[str, Any] = {}
@@ -389,7 +396,7 @@ class DaemonClient:
         transport = httpx.AsyncHTTPTransport(retries=2)
         async with httpx.AsyncClient(
             base_url=self._base,
-            timeout=self._request_timeout(),
+            timeout=self._request_timeout(path, json_body),
             transport=transport,
         ) as client:
             kwargs: dict[str, Any] = {}
@@ -429,7 +436,7 @@ class DaemonClient:
 
         raw = resp.content
         try:
-            data: dict[str, Any] = orjson.loads(raw) if raw else {}
+            decoded: Any = orjson.loads(raw) if raw else {}
         except orjson.JSONDecodeError as exc:
             raise AgentBrowserError(
                 error="daemon_invalid_response",
@@ -437,10 +444,27 @@ class DaemonClient:
                 action="check daemon logs for the unexpected response",
             ) from exc
 
-        if not data.get("ok") and "error" in data:
+        if not isinstance(decoded, dict):
             raise AgentBrowserError(
-                error=str(data["error"]),
-                hint=str(data.get("hint", "")),
+                error="daemon_invalid_response",
+                hint=(
+                    f"Daemon returned a non-object JSON body (HTTP {resp.status_code})"
+                ),
+                action="check daemon logs for the unexpected response",
+            )
+        data = cast("dict[str, Any]", decoded)
+        if resp.is_error or data.get("ok") is False:
+            failure = data.get("error", "daemon_request_failed")
+            if isinstance(failure, dict):
+                details = cast("dict[str, Any]", failure)
+                code = str(details.get("code", "daemon_request_failed"))
+                message = str(details.get("message", data.get("hint", "")))
+            else:
+                code = str(failure)
+                message = str(data.get("hint", data.get("detail", "")))
+            raise AgentBrowserError(
+                error=code,
+                hint=message or f"Daemon request failed (HTTP {resp.status_code})",
                 action=str(data.get("action", "")),
             )
         return data
@@ -997,6 +1021,7 @@ class DaemonClient:
         wait_timeout: int | None = None,
         hide: str | None = None,
         keep_overlays: bool = False,
+        viewport: str | None = None,
     ) -> dict[str, Any]:
         return self._send_sync(
             "GET",
@@ -1013,6 +1038,7 @@ class DaemonClient:
                 wait_timeout=wait_timeout,
                 hide=hide,
                 keep_overlays=keep_overlays,
+                viewport=viewport,
             ),
         )
 
@@ -1144,6 +1170,7 @@ class DaemonClient:
         wait_timeout: int | None = None,
         hide: str | None = None,
         keep_overlays: bool = False,
+        viewport: str | None = None,
     ) -> dict[str, Any]:
         # MCP defaults to ``mcp_screenshot_quality`` (lower than CLI's 80) so
         # base64 output stays under typical MCP token budgets.
@@ -1160,6 +1187,7 @@ class DaemonClient:
                 wait_timeout=wait_timeout,
                 hide=hide,
                 keep_overlays=keep_overlays,
+                viewport=viewport,
             ),
         )
 
@@ -1326,6 +1354,20 @@ class DaemonClient:
         )
 
     # --- CDP / Tabs (async) ---
+
+    async def viewport(self, *, width: int, height: int) -> dict[str, Any]:
+        return await self._send_async(
+            "POST", "/viewport", json_body={"width": width, "height": height}
+        )
+
+    async def cdp_send(
+        self, *, method: str, params: dict[str, Any] | None = None, timeout: int = 30000
+    ) -> dict[str, Any]:
+        return await self._send_async(
+            "POST",
+            "/cdp/send",
+            json_body={"method": method, "params": params or {}, "timeout": timeout},
+        )
 
     async def cdp_endpoint(self) -> dict[str, Any]:
         return await self._send_async("GET", "/cdp/endpoint")
@@ -1682,6 +1724,11 @@ class DaemonClient:
             body["pattern"] = pattern
         return await self._send_async("POST", "/route/remove", json_body=body)
 
+    async def route_release(self, *, identifier: str) -> dict[str, Any]:
+        return await self._send_async(
+            "POST", "/route/release", json_body={"identifier": identifier}
+        )
+
     async def route_list(self) -> dict[str, Any]:
         return await self._send_async("GET", "/route/list")
 
@@ -1941,6 +1988,7 @@ def _build_screenshot_params(
     wait_timeout: int | None,
     hide: str | None = None,
     keep_overlays: bool = False,
+    viewport: str | None = None,
 ) -> dict[str, str]:
     params: dict[str, str] = {"quality": str(quality)}
     if format is not None:
@@ -1955,6 +2003,8 @@ def _build_screenshot_params(
         params["hide"] = hide
     if keep_overlays:
         params["keep_overlays"] = "true"
+    if viewport is not None:
+        params["viewport"] = viewport
     return params
 
 

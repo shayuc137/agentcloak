@@ -60,7 +60,7 @@ form "Login"
   [8] button "Submit"
 ```
 
-Numbers are element references — pass them as the first positional arg (`cloak click 5`) or via `--index 5`. They change on navigation/DOM update -- always re-snapshot for fresh refs. ARIA states shown: `checked`, `disabled`, `expanded`, `selected`, `pressed`, `invalid`, `required`, `focused`. Passwords redacted as `••••`.
+References accept `12` or `'[12]'` (quote brackets in zsh to prevent shell globbing). Pass them as the first positional arg (`cloak click 5`) or via `--index 5`. They change on navigation/DOM update -- always re-snapshot for fresh refs. ARIA states shown: `checked`, `disabled`, `expanded`, `selected`, `pressed`, `invalid`, `required`, `focused`. Passwords redacted as `••••`.
 
 Snapshot modes: `compact` (default, interactive + containers only, capped at 80 nodes — pass `--limit 0` to disable the cap) | `accessible` (full tree, heavier) | `content` (text from the a11y tree) | `dom` (raw HTML).
 
@@ -82,6 +82,7 @@ Snapshot modes: `compact` (default, interactive + containers only, capped at 80 
 | `cloak snapshot --diff` | Mark `[+]` added, `[~]` changed vs previous |
 | `cloak screenshot [--output FILE]` | Screenshot to file, stdout = path (`--wait-for CSS` waits first; `--hide CSS` hides overlays once; `--keep-overlays` reveals all) |
 | `cloak diff screenshot BASELINE [--current FILE]` | Exact RGBA pixel comparison; omit current for a live PNG, add `--output diff.png` for red highlights |
+| `cloak viewport set WIDTHxHEIGHT` | Resize the current session without navigation; `screenshot --viewport WIDTHxHEIGHT` temporarily overrides and restores it |
 | `cloak resume` | Session state: URL, tabs, recent actions |
 
 ### Interaction
@@ -94,9 +95,10 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak fill N "value"` | Clear and set input value — fast path, but slow under humanize (see Gotchas) |
 | `cloak type N "value"` | Type character by character; pick this when you want the anti-detection typing cadence |
 | `cloak press Enter` | Press key (Enter, Tab, Escape, Backspace, ArrowDown, Space...; `--target N` focuses element [N] first) |
-| `cloak press "Control+a"` | Combo key (Playwright `+` syntax) |
+| `cloak press "Control+a"` | Combo key; modifier aliases Ctrl/Cmd/Command/Opt/Option are case-insensitive |
 | `cloak scroll down` | Scroll page (`--amount N` pixels, default 300; `--index N` scrolls element into view) |
-| `cloak hover N` | Hover over element |
+| `cloak hover N [--offset dx,dy]` / `hover --at x,y` | Hover at element center plus offset, or absolute viewport coordinates |
+| `cloak drag N M` / `drag --from x,y --to x,y --steps N` | Drag with real pointer input |
 | `cloak select N --value "opt"` | Select dropdown option (`--label "text"` to match by visible text) |
 | `cloak keydown/keyup Shift` | Hold/release key |
 | `cloak dialog accept` / `dismiss` | Handle confirm/prompt dialog |
@@ -116,7 +118,7 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak fetch URL --method POST --body '{...}'` | HTTP POST with cookies |
 | `cloak network --since N` | Recent network requests (filter by seq; `--since last_action` returns only requests after the most recent action) |
 | `cloak capture start` / `stop` / `export` | Record and export network traffic |
-| `cloak console show [--level error] [--since N]` | Read captured console logs + uncaught page errors (`--clear` empties the buffer) |
+| `cloak console show [--level error] [--since N]` / `clear` | Logs and uncaught errors accumulate across navigation with page URLs and timestamps; clear explicitly |
 | `cloak storage get [KEY]` / `set KEY VAL` / `delete KEY` / `clear` | localStorage CRUD (`--type session` for sessionStorage; returns `storage_origin_error` on `about:blank` — navigate to a real page first) |
 | `cloak clipboard read` / `write TEXT` | Read/write the system clipboard |
 | `cloak download url URL [-o dir]` | Download a URL server-side (with cookies; SSRF-guarded) |
@@ -131,7 +133,9 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak script add JS` / `add --preset fetch\|xhr\|json_parse\|crypto\|timing` | Inject an init script that runs before page scripts (the hook point for patching fetch/XHR/JSON.parse); presets log calls to `cloak console` |
 | `cloak script remove ID` / `list` | Remove an init script by identifier / list active ones |
 | `cloak route add PATTERN --action abort\|fulfill\|continue` | Intercept matching requests; `--status`/`--content-type`/`--body` shape a `fulfill` response, `--method`/`--resource-type` narrow the match |
-| `cloak route remove [PATTERN]` / `list` | Remove a route rule (omit PATTERN to clear all) / list active rules |
+| `cloak route remove [PATTERN]` / `list` | Remove rules / list rule ids, hit counts and pending requests; zero hits warn |
+| `cloak route add --hold PATTERN` / `route release ID` | Pause requests for loading-state snapshot/screenshot; release a pending request or rule id |
+| `cloak cdp send METHOD --params JSON --timeout MS` | Session-bound CDP request; protocol errors/timeouts fail nonzero |
 | `cloak emulation headers -H 'Name: value'` | Inject extra HTTP headers on every request (custom auth/tokens); no `-H` clears them |
 | `cloak graphql introspect URL` | Run the standard `__schema` introspection query (via the session's cookies) |
 | `cloak graphql query URL QUERY [--variables '{...}']` | Send an arbitrary GraphQL operation |
@@ -238,7 +242,8 @@ Counter-intuitive behaviors worth knowing before you hit them:
 
 - **Timeouts**: navigation and actions both default to 30s. For slow pages or large uploads, pass `--timeout 60` on `navigate` or `wait`. If `navigation_timeout` errors persist, set `AGENTCLOAK_NAVIGATION_TIMEOUT=60` globally
 - **Headless by default**: the browser runs headless. For stronger anti-detection, start headed without changing config: `cloak daemon stop && cloak daemon start --headed -b`. Or set `headless = false` in `~/.agentcloak/config.toml` (or `AGENTCLOAK_HEADLESS=false`). Xvfb auto-starts on headless Linux servers
-- **Daemon lifecycle**: auto-starts on first command, stays running. `cloak launch --tier X` hot-switches browser tier without restart. Changing headless/profile requires `cloak daemon stop` + `cloak daemon start`. `cloak daemon status` shows current state
+- **Session identity**: `--session ID` > `AGENTCLOAK_SESSION` > git worktree basename (cwd hash outside git). Tabs, viewport, refs, routes and console are isolated; profile cookies are shared. `session close` closes only the caller. Use explicit ids for worktrees with identical names.
+- **Daemon lifecycle**: auto-starts on first command, stays running. `cloak launch --tier X` switches tier without restart when no other sessions are active; changing a shared tier/profile with active siblings fails explicitly. Changing headless/profile requires `cloak daemon stop` + `cloak daemon start`. `cloak daemon status` shows current state
 
 For token-saving command choices and error-recovery sequences, read `references/optimization.md`.
 
@@ -255,3 +260,5 @@ Read these when you need deeper guidance:
 | `references/remote-bridge.md` | operating the user's real Chrome via the extension (token auth, claim, finalize, `bridge doctor`) |
 | `references/troubleshooting.md` | you see a `Error:` on stderr and the inline hint isn't enough, or the daemon won't start; also the `--json` envelope shape |
 | `references/commands-reference.md` | you need an exact daemon parameter / type — full route catalog with CLI / MCP bindings (auto-generated from the OpenAPI spec) |
+
+Double-click with `cloak click N --click-count 2`. `hide` only affects matching configured selectors; third-party CDP overlays need an explicit selector.

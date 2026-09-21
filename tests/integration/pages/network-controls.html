@@ -1,0 +1,11 @@
+<!doctype html>
+<html><head><title>Network controls</title></head><body>
+<h1>Network controls</h1><p id="status">Loading</p>
+<script>
+window.initSeen = window.fixtureInit === true;
+console.log('fixture:' + location.search);
+fetch('network-data.txt').then(r => r.text()).then(text => {
+  document.querySelector('#status').textContent = text.trim();
+});
+</script>
+</body></html>

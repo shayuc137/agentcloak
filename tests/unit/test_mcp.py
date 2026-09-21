@@ -314,18 +314,14 @@ class TestMCPServerCreation:
         )
         client.health.assert_not_awaited()
 
-    def test_tool_count_is_35(self) -> None:
+    def test_tool_count_is_41(self) -> None:
         try:
             from agentcloak.mcp.server import create_server
 
             mcp = create_server()
             tools = mcp._tool_manager._tools  # type: ignore[union-attr]
-            # 23 pre-7a tools + 6 from the 7a batch (console, download,
-            # storage, clipboard, pdf, serve) + 4 from the 7b T1 batch
-            # (script, route, headers, graphql) + 1 from 7b T2 (streaming)
-            # + 1 from 7b T3 (debugger) + 1 from 7b T4 (sourcemap).
-            assert len(tools) == 39, (
-                f"Expected 39 tools, got {len(tools)}: {sorted(tools.keys())}"
+            assert len(tools) == 41, (
+                f"Expected 41 tools, got {len(tools)}: {sorted(tools.keys())}"
             )
         except ImportError:
             pytest.skip("mcp package not installed")
@@ -382,6 +378,8 @@ class TestMCPServerCreation:
                 "agentcloak_script",
                 "agentcloak_route",
                 "agentcloak_headers",
+                "agentcloak_viewport",
+                "agentcloak_cdp_send",
                 "agentcloak_graphql",
                 "agentcloak_streaming",
                 "agentcloak_debugger",

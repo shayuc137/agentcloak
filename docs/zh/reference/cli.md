@@ -18,11 +18,11 @@ $ cloak snapshot
   [1] link "Learn more" href="https://iana.org/domains/example"
 
 $ cloak click 99
-Error: Element [99] not in selector_map (1 entries)
+Error [element_not_found]: Element [99] not in selector_map (1 entries)
   -> run 'snapshot' to refresh the selector_map, or re-snapshot if the page changed
 ```
 
-脚本/jq 流水线/MCP 风格消费方需要旧 envelope：
+脚本和 jq 流水线可启用结构化输出：
 
 ```bash
 # --json flag（任意位置）
@@ -36,13 +36,33 @@ AGENTCLOAK_OUTPUT=json cloak snapshot
 
 ```json
 {"ok": true, "seq": 3, "data": {...}}
-{"ok": false, "error": "error_code", "hint": "description", "action": "suggested next step"}
+{"ok": false, "error": {"code": "error_code", "message": "description"}, "hint": "description", "action": "suggested next step"}
 ```
+
+
+失败时 stdout 只输出一份 JSON envelope，stderr 输出 `Error [code]: message`。缺少参数和本地校验失败也遵循此约定。`js evaluate` 抛出异常或 Promise 拒绝会失败；正常返回以 `Error:` 开头的字符串仍属于成功数据。诊断失败可在 `data` 中附带检查结果。
+
+| `error.code` | 含义 |
+|--------------|------|
+| `invalid_request` | CLI 参数错误或 daemon 请求校验失败 |
+| `command_failed` | 本地命令校验失败 |
+| `command_aborted` | 命令被中断或取消 |
+| `internal_error` | CLI 或 daemon 的未预期异常 |
+| `config_error` | 配置键或值无效 |
+| `doctor_failed`、`bridge_check_failed` | 环境或 bridge 检查失败，JSON 附带诊断 `data` |
+| `skill_uninstall_failed` | skill 文件操作失败 |
+| `daemon_unreachable`、`daemon_timeout` | daemon 连接失败或请求超时 |
+| `daemon_invalid_response`、`daemon_request_failed` | 响应体无效或 daemon 请求失败 |
+| `evaluate_failed` | 本地后端的 JavaScript 语法或运行时异常 |
+| `cdp_timeout`、`cdp_call_failed` | 原生 CDP 超时或协议错误 |
+
+其他领域错误码（例如 `element_not_found`）保持原值。直接调用 daemon 和 MCP 时，错误仍使用字符串 `error` 加 `hint`、`action`；嵌套的 `error.code/message` 属于 CLI JSON 输出。
 
 ## 全局参数
 
 | 参数 | 效果 |
 |------|------|
+| `--session ID` | 将本次调用绑定到命名浏览器会话，可放在命令前后 |
 | `--json` | 整个命令切回 JSON envelope 输出 |
 | `--pretty` | 缩进 JSON 输出（无 `--json` 时空操作并 stderr 警告） |
 | `--verbose` / `-v` | 提高日志等级（`-v` info，`-vv` debug） |
@@ -69,7 +89,7 @@ cloak navigate URL [--timeout SECONDS] [--snap] [--snapshot-mode MODE]
 
 ### snapshot
 
-获取带有 `[N]` 元素引用的无障碍树。
+获取带有 `[N]` 元素引用的无障碍树。`compact` 和 `accessible` 都包含无障碍树暴露的 `button`/`menuitem` 及可聚焦自定义元素，包括 `tabindex="0"` 和 `tabindex="-1"`。被 AX 忽略的节点仍不显示；菜单展开后重新 snapshot，才能获取菜单项引用。
 
 ```bash
 cloak snapshot [--mode MODE] [--selector CSS] [--limit N] [--focus N] [--offset N] [--frames] [--diff] [--hide CSS] [--keep-overlays]
@@ -96,17 +116,27 @@ cloak snapshot [--mode MODE] [--selector CSS] [--limit N] [--focus N] [--offset 
 # <title> | <url> | <total_nodes> nodes (<interactive> interactive) | seq=<n>
 ```
 
+### viewport
+
+```bash
+cloak viewport set 2560x1440
+cloak screenshot --viewport 1024x768 --output compact.png
+```
+
+`viewport set` 只调整当前 session 的页面，不导航、不丢登录态。截图覆盖是一次性的，成功或失败后都会恢复原视口。宽高为不超过 16384 的正整数。
+
 ### screenshot
 
 截取当前页面的屏幕截图。
 
 ```bash
-cloak screenshot [--output FILE] [--full-page] [--format FORMAT] [--quality N] [--wait-for CSS] [--hide CSS] [--keep-overlays]
+cloak screenshot [--output FILE] [--viewport WIDTHxHEIGHT] [--full-page] [--format FORMAT] [--quality N] [--wait-for CSS] [--hide CSS] [--keep-overlays]
 ```
 
 | 参数 | 默认值 | 说明 |
 |------|-------|------|
 | `--output` | 自动放在系统临时目录（`tempfile.gettempdir()`） | 保存到文件；`.png` 选择 PNG，`.jpg`/`.jpeg` 选择 JPEG |
+| `--viewport` | 当前页面 | 一次性 `WIDTHxHEIGHT`，截图后恢复 |
 | `--full-page` | 关闭 | 捕获完整可滚动页面 |
 | `--format` | 输出后缀，其次为 `browser.screenshot_format`（`jpeg`） | 显式覆盖为 `jpeg` 或 `png`；必须与已识别后缀一致 |
 | `--quality` | `80` | JPEG 质量 0-100（PNG 时忽略） |
@@ -164,6 +194,8 @@ cloak resume
 
 加 `--snap` 到任意交互命令，可附带 compact snapshot。
 
+位置引用同时接受 `12` 和 `'[12]'`；zsh 等 shell 下需为方括号引用加引号，避免通配符展开。
+
 ### click
 
 通过 `[N]` 引用点击元素。
@@ -176,6 +208,8 @@ cloak click N --force             # 一次性的单左击 DOM fallback
 ```
 
 已知 overlay 优先用 `cloak hide add CSS` 加入隐藏规则，重新 snapshot 后正常点击；隐藏也会清理截图和 snapshot 输出。`--force` 用于未知的一次性遮挡，会对解析出的 DOM 元素调用 `click()`，绕过坐标命中测试。它仅支持单左击；与非默认 `--button` 或 `--click-count` 组合会返回 `invalid_argument`。
+
+`cloak click N --click-count 2` 执行双击。
 
 ### fill
 
@@ -198,6 +232,8 @@ cloak type N "value" [--snap]
 ```
 
 ### press
+
+修饰键别名大小写不敏感：`Ctrl` → `Control`、`Cmd`/`Command` → `Meta`、`Opt`/`Option` → `Alt`，例如 `cloak press Ctrl+Enter`。
 
 按下键盘按键或组合键。
 
@@ -225,7 +261,20 @@ cloak scroll --direction DIRECTION
 
 ```bash
 cloak hover N [--snap]
+cloak hover --at 100,200
+cloak hover '[12]' --offset 10,-5
 ```
+
+`--offset` 相对元素中心偏移；`--at` 为视口绝对坐标。
+
+### drag
+
+```bash
+cloak drag '[4]' '[5]' --steps 12
+cloak drag --from 100,200 --to 300,400 --steps 12
+```
+
+拖拽使用浏览器真实指针输入，包括按下、移动和松开。选择两个元素引用，或同时指定起终点坐标。
 
 ### select
 
@@ -391,7 +440,7 @@ cloak script remove ID
 cloak script list
 ```
 
-预设会把拦截到的调用打到 `cloak console`。
+预设会把拦截到的调用打到 `cloak console`。`script list` 会报告每个脚本是否已注入当前页面；新注册的脚本在下次导航时先于页面脚本运行。
 
 ### 网络路由拦截
 
@@ -404,6 +453,27 @@ cloak route add "*" --action continue --resource-type xhr --method POST
 cloak route remove "**/api/*"         # 省略 pattern 则清空全部规则
 cloak route list
 ```
+
+`route list` 显示规则 id、命中次数和挂起请求 id。零命中会给出警告，避免将“登记成功”当作“拦截已验证”。不含 `*` 的模式按 URL 子串匹配，`*` 可以跨 `/` 匹配。
+
+```bash
+cloak route add --hold "/api/orders"
+# 触发请求后取证 loading 状态：
+cloak snapshot
+cloak screenshot --output loading.png
+cloak route list
+cloak route release RULE_OR_REQUEST_ID
+```
+
+放行会恢复已挂起的请求，规则仍保留以处理后续请求；完成后可移除规则。挂起期间仍可快照和截图。console 消息跨导航累积，包含时间和页面 URL；`cloak console clear` 显式清空缓冲，兼容 `console show --clear`。
+
+### 原生 CDP
+
+```bash
+cloak cdp send Runtime.evaluate --params '{"expression":"document.title","returnByValue":true}' --timeout 1000
+```
+
+命令作用于当前 session 的页面，超时按每次请求计，单位毫秒。协议错误与超时均非零退出，JSON 模式返回结构化错误。本地 raw CDP 使用独立的 per-tab 持久通道；超时或取消会重置该通道，之后需重新设置其 CDP 状态，manager 订阅保持有效。
 
 ### 额外 HTTP header
 
@@ -615,16 +685,25 @@ cloak daemon status                # tier | browser status | seq（含 metrics �
 
 `daemon status`（以及 MCP `agentcloak_status`）会额外打印一行 daemon 存活指标——`uptime <时长> | <N> requests | <N> active`——可当作轻量监控读数。daemon 版本过旧、不带 metrics 字段时该行省略。
 
+`hide` 只隐藏已配置选择器命中的 DOM 元素，不会自动清理第三方 CDP 工具注入的任意标注层；需要时显式添加选择器。
+
 ## Session 管理
 
-单个 daemon 可同时服务多个调用方（两个 Claude Code 会话、一个 MCP client、普通 CLI）。每个调用方通过 `X-Agentcloak-Session` header 路由到各自独立的浏览器。session id 自动检测——`AGENTCLOAK_SESSION` > `CLAUDE_CODE_SESSION_ID` > `default`——因此并发的 agent 无需任何配置就能拿到各自独立的浏览器。命名 session 的浏览器在闲置 `daemon.session_idle_timeout` 秒（默认 300s）后挂起，下次请求时透明重建。
+单个 daemon 让多个调用方共享一个浏览器和 profile。每个 session 独立拥有 tab、元素引用、视口、拦截规则、脚本与 console 缓冲；cookies 和 profile 登录态共享。同一 session 的命令排队，不同 session 可以并行；请求等待期间仍可执行快照、截图与放行。
+
+CLI 会话按 `--session ID` > `AGENTCLOAK_SESSION` > 当前 git worktree 根目录名解析；不在 git 中则使用工作目录的稳定哈希。不同 worktree 的 worker 无需传参即可隔离。无关 worktree 目录同名时请显式指定 id。MCP server 保留独立的进程级会话标识。
 
 ```bash
-cloak session list                 # 命名 session：id | 状态（active/suspended）| tier | 闲置秒数
-cloak session close [SESSION_ID]   # 关闭某个 session 并立即释放其浏览器
+cloak navigate http://localhost:5173 --session panel-a
+cloak screenshot --session panel-a
+cloak session list                     # id | 状态 | tier | 闲置时间
+cloak session close                    # 只关闭当前调用方的 session
+cloak session close panel-a            # 显式关闭指定 session
 ```
 
-无 header 的调用（所有普通 CLI 调用）使用 `default` session（由 daemon 主浏览器支撑），它不在此列表中——其状态通过 `cloak status` / `/health` 查看。省略 `SESSION_ID` 时关闭的就是这个默认 session（等同于把所有普通 `cloak` 调用当前挂着的浏览器一起关掉），daemon 本身不停。
+session 闲置 `daemon.session_idle_timeout` 秒（默认 300s）后仅回收自己的 tab，下次请求重新创建。页面关闭或本地浏览器断开后，下次请求会重建；浏览器整体故障会丢失临时页面状态，必要时需重新导航。其他 session 活跃时，切换共享 tier/profile 会报错，避免改变其他调用方的浏览器。RemoteBridge 不会把多个调用方静默映射到同一个用户 tab。
+
+客户端探测记录中的 `/health` 来发现 daemon，只读取 `daemon.json`；PID 不可见或状态目录只读不会让活着的 daemon 被判死。无 header 的原始 HTTP 请求使用 `default`，普通 CLI 调用会发送解析后的会话标识。
 
 ## 配置
 

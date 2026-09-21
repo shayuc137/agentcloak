@@ -25,7 +25,8 @@ if TYPE_CHECKING:
     from agentcloak.core.config import AgentcloakConfig
     from agentcloak.core.types import StealthTier
 
-from agentcloak.core.errors import DialogBlockedError, SecurityError
+from agentcloak.core.errors import AgentBrowserError, DialogBlockedError, SecurityError
+from agentcloak.core.input import parse_ref
 from agentcloak.core.security import (
     check_domain_allowed,
     scan_content,
@@ -281,8 +282,8 @@ class SecureBrowserContext:
     def _check_action_target(self, snap: PageSnapshot, target: str) -> None:
         """Check the target element text for injection patterns."""
         try:
-            index = int(target)
-        except (ValueError, TypeError):
+            index = parse_ref(target)
+        except (AgentBrowserError, TypeError):
             return
 
         elem = snap.selector_map.get(index)

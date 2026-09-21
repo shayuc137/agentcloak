@@ -5,11 +5,15 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from mcp.types import ToolAnnotations
 
-from agentcloak.core.text_renderers import render_headers_text
+from agentcloak.core.text_renderers import (
+    render_cdp_send_text,
+    render_headers_text,
+    render_viewport_text,
+)
 from agentcloak.mcp._format import format_call
 
 if TYPE_CHECKING:
@@ -37,4 +41,21 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         """
         return await format_call(
             client.emulation_headers(headers=headers or {}), render_headers_text
+        )
+
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
+    async def agentcloak_viewport(width: int, height: int) -> str:
+        """Resize the current session page without reloading it."""
+        return await format_call(
+            client.viewport(width=width, height=height), render_viewport_text
+        )
+
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
+    async def agentcloak_cdp_send(
+        method: str, params: dict[str, Any] | None = None, timeout: int = 30000
+    ) -> str:
+        """Send a CDP command to this session's page; timeout is milliseconds."""
+        return await format_call(
+            client.cdp_send(method=method, params=params, timeout=timeout),
+            render_cdp_send_text,
         )

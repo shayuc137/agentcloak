@@ -18,11 +18,11 @@ $ cloak snapshot
   [1] link "Learn more" href="https://iana.org/domains/example"
 
 $ cloak click 99
-Error: Element [99] not in selector_map (1 entries)
+Error [element_not_found]: Element [99] not in selector_map (1 entries)
   -> run 'snapshot' to refresh the selector_map, or re-snapshot if the page changed
 ```
 
-For programmatic consumers (scripts, jq pipelines, MCP-style integrations) opt back into the legacy envelope:
+For scripts and jq pipelines, enable structured output:
 
 ```bash
 # --json flag (any position)
@@ -36,13 +36,33 @@ Envelope shape (only when `--json` is active):
 
 ```json
 {"ok": true, "seq": 3, "data": {...}}
-{"ok": false, "error": "error_code", "hint": "description", "action": "suggested next step"}
+{"ok": false, "error": {"code": "error_code", "message": "description"}, "hint": "description", "action": "suggested next step"}
 ```
+
+
+Failures emit one JSON envelope on stdout and an `Error [code]: message` diagnostic on stderr. This also covers missing arguments and local validation failures. `js evaluate` throws and rejected promises fail; a returned string beginning with `Error:` remains ordinary data. Diagnostic failures can include their check results under `data`.
+
+| `error.code` | Meaning |
+|--------------|---------|
+| `invalid_request` | Invalid CLI arguments or daemon request validation |
+| `command_failed` | Local command validation failed |
+| `command_aborted` | Command interrupted or cancelled |
+| `internal_error` | Unexpected CLI or daemon exception |
+| `config_error` | Invalid configuration key or value |
+| `doctor_failed`, `bridge_check_failed` | Environment or bridge checks failed; JSON includes diagnostic `data` |
+| `skill_uninstall_failed` | A skill file operation failed |
+| `daemon_unreachable`, `daemon_timeout` | Daemon connection or request timeout |
+| `daemon_invalid_response`, `daemon_request_failed` | Invalid response body or failed daemon request |
+| `evaluate_failed` | JavaScript syntax/runtime exception on a local backend |
+| `cdp_timeout`, `cdp_call_failed` | Raw CDP timeout or protocol failure |
+
+Other domain codes, such as `element_not_found`, pass through unchanged. Direct daemon responses and MCP errors retain the string `error` plus `hint` and `action`; the nested `error.code/message` shape belongs to CLI JSON output.
 
 ## Global flags
 
 | Flag | Effect |
 |------|--------|
+| `--session ID` | Bind this invocation to a named browser session (accepted before or after the command) |
 | `--json` | Switch to JSON envelope output for the whole command |
 | `--pretty` | Indent JSON output (no-op without `--json`; warns on stderr) |
 | `--verbose` / `-v` | Raise log level (`-v` info, `-vv` debug) |
@@ -69,7 +89,7 @@ A simple `#fragment` waits up to 3 seconds for an element with that id and scrol
 
 ### snapshot
 
-Get the page as an accessibility tree with `[N]` element references.
+Get the page as an accessibility tree with `[N]` element references. Both `compact` and `accessible` include exposed `button`/`menuitem` roles and focusable custom elements, including `tabindex="0"` and `tabindex="-1"`. Ignored AX nodes remain excluded; open a collapsed menu before taking a new snapshot.
 
 ```bash
 cloak snapshot [--mode MODE] [--selector CSS] [--limit N] [--focus N] [--offset N] [--frames] [--diff] [--hide CSS] [--keep-overlays]
@@ -96,17 +116,27 @@ Output starts with a header line:
 # <title> | <url> | <total_nodes> nodes (<interactive> interactive) | seq=<n>
 ```
 
+### viewport
+
+```bash
+cloak viewport set 2560x1440
+cloak screenshot --viewport 1024x768 --output compact.png
+```
+
+`viewport set` changes only the current session's page without navigation or loss of login state. Screenshot overrides are temporary and restore the previous viewport even if capture fails. Dimensions are positive integers up to 16384.
+
 ### screenshot
 
 Take a screenshot of the current page.
 
 ```bash
-cloak screenshot [--output FILE] [--full-page] [--format FORMAT] [--quality N] [--wait-for CSS] [--hide CSS] [--keep-overlays]
+cloak screenshot [--output FILE] [--viewport WIDTHxHEIGHT] [--full-page] [--format FORMAT] [--quality N] [--wait-for CSS] [--hide CSS] [--keep-overlays]
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--output` | auto-named in OS temp dir (`tempfile.gettempdir()`) | Save to file; `.png` selects PNG and `.jpg`/`.jpeg` selects JPEG |
+| `--viewport` | current page | Temporary `WIDTHxHEIGHT`, restored after capture |
 | `--full-page` | off | Capture full scrollable page |
 | `--format` | output suffix, then `browser.screenshot_format` (`jpeg`) | Explicit `jpeg` or `png` override; must agree with a recognized suffix |
 | `--quality` | `80` | JPEG quality 0-100 (ignored for PNG) |
@@ -167,6 +197,8 @@ Returns current URL, open tabs, last 5 actions, capture state, and stealth tier.
 
 All interaction commands accept the element index positionally (`cloak click 5`) or via `--index N` / `-i N`. Most also take a positional secondary value (`cloak fill 5 "query"`).
 
+Positional references accept both `12` and `'[12]'`. Quote bracket references in shells such as zsh to prevent glob expansion.
+
 Add `--snap` to any interaction to attach a compact snapshot to the response.
 
 ### click
@@ -178,6 +210,7 @@ cloak click N [--snap]
 cloak click --index N [--snap]
 cloak click --x X --y Y           # coordinate fallback
 cloak click N --force             # one-off single-left-click DOM fallback
+cloak click N --click-count 2     # double-click
 ```
 
 For a known overlay, add its selector with `cloak hide add CSS`, re-snapshot, and use a normal click; hiding also cleans screenshots and snapshot output. `--force` is the fallback for an unknown one-off obstruction and invokes the resolved DOM element's `click()` instead of coordinate hit testing. It only supports a single left click: combining it with a non-default `--button` or `--click-count` returns `invalid_argument`.
@@ -212,6 +245,8 @@ cloak press KEY [N] [--snap]
 cloak press --key KEY [--index N] [--snap]
 ```
 
+Modifier aliases are case-insensitive: `Ctrl` → `Control`, `Cmd`/`Command` → `Meta`, `Opt`/`Option` → `Alt`. For example, `cloak press Ctrl+Enter`.
+
 Key names use Playwright syntax: `Enter`, `Tab`, `Escape`, `Control+a`, `Shift+ArrowDown`.
 
 ### scroll
@@ -231,7 +266,20 @@ Hover over an element.
 
 ```bash
 cloak hover N [--snap]
+cloak hover --at 100,200
+cloak hover '[12]' --offset 10,-5
 ```
+
+`--offset` is relative to the element center; `--at` is an absolute viewport coordinate.
+
+### drag
+
+```bash
+cloak drag '[4]' '[5]' --steps 12
+cloak drag --from 100,200 --to 300,400 --steps 12
+```
+
+Drag uses browser pointer input, including the press, intermediate moves, and release. Supply either two references or both coordinate endpoints.
 
 ### select
 
@@ -398,7 +446,7 @@ cloak script remove ID
 cloak script list
 ```
 
-Presets log intercepted calls to `cloak console`.
+Presets log intercepted calls to `cloak console`. `script list` reports whether each script has been injected into the current page; newly registered scripts run before page scripts on the next navigation.
 
 ### Network route interception
 
@@ -411,6 +459,27 @@ cloak route add "*" --action continue --resource-type xhr --method POST
 cloak route remove "**/api/*"         # omit pattern to clear ALL rules
 cloak route list
 ```
+
+`route list` includes rule ids, hit counts, and pending request ids. Zero hits produce a warning, so a registered rule is not mistaken for a verified interception. A pattern without `*` is a URL substring; `*` matches across `/`.
+
+```bash
+cloak route add --hold "/api/orders"
+# Trigger the request, then inspect the loading state:
+cloak snapshot
+cloak screenshot --output loading.png
+cloak route list
+cloak route release RULE_OR_REQUEST_ID
+```
+
+Release resumes pending requests; the rule remains installed for future requests. Remove the rule when finished. Held requests do not block snapshot/screenshot. Console messages accumulate across navigation with timestamps and page URLs; `cloak console clear` explicitly empties the buffer (`console show --clear` remains supported).
+
+### Raw CDP
+
+```bash
+cloak cdp send Runtime.evaluate --params '{"expression":"document.title","returnByValue":true}' --timeout 1000
+```
+
+Commands target the current session's page. The timeout is per request in milliseconds; protocol errors and timeouts exit nonzero with structured errors in JSON mode. Local raw CDP calls share a dedicated per-tab channel. Timeout/cancellation resets that channel, so reapply any CDP state it held; manager subscriptions remain active.
 
 ### Extra HTTP headers
 
@@ -636,16 +705,25 @@ daemon's liveness metrics — `uptime <duration> | <N> requests | <N> active` �
 so it doubles as a lightweight monitoring readout. The line is omitted when the
 daemon predates the metrics fields.
 
+`hide` only hides configured matching DOM elements; it does not remove arbitrary overlays injected by external CDP tools. Add a selector explicitly when needed.
+
 ## Session management
 
-A single daemon serves several callers concurrently (two Claude Code sessions, an MCP client, plain CLI runs). Each caller is routed to its own isolated browser by the `X-Agentcloak-Session` header. The session id is auto-detected — `AGENTCLOAK_SESSION` > `CLAUDE_CODE_SESSION_ID` > `default` — so concurrent agents get separate browsers with zero configuration. A named session's browser is suspended after `daemon.session_idle_timeout` seconds of inactivity (default 300s) and transparently rebuilt on the next request.
+A single daemon shares one browser and profile between callers. Each session owns its tabs, element references, viewport, interception rules, scripts, and console buffer; cookies and profile login state are shared. Commands in one session are queued while different sessions can run concurrently. Snapshot, screenshot, and request release remain available during pending work.
+
+CLI identity resolves in this order: `--session ID` > `AGENTCLOAK_SESSION` > the basename of the current git worktree root. Outside git it uses a stable hash of the working directory. Thus workers in distinct worktrees are isolated without flags. Use an explicit id if unrelated worktrees have identical basenames. MCP servers retain their own process-scoped identity.
 
 ```bash
-cloak session list                     # named sessions: id | state (active/suspended) | tier | idle
-cloak session close [SESSION_ID]       # close a session and free its browser now
+cloak navigate http://localhost:5173 --session panel-a
+cloak screenshot --session panel-a
+cloak session list                     # id | state | tier | idle
+cloak session close                    # close only the current caller's session
+cloak session close panel-a            # explicitly close this session
 ```
 
-Header-less calls (every plain CLI invocation) use the `default` session backed by the daemon's primary browser, which is not listed here — its state shows up in `cloak status` / `/health`. Omit `SESSION_ID` to close that default session (equivalent to closing whatever caller-less `cloak` runs are currently attached to).
+An idle session releases its own tabs after `daemon.session_idle_timeout` seconds (default 300s); the next request recreates them. A closed page or disconnected local browser is rebuilt on the next request. A shared browser failure loses volatile page state, so navigate again as needed. Changing the shared tier/profile while other sessions are active is rejected rather than changing those callers' browser. RemoteBridge does not silently share its user tab between callers.
+
+Clients discover the daemon by probing the recorded `/health` endpoint. They only read `daemon.json`; PID visibility or a read-only state directory does not invalidate a live daemon. Header-less raw HTTP requests use `default`; ordinary CLI calls send their resolved identity.
 
 ## Configuration
 

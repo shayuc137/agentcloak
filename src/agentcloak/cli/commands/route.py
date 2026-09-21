@@ -7,6 +7,8 @@ it continue. Rules persist across navigations and replay onto new tabs.
 
 from __future__ import annotations
 
+from typing import Any
+
 import typer
 
 from agentcloak.cli._dispatch import dispatch_text_or_json
@@ -14,6 +16,7 @@ from agentcloak.client import DaemonClient
 from agentcloak.core.text_renderers import (
     render_route_list_text,
     render_route_op_text,
+    render_route_release_text,
 )
 
 __all__ = ["app"]
@@ -27,7 +30,10 @@ def route_add(
         help="URL glob ('*' = any chars; no '*' = substring match)."
     ),
     action: str = typer.Option(
-        "continue", "--action", help="Disposition: abort, fulfill, or continue."
+        "continue", "--action", help="Disposition: abort, fulfill, hold, or continue."
+    ),
+    hold: bool = typer.Option(
+        False, "--hold", help="Pause matching requests until route release."
     ),
     resource_type: str = typer.Option(
         "", "--resource-type", help="Only match this resource type (xhr, image, ...)."
@@ -46,7 +52,10 @@ def route_add(
     ),
 ) -> None:
     """Add a network route rule."""
-    payload: dict[str, object] = {"pattern": pattern, "action": action}
+    payload: dict[str, object] = {
+        "pattern": pattern,
+        "action": "hold" if hold else action,
+    }
     if resource_type:
         payload["resource_type"] = resource_type
     if method:
@@ -85,9 +94,29 @@ def route_remove(
     )
 
 
+def _render_list(data: dict[str, Any]) -> str:
+    for warning in data.get("warnings", []):
+        typer.echo(f"warning: {warning}", err=True)
+    return render_route_list_text({**data, "warnings": []})
+
+
 @app.command("list")
 def route_list() -> None:
     """List active route rules."""
+    dispatch_text_or_json(DaemonClient(), "GET", "/route/list", renderer=_render_list)
+
+
+@app.command("release")
+def route_release(
+    identifier: str = typer.Argument(
+        help="Held request or rule ID from route add/list."
+    ),
+) -> None:
+    """Resume pending requests without removing their rule."""
     dispatch_text_or_json(
-        DaemonClient(), "GET", "/route/list", renderer=render_route_list_text
+        DaemonClient(),
+        "POST",
+        "/route/release",
+        json_body={"identifier": identifier},
+        renderer=render_route_release_text,
     )

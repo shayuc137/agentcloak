@@ -7,8 +7,8 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Request
 
 from agentcloak.daemon.dependencies import (
-    DEFAULT_SESSION_ID,
     ContextManagerDep,
+    session_id_of,
 )
 from agentcloak.daemon.models import OkEnvelope
 from agentcloak.daemon.models.session import (
@@ -39,21 +39,14 @@ async def handle_session_list(
 async def handle_session_close(
     body: SessionCloseRequest,
     mgr: Annotated[Any, Depends(_get_session_manager)],
+    request: Request,
     ctx_mgr: ContextManagerDep,
 ) -> dict[str, Any]:
-    if not body.session_id:
-        closed = False
-        if ctx_mgr is not None:
-            await ctx_mgr.shutdown()
-            closed = True
-        return _ok(
-            {"closed": closed, "session_id": DEFAULT_SESSION_ID},
-            seq=0,
-        )
-    closed = False
-    if mgr is not None:
-        closed = await mgr.close_session(body.session_id)
-    return _ok(
-        {"closed": closed, "session_id": body.session_id},
-        seq=0,
+    caller = session_id_of(request)
+    session_id = body.session_id or caller
+    closed = (
+        await ctx_mgr.close_remote_session(caller) if session_id == caller else False
     )
+    if not closed and mgr is not None:
+        closed = await mgr.close_session(session_id)
+    return _ok({"closed": closed, "session_id": session_id}, seq=0)

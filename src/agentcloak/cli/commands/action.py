@@ -18,6 +18,7 @@ import typer
 from agentcloak.cli._dispatch import dispatch_text_or_json
 from agentcloak.cli.output import error
 from agentcloak.client import DaemonClient
+from agentcloak.core.input import normalize_key, parse_point, parse_ref
 from agentcloak.core.text_renderers import render_action_text, render_batch_text
 
 if TYPE_CHECKING:
@@ -84,7 +85,7 @@ def _action_renderer(body: dict[str, Any]) -> Callable[[dict[str, Any]], str]:
 
 @app.command("click")
 def do_click(
-    target: int | None = typer.Argument(
+    target: str | None = typer.Argument(
         None,
         help="Element index [N] from snapshot. Equivalent to --index.",
     ),
@@ -104,7 +105,11 @@ def do_click(
     ),
 ) -> None:
     """Click an element. Accept index as positional ``[N]`` or via ``--index``."""
-    resolved = index if index is not None else target
+    resolved = (
+        index
+        if index is not None
+        else (parse_ref(target) if target is not None else None)
+    )
     body = _build_action_body(
         "click",
         index=resolved,
@@ -126,7 +131,7 @@ def do_click(
 
 @app.command("fill")
 def do_fill(
-    target: int | None = typer.Argument(None, help="Element index [N]."),
+    target: str | None = typer.Argument(None, help="Element index [N]."),
     text_pos: str | None = typer.Argument(None, help="Text to fill."),
     index: int | None = typer.Option(None, "--index", "-i", help="Element index [N]."),
     text: str | None = typer.Option(None, "--text", "-t", help="Text to fill."),
@@ -138,7 +143,11 @@ def do_fill(
     ),
 ) -> None:
     """Fill an input element (clear then set value)."""
-    resolved = index if index is not None else target
+    resolved = (
+        index
+        if index is not None
+        else (parse_ref(target) if target is not None else None)
+    )
     if resolved is None:
         error("missing element index", "pass it as the first positional or --index N")
     if text is None:
@@ -157,7 +166,7 @@ def do_fill(
 
 @app.command("type")
 def do_type(
-    target: int | None = typer.Argument(None, help="Element index [N]."),
+    target: str | None = typer.Argument(None, help="Element index [N]."),
     text_pos: str | None = typer.Argument(None, help="Text to type."),
     index: int | None = typer.Option(None, "--index", "-i", help="Element index [N]."),
     text: str | None = typer.Option(None, "--text", "-t", help="Text to type."),
@@ -170,7 +179,11 @@ def do_type(
     ),
 ) -> None:
     """Type text character by character (per-key events)."""
-    resolved = index if index is not None else target
+    resolved = (
+        index
+        if index is not None
+        else (parse_ref(target) if target is not None else None)
+    )
     if resolved is None:
         error("missing element index", "pass it as the first positional or --index N")
     if text is None:
@@ -222,10 +235,14 @@ def do_scroll(
 
 @app.command("hover")
 def do_hover(
-    target: int | None = typer.Argument(None, help="Element index [N]."),
+    target: str | None = typer.Argument(None, help="Element index [N]."),
     index: int | None = typer.Option(None, "--index", "-i", help="Element index [N]."),
     x: float | None = typer.Option(None, "--x", help="X coordinate (fallback)."),
     y: float | None = typer.Option(None, "--y", help="Y coordinate (fallback)."),
+    at: str | None = typer.Option(None, "--at", help="Absolute x,y coordinates."),
+    offset: str | None = typer.Option(
+        None, "--offset", help="dx,dy from element center; requires a reference."
+    ),
     snap: bool = typer.Option(
         False,
         "--snap",
@@ -233,9 +250,19 @@ def do_hover(
         help="Attach compact snapshot after the action.",
     ),
 ) -> None:
-    """Hover over an element or coordinates."""
-    resolved = index if index is not None else target
-    body = _build_action_body("hover", index=resolved, snap=snap, x=x, y=y)
+    """Hover at a reference, absolute coordinates or an offset from element center."""
+    resolved = (
+        index
+        if index is not None
+        else (parse_ref(target) if target is not None else None)
+    )
+    if at is not None:
+        parse_point(at)
+    if offset is not None:
+        parse_point(offset)
+    body = _build_action_body(
+        "hover", index=resolved, snap=snap, x=x, y=y, at=at, offset=offset
+    )
     dispatch_text_or_json(
         DaemonClient(),
         "POST",
@@ -247,7 +274,7 @@ def do_hover(
 
 @app.command("select")
 def do_select(
-    target: int | None = typer.Argument(None, help="Element index [N]."),
+    target: str | None = typer.Argument(None, help="Element index [N]."),
     index: int | None = typer.Option(None, "--index", "-i", help="Element index [N]."),
     value_opt: str | None = typer.Option(None, "--value", help="Option value."),
     label: str | None = typer.Option(None, "--label", help="Option display text."),
@@ -259,7 +286,11 @@ def do_select(
     ),
 ) -> None:
     """Select a dropdown option."""
-    resolved = index if index is not None else target
+    resolved = (
+        index
+        if index is not None
+        else (parse_ref(target) if target is not None else None)
+    )
     if resolved is None:
         error("missing element index", "pass it as the first positional or --index N")
     body = _build_action_body(
@@ -277,7 +308,11 @@ def do_select(
 @app.command("press")
 def do_press(
     key_pos: str | None = typer.Argument(
-        None, help="Key to press (Enter, Tab, Control+a, etc.)."
+        None,
+        help=(
+            "Key to press; Ctrl/Control, Cmd/Command/Meta, "
+            "Opt/Option/Alt aliases are case-insensitive."
+        ),
     ),
     key: str | None = typer.Option(None, "--key", "-k", help="Key to press."),
     target: int | None = typer.Option(
@@ -294,7 +329,9 @@ def do_press(
     final_key = key or key_pos
     if not final_key:
         error("missing key", "pass it as a positional arg or --key Enter")
-    body = _build_action_body("press", index=target, snap=snap, key=final_key)
+    body = _build_action_body(
+        "press", index=target, snap=snap, key=normalize_key(final_key or "")
+    )
     dispatch_text_or_json(
         DaemonClient(),
         "POST",
@@ -319,7 +356,7 @@ def do_keydown(
     final_key = key or key_pos
     if not final_key:
         error("missing key", "pass it as a positional arg or --key Shift")
-    body = _build_action_body("keydown", snap=snap, key=final_key)
+    body = _build_action_body("keydown", snap=snap, key=normalize_key(final_key or ""))
     dispatch_text_or_json(
         DaemonClient(),
         "POST",
@@ -344,7 +381,7 @@ def do_keyup(
     final_key = key or key_pos
     if not final_key:
         error("missing key", "pass it as a positional arg or --key Shift")
-    body = _build_action_body("keyup", snap=snap, key=final_key)
+    body = _build_action_body("keyup", snap=snap, key=normalize_key(final_key or ""))
     dispatch_text_or_json(
         DaemonClient(),
         "POST",
@@ -416,4 +453,38 @@ def do_batch(
     client = DaemonClient()
     dispatch_text_or_json(
         client, "POST", "/action/batch", json_body=body, renderer=render_batch_text
+    )
+
+
+@app.command("drag")
+def do_drag(
+    source: str | None = typer.Argument(None, help="Source N or quoted '[N]'."),
+    destination: str | None = typer.Argument(
+        None, help="Destination N or quoted '[N]'."
+    ),
+    from_point: str | None = typer.Option(None, "--from", help="Source x,y."),
+    to_point: str | None = typer.Option(None, "--to", help="Destination x,y."),
+    steps: int = typer.Option(20, "--steps", min=1, max=1000),
+    snap: bool = typer.Option(False, "--snap", "--include-snapshot"),
+) -> None:
+    """Drag with real mouse input between two elements or coordinates."""
+    if source is not None:
+        source = str(parse_ref(source))
+    if destination is not None:
+        destination = str(parse_ref(destination))
+    body = _build_action_body(
+        "drag",
+        target=source,
+        destination=destination,
+        from_point=from_point,
+        to_point=to_point,
+        steps=steps,
+        snap=snap,
+    )
+    dispatch_text_or_json(
+        DaemonClient(),
+        "POST",
+        "/action",
+        json_body=body,
+        renderer=_action_renderer(body),
     )

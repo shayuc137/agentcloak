@@ -1,12 +1,4 @@
-"""SessionManager — multi-session browser multiplexing (Child A).
-
-The manager launches one browser per named session via ``create_context`` and
-wraps it in ``SecureBrowserContext``. Both are patched here so no real Chromium
-starts: ``create_context`` returns a fresh ``MagicMock`` raw ctx each call and
-``SecureBrowserContext`` is replaced with an identity-ish stub that records
-``close()`` calls. That lets a test assert the lifecycle (registered → active →
-suspended) and the idle/teardown bookkeeping without a backend.
-"""
+"""Session tab facade acquisition, teardown and idle reclamation."""
 
 from __future__ import annotations
 
@@ -34,34 +26,39 @@ class _FakeCtx:
         self.hide_manager = MagicMock()
         self.hide_manager.load = AsyncMock()
 
+    def is_alive(self) -> bool:
+        return not self.closed
+
     async def close(self) -> None:
         self.closed = True
 
 
 def _make() -> tuple[SessionManager, list[_FakeCtx]]:
-    """Build a SessionManager whose browser launches are fully mocked.
+    """Build a SessionManager whose shared-browser tab factory is mocked.
 
     Returns the manager plus the list of fake ctxs handed out (in creation
     order) so a test can assert which browsers were closed.
     """
     created: list[_FakeCtx] = []
 
-    async def _fake_create_context(**_kwargs: Any) -> MagicMock:
-        return MagicMock()
+    owner = MagicMock()
+    raw = MagicMock()
+    from agentcloak.core.types import StealthTier
+
+    raw.stealth_tier = StealthTier.CLOAK
+    owner.fork_session = AsyncMock(return_value=raw)
+    state = MagicMock()
+    state.context_manager.ensure_local = AsyncMock(return_value=owner)
 
     def _fake_secure(_raw: Any, _cfg: Any) -> _FakeCtx:
         ctx = _FakeCtx()
         created.append(ctx)
         return ctx
 
-    mgr = SessionManager(AgentcloakConfig())
-    # Patch the two collaborators on the manager instance's module so every
-    # _launch_browser call yields a tracked fake instead of a real browser.
-    patcher_create = patch(f"{_MODULE}.create_context", new=_fake_create_context)
+    mgr = SessionManager(AgentcloakConfig(), app_state=state)
     patcher_secure = patch(f"{_MODULE}.SecureBrowserContext", new=_fake_secure)
-    patcher_create.start()
     patcher_secure.start()
-    mgr._test_patchers = (patcher_create, patcher_secure)  # type: ignore[attr-defined]
+    mgr._test_patchers = (patcher_secure,)  # type: ignore[attr-defined]
     return mgr, created
 
 
@@ -120,7 +117,7 @@ class TestAcquisition:
             _teardown(mgr)
 
     @pytest.mark.asyncio
-    async def test_distinct_sessions_get_distinct_browsers(self) -> None:
+    async def test_distinct_sessions_get_distinct_tab_facades(self) -> None:
         mgr, created = _make()
         try:
             a = await mgr.get_or_create("alpha")
@@ -136,14 +133,14 @@ class TestAcquisition:
 
 class TestTeardown:
     @pytest.mark.asyncio
-    async def test_close_session_closes_browser_and_drops_slot(self) -> None:
+    async def test_close_session_closes_tabs_and_suspends_slot(self) -> None:
         mgr, created = _make()
         try:
             await mgr.get_or_create("alpha")
             removed = await mgr.close_session("alpha")
             assert removed is True
             assert created[0].closed is True
-            assert mgr.list_sessions() == []
+            assert mgr.list_sessions()[0]["state"] == "suspended"
             assert mgr.active_count == 0
         finally:
             _teardown(mgr)

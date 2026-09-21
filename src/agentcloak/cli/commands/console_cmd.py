@@ -32,12 +32,10 @@ def console_show(
     ),
 ) -> None:
     """Show buffered console messages and uncaught page errors."""
-    client = DaemonClient()
     if clear:
-        dispatch_text_or_json(
-            client, "POST", "/console/clear", renderer=render_console_clear_text
-        )
+        console_clear()
         return
+    client = DaemonClient()
     params: dict[str, str] = {"since": str(since)}
     if limit:
         params["limit"] = str(limit)
@@ -45,4 +43,12 @@ def console_show(
         params["level"] = level
     dispatch_text_or_json(
         client, "GET", "/console", params=params, renderer=render_console_text
+    )
+
+
+@app.command("clear")
+def console_clear() -> None:
+    """Clear the accumulated console history for this session."""
+    dispatch_text_or_json(
+        DaemonClient(), "POST", "/console/clear", renderer=render_console_clear_text
     )

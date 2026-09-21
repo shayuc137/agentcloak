@@ -1,0 +1,21 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Input interaction fixture</title>
+<style>
+  body { margin: 20px; }
+  #source, #destination { display: inline-block; width: 120px; height: 80px; margin: 20px; background: #ddd; }
+</style>
+<input aria-label="Editor" id="editor">
+<button id="source" draggable="true">Drag source</button>
+<button id="destination">Drop destination</button>
+<script>
+window.events = {down: 0, up: 0, dragend: 0, drop: 0, ctrlEnter: 0, trusted: true};
+document.addEventListener('pointerdown', e => { events.down++; events.trusted &&= e.isTrusted; });
+document.addEventListener('pointerup', e => { events.up++; events.trusted &&= e.isTrusted; });
+document.addEventListener('keydown', e => { if (e.ctrlKey && e.key === 'Enter') events.ctrlEnter++; events.trusted &&= e.isTrusted; });
+document.addEventListener('mousemove', e => { window.pointer = [e.clientX, e.clientY]; });
+source.addEventListener('dragstart', e => e.dataTransfer.setData('text/plain', 'source'));
+source.addEventListener('dragend', e => { events.dragend++; events.trusted &&= e.isTrusted; });
+destination.addEventListener('dragover', e => e.preventDefault());
+destination.addEventListener('drop', e => { e.preventDefault(); events.drop++; events.trusted &&= e.isTrusted; });
+</script>

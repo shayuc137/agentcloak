@@ -167,6 +167,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         wait_for: str = "",
         hide: str | None = None,
         keep_overlays: bool = False,
+        viewport: str | None = None,
     ) -> list[ImageContent | TextContent]:
         """Take a screenshot of the current page.
 
@@ -178,6 +179,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         under MCP token budgets.
 
         Args:
+            viewport: Temporary WIDTHxHEIGHT, restored after capture
             full_page: Capture the full scrollable page instead of viewport
             format: Optional image format override: 'jpeg' or 'png'
             quality: JPEG quality 0-100 (defaults to
@@ -204,7 +206,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                     timeout=wait_timeout,
                     state="visible",
                 )
-            if hide or keep_overlays:
+            if hide or keep_overlays or viewport is not None:
                 envelope = await client.screenshot(
                     full_page=full_page,
                     format=format,
@@ -213,6 +215,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                     wait_timeout=wait_timeout,
                     hide=hide,
                     keep_overlays=keep_overlays,
+                    **({"viewport": viewport} if viewport is not None else {}),
                 )
             else:
                 envelope = await client.screenshot(

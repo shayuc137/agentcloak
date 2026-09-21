@@ -157,3 +157,76 @@ class TestFeedMessageDispatch:
         ctx.feed_message(json.dumps({"id": "abc", "ok": True, "data": {}}))
 
         assert seen == []
+
+
+@pytest.mark.asyncio
+async def test_hold_waits_until_release_before_continuing() -> None:
+    import asyncio
+
+    from agentcloak.browser.managers.route_manager import RouteRule
+
+    ctx = _make_ctx()
+    ctx._send = AsyncMock(return_value={})
+    rule = RouteRule("/api", "hold")
+    await ctx.route_manager.add(rule)
+    ctx._send.reset_mock()
+    task = asyncio.create_task(
+        ctx._resume_paused_request(
+            {
+                "requestId": "r1",
+                "resourceType": "XHR",
+                "request": {"url": "https://example.com/api", "method": "GET"},
+            }
+        )
+    )
+    await asyncio.sleep(0)
+    assert len(ctx.route_manager.pending()) == 1
+    ctx._send.assert_not_awaited()
+    assert ctx.route_manager.release(rule.identifier) == 1
+    await asyncio.wait_for(task, 1)
+    ctx._send.assert_awaited_once_with(
+        "cdp", {"method": "Fetch.continueRequest", "params": {"requestId": "r1"}}
+    )
+    assert rule.hits == 1
+
+
+@pytest.mark.asyncio
+async def test_console_enable_failure_is_not_a_successful_empty_buffer() -> None:
+    ctx = _make_ctx()
+    ctx._send = AsyncMock(side_effect=RuntimeError("Runtime unavailable"))
+    with pytest.raises(RuntimeError, match="Runtime unavailable"):
+        await ctx.console_entries()
+    assert not ctx._console_listening
+
+
+@pytest.mark.asyncio
+async def test_hold_event_keeps_originating_tab_and_cancels_on_close() -> None:
+    import asyncio
+
+    from agentcloak.browser.managers.route_manager import RouteRule
+
+    ctx = _make_ctx()
+    ctx._send = AsyncMock(return_value={})
+    rule = RouteRule("/api", "hold")
+    await ctx.route_manager.add(rule)
+    event = {
+        "type": "cdp_event",
+        "tabId": 42,
+        "method": "Fetch.requestPaused",
+        "params": {"requestId": "r1", "request": {"url": "https://x/api"}},
+    }
+    ctx.feed_message(json.dumps(event))
+    await asyncio.sleep(0)
+    ctx.route_manager.release(rule.identifier)
+    await asyncio.gather(*ctx._route_tasks)
+    ctx._send.assert_awaited_with(
+        "cdp",
+        {"method": "Fetch.continueRequest", "params": {"requestId": "r1"}},
+        tabId=42,
+    )
+    ctx.feed_message(json.dumps(event))
+    await asyncio.sleep(0)
+    assert len(ctx.route_manager.pending()) == 1
+    ctx.feed_message(json.dumps({"type": "tab_event", "event": "removed", "tabId": 42}))
+    await asyncio.gather(*ctx._route_tasks, return_exceptions=True)
+    assert ctx.route_manager.pending() == []

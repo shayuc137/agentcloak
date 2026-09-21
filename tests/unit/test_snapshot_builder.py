@@ -846,3 +846,19 @@ class TestSnapshotNodeExport:
         assert node.name == "Click"
         assert node.children == []
         assert node.pruned is False
+
+
+def test_focusable_generic_keeps_reference_in_compact_snapshot() -> None:
+    nodes = [
+        _make_node("root", "RootWebArea", child_ids=["focusable", "plain"]),
+        _make_node(
+            "focusable",
+            "generic",
+            backend_dom_id=42,
+            properties=[{"name": "focusable", "value": {"value": True}}],
+        ),
+        _make_node("plain", "generic", backend_dom_id=43),
+    ]
+    result = build_snapshot(nodes, mode="compact")
+    assert result.snapshot.tree_text == " [1] generic"
+    assert result.backend_node_map == {1: 42}

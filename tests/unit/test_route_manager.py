@@ -68,7 +68,12 @@ class TestRuleMatching:
 class TestRuleSerialisation:
     def test_to_dict_omits_unset_optionals(self) -> None:
         rule = RouteRule(pattern="*", action="continue")
-        assert rule.to_dict() == {"pattern": "*", "action": "continue"}
+        assert rule.to_dict() == {
+            "pattern": "*",
+            "action": "continue",
+            "identifier": rule.identifier,
+            "hits": 0,
+        }
 
     def test_to_dict_includes_set_fields(self) -> None:
         rule = RouteRule(
@@ -169,3 +174,33 @@ class TestTabSwitchReplay:
         await mgr.on_tab_switched()
 
         assert add_impl.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_registration_failure_does_not_leave_a_phantom_rule() -> None:
+    mgr, add, _ = _make_mgr()
+    add.side_effect = RuntimeError("transport closed")
+    with pytest.raises(RuntimeError, match="transport closed"):
+        await mgr.add(RouteRule("api", "abort"))
+    assert mgr.list_rules() == []
+
+
+@pytest.mark.asyncio
+async def test_hold_release_by_rule_and_remove_cleanup() -> None:
+    import asyncio
+
+    mgr, _, _ = _make_mgr()
+    rule = RouteRule("api", "hold")
+    await mgr.add(rule)
+    first = asyncio.create_task(mgr.hold(rule, "https://x/api/first"))
+    second = asyncio.create_task(mgr.hold(rule, "https://x/api/second"))
+    await asyncio.sleep(0)
+    assert len(mgr.pending()) == 2
+    assert mgr.release(rule.identifier) == 2
+    await asyncio.gather(first, second)
+    assert mgr.pending() == []
+    third = asyncio.create_task(mgr.hold(rule, "https://x/api/third"))
+    await asyncio.sleep(0)
+    await mgr.remove("api")
+    await asyncio.wait_for(third, 0.1)
+    assert mgr.pending() == []

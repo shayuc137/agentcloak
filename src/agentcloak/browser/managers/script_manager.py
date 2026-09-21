@@ -26,7 +26,11 @@ touches a backend session directly.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
+from uuid import uuid4
+
+from agentcloak.core.errors import BackendError
 
 if TYPE_CHECKING:
     from agentcloak.browser.base import BrowserContextBase
@@ -129,15 +133,28 @@ class ScriptManager:
         # source are kept so ``list`` is informative and ``on_tab_switched`` can
         # replay the same sources onto a new page.
         self._scripts: dict[str, str] = {}
+        self._markers: dict[str, str] = {}
 
     async def add(self, js: str) -> str:
         """Inject ``js`` as an init script; return its CDP identifier."""
+        return await self._register(js, "__cloak_script_" + uuid4().hex)
+
+    async def _register(self, js: str, marker: str) -> str:
+        await self._ctx._cdp_enable_domain("Page")
+        key = json.dumps(marker)
+        source = f"{js}\n;globalThis[{key}] = 'injected';"
         result = await self._ctx._cdp_send(
-            "Page.addScriptToEvaluateOnNewDocument", {"source": js}
+            "Page.addScriptToEvaluateOnNewDocument", {"source": source}
         )
         identifier = str(result.get("identifier", ""))
-        if identifier:
-            self._scripts[identifier] = js
+        if not identifier:
+            raise BackendError(
+                error="script_registration_failed",
+                hint="Browser returned no script identifier",
+                action="check the browser CDP connection and retry",
+            )
+        self._scripts[identifier] = js
+        self._markers[identifier] = marker
         return identifier
 
     async def add_preset(self, preset: str) -> str:
@@ -159,6 +176,7 @@ class ScriptManager:
         await self._ctx._cdp_send(
             "Page.removeScriptToEvaluateOnNewDocument", {"identifier": identifier}
         )
+        self._markers.pop(identifier, None)
         return self._scripts.pop(identifier, None) is not None
 
     def list_scripts(self) -> dict[str, str]:
@@ -175,7 +193,27 @@ class ScriptManager:
         """
         if not self._scripts:
             return
-        sources = list(self._scripts.values())
+        sources = [
+            (js, self._markers[identifier]) for identifier, js in self._scripts.items()
+        ]
         self._scripts.clear()
-        for js in sources:
-            await self.add(js)
+        self._markers.clear()
+        for js, marker in sources:
+            await self._register(js, marker)
+
+    async def detach(self) -> None:
+        for identifier in self._scripts:
+            await self._ctx._cdp_send(
+                "Page.removeScriptToEvaluateOnNewDocument", {"identifier": identifier}
+            )
+
+    async def statuses(self) -> dict[str, str]:
+        if not self._markers:
+            return {}
+        expression = (
+            "JSON.stringify(Object.fromEntries("
+            + json.dumps(list(self._markers.items()))
+            + ".map(([id,key])=>[id,globalThis[key] || 'not injected'])))"
+        )
+        raw = await self._ctx.evaluate(expression, world="main")
+        return json.loads(raw)

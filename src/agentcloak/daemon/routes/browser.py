@@ -84,6 +84,9 @@ async def handle_navigate(
 async def handle_screenshot(
     ctx: BrowserCtxDep,
     config: ConfigDep,
+    viewport: str | None = Query(
+        None, description="Temporary WIDTHxHEIGHT; restored after capture."
+    ),
     full_page: bool = Query(
         False,
         description="Capture the full scrollable page instead of the viewport.",
@@ -144,7 +147,10 @@ async def handle_screenshot(
         extra=extra_hide, keep_overlays=keep_overlays
     ):
         raw = await ctx.screenshot(
-            full_page=full_page, format=resolved_format, quality=quality
+            full_page=full_page,
+            format=resolved_format,
+            quality=quality,
+            **({"viewport": viewport} if viewport is not None else {}),
         )
 
     # ``output_path`` lets an API/MCP caller driving a same-host daemon get a

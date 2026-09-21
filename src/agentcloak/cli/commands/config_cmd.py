@@ -104,19 +104,13 @@ def _emit_ok(message: str, extra: dict[str, object] | None = None) -> None:
 
 
 def _bail(message: str) -> typer.Exit:
-    """Render an error envelope/line and return a non-zero ``Exit``."""
-    if is_json_mode():
-        emit_envelope(
-            {
-                "ok": False,
-                "seq": 0,
-                "error": "config_error",
-                "hint": message,
-                "action": "run 'cloak config list' to inspect available keys",
-            }
-        )
-    else:
-        value(f"error: {message}")
+    from agentcloak.cli.output import error
+
+    error(
+        message,
+        "run 'cloak config list' to inspect available keys",
+        code="config_error",
+    )
     return typer.Exit(code=1)
 
 

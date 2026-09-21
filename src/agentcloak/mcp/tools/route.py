@@ -12,6 +12,7 @@ from mcp.types import ToolAnnotations
 from agentcloak.core.text_renderers import (
     render_route_list_text,
     render_route_op_text,
+    render_route_release_text,
 )
 from agentcloak.mcp._format import format_call
 
@@ -26,9 +27,10 @@ __all__ = ["register"]
 def register(mcp: FastMCP, client: DaemonClient) -> None:
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
     async def agentcloak_route(
-        action: Literal["add", "remove", "list"] = "list",
+        action: Literal["add", "remove", "list", "release"] = "list",
         pattern: str = "",
-        rule_action: Literal["abort", "fulfill", "continue"] = "continue",
+        identifier: str = "",
+        rule_action: Literal["abort", "fulfill", "continue", "hold"] = "continue",
         resource_type: str = "",
         method: str = "",
         status: int = 0,
@@ -45,12 +47,14 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         Actions:
           add    — register a rule (needs 'pattern' and 'rule_action')
           remove — drop a rule by 'pattern' (omit pattern to clear all)
-          list   — show active rules
+          list   — show rules, hit counts, and pending request IDs
+          release — resume held requests by identifier (request or rule ID)
 
         Args:
-            action: 'add', 'remove', or 'list'
+            action: 'add', 'remove', 'list', or 'release'
             pattern: URL glob ('*' = any chars; no '*' = substring match)
-            rule_action: Disposition for 'add' — abort, fulfill, or continue
+            rule_action: Disposition for 'add' — abort, fulfill, hold, or continue
+            identifier: Pending request or rule ID for release
             resource_type: Only match this resource type (xhr, image, ...)
             method: Only match this HTTP method (GET, POST, ...)
             status: Response status for a 'fulfill' rule (default 200)
@@ -73,6 +77,10 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                     body=body,
                 ),
                 render_route_op_text,
+            )
+        if action == "release":
+            return await format_call(
+                client.route_release(identifier=identifier), render_route_release_text
             )
         if action == "remove":
             return await format_call(

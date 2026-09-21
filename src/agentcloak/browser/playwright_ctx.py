@@ -22,11 +22,13 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import json
 import re
 import socket
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 from urllib.parse import unquote, urlparse
+from uuid import uuid4
 
 import httpx
 import structlog
@@ -121,6 +123,7 @@ class PlaywrightContext(BrowserContextBase):
         cdp_port: int | None = None,
         browser_config: BrowserConfig | None = None,
         profile_dir: Path | None = None,
+        owns_browser: bool = True,
     ) -> None:
         super().__init__(
             seq_counter=seq_counter,
@@ -135,6 +138,7 @@ class PlaywrightContext(BrowserContextBase):
         self._active_tab: int = 0
         self._next_tab_id: int = 1
         self._browser = browser
+        self._owns_browser = owns_browser
         self._playwright = playwright
         self._browser_context = browser_context
         self._proxy_url = proxy_url
@@ -143,25 +147,44 @@ class PlaywrightContext(BrowserContextBase):
         # Playwright Dialog object retained so dialog_handle can accept/dismiss.
         self._dialog_object: Any = None
 
-        # 7b: persistent CDP sessions keyed by tab_id, for the reverse-
-        # engineering managers that need long-lived event streams (debugger,
-        # WebSocket/SSE, sourcemap). This is deliberately separate from the
-        # seven short-lived ``new_cdp_session + detach`` call sites elsewhere
-        # in this file (snapshot/evaluate/clipboard/raw_cdp) — those are
-        # one-shot and must NOT be migrated here in 7b. A persistent session
-        # forwards every CDP event to ``_dispatch_cdp_event`` via the generic
-        # Playwright ``"event"`` listener, and is invalidated when its tab
-        # closes (see ``_invalidate_cdp_session``).
+        # Raw request cancellation must not detach manager event subscriptions.
         self._cdp_sessions: dict[int, Any] = {}
+        self._raw_cdp_sessions: dict[int, Any] = {}
 
-        # 7b T1.3: registered ``page.route`` handlers keyed by the rule pattern,
-        # so ``_route_remove_impl`` can unroute a single rule by passing the
-        # exact callable Playwright registered (it matches handlers by identity).
+        # Keep handler identities per tab so replay never duplicates interception.
         self._route_handlers: dict[str, Any] = {}
+        self._route_tasks: set[asyncio.Task[Any]] = set()
+        self._console_native_tabs: set[int] = set()
+        self._console_main_frame_ids: dict[int, str] = {}
+        self._console_error_prefix = "__agentcloak_error_" + uuid4().hex + ":"
 
         self._setup_network_listeners(page)
         self._setup_feedback_listeners(page)
-        self._get_browser_context().on("page", self._on_popup_page)
+
+    def is_alive(self) -> bool:
+        return (
+            not self._browser_closed and bool(self._tabs) and not self._page.is_closed()
+        )
+
+    def browser_alive(self) -> bool:
+        browser = self._browser or self._get_browser_context().browser
+        return browser is not None and browser.is_connected()
+
+    async def fork_session(self) -> PlaywrightContext:
+        page = await self._get_browser_context().new_page()
+        return type(self)(
+            page=page,
+            browser=self._browser,
+            playwright=self._playwright,
+            seq_counter=SeqCounter(),
+            ring_buffer=RingBuffer(),
+            browser_context=self._get_browser_context(),
+            proxy_url=self._proxy_url,
+            cdp_port=self._cdp_port,
+            browser_config=self._browser_config,
+            profile_dir=self._profile_dir,
+            owns_browser=False,
+        )
 
     # ------------------------------------------------------------------
     # Active page / target frame
@@ -230,6 +253,7 @@ class PlaywrightContext(BrowserContextBase):
 
     def _setup_feedback_listeners(self, page: Any | None = None) -> None:
         target = page if page is not None else self._page
+        target.on("popup", self._on_popup_page)
         target.on("request", self._on_request_start)
         target.on("requestfinished", self._on_request_end)
         target.on("requestfailed", self._on_request_end)
@@ -241,7 +265,11 @@ class PlaywrightContext(BrowserContextBase):
         # lost. The ring buffer caps growth; ``_console_setup_impl`` is a
         # no-op on this backend because registration already happened here.
         target.on("console", self._on_console)
-        target.on("pageerror", self._on_page_error)
+
+        def _page_error(error: Any) -> None:
+            self._on_page_error(error, page=target)
+
+        target.on("pageerror", _page_error)
 
     def _on_request_start(self, _request: Any) -> None:
         self._pending_request_count += 1
@@ -282,6 +310,7 @@ class PlaywrightContext(BrowserContextBase):
     def _on_frame_navigated(self, frame: Any) -> None:
         try:
             if frame == self._page.main_frame:
+                self._console_page_url = str(frame.url)
                 self._last_navigation_event = {
                     "url": frame.url,
                 }
@@ -323,17 +352,21 @@ class PlaywrightContext(BrowserContextBase):
                 level=self._CONSOLE_LEVEL_MAP.get(raw_type, raw_type),
                 text=str(getattr(msg, "text", "")),
                 url=str(loc.get("url", "")),
+                page_url=str(msg.page.url) if msg.page else "",
                 line=loc.get("lineNumber"),
                 column=loc.get("columnNumber"),
                 is_error=False,
             )
 
-    def _on_page_error(self, error: Any) -> None:
+    def _on_page_error(self, error: Any, *, page: Any = None) -> None:
+        if getattr(self, "_console_cdp_active", False):
+            return
         with contextlib.suppress(Exception):
             self._record_console_entry(
                 level="error",
                 text=str(error),
                 url="",
+                page_url=str(page.url) if page is not None else "",
                 line=None,
                 column=None,
                 is_error=True,
@@ -429,7 +462,11 @@ class PlaywrightContext(BrowserContextBase):
     async def _navigate_impl(self, url: str, *, timeout: float) -> dict[str, Any]:
         try:
             resp = await self._page.goto(
-                url, timeout=timeout * 1000, wait_until="domcontentloaded"
+                url,
+                timeout=timeout * 1000,
+                wait_until="commit"
+                if self._route_mgr and self._route_mgr.has_holds
+                else "domcontentloaded",
             )
         except Exception as exc:
             if "timeout" in str(exc).lower():
@@ -775,6 +812,21 @@ class PlaywrightContext(BrowserContextBase):
         await self._page.mouse.wheel(delta_x, delta_y)
         return {"scrolled": True, "direction": direction, "amount": amount}
 
+    async def _set_viewport_impl(self, width: int, height: int) -> None:
+        await self._page.set_viewport_size({"width": width, "height": height})
+
+    async def _element_center_impl(self, index: int) -> tuple[float, float]:
+        element = await self._resolve_element(index)
+        await element.scroll_into_view_if_needed()
+        box = await element.bounding_box()
+        if box is None:
+            raise ElementNotFoundError(
+                error="element_not_found",
+                hint=f"Element [{index}] has no visible box",
+                action="refresh snapshot",
+            )
+        return float(box["x"] + box["width"] / 2), float(box["y"] + box["height"] / 2)
+
     async def _hover_impl(
         self,
         *,
@@ -943,18 +995,97 @@ class PlaywrightContext(BrowserContextBase):
     # ------------------------------------------------------------------
 
     async def _console_setup_impl(self) -> None:
-        # Playwright ``page.on('console')`` is registered eagerly in
-        # ``_setup_feedback_listeners``, but CloakBrowser's patched Chromium
-        # doesn't propagate user JS ``console.log/warn/error`` calls through
-        # Playwright's event relay (only internal network-error messages fire).
-        # Work around by also listening to the CDP ``Runtime.consoleAPICalled``
-        # event, which is browser-native and reliable on all backends.
-        self._on_cdp_event("Runtime.consoleAPICalled", self._on_cdp_console)
+        if self.stealth_tier == StealthTier.CLOAK:
+            if self._active_tab not in self._console_native_tabs:
+                self._on_cdp_event("Console.messageAdded", self._on_native_console)
+                await self._cdp_enable_domain("Page")
+                tree = await self._cdp_send("Page.getFrameTree", {})
+                self._console_main_frame_ids[self._active_tab] = str(
+                    tree["frameTree"]["frame"]["id"]
+                )
+                await self._cdp_send("Console.enable", {})
+                await self._cdp_send(
+                    "Page.addScriptToEvaluateOnNewDocument",
+                    {
+                        "source": self._console_error_script(),
+                        "runImmediately": True,
+                    },
+                )
+                self._console_native_tabs.add(self._active_tab)
+        else:
+            self._on_cdp_event("Runtime.consoleAPICalled", self._on_cdp_console)
+            self._on_cdp_event("Runtime.exceptionThrown", self._on_cdp_exception)
+            await self._cdp_enable_domain("Runtime")
         self._console_cdp_active = True
-        await self._cdp_enable_domain("Runtime")
+
+    def _console_error_script(self) -> str:
+        # Cloak suppresses Runtime events; Console remains live across navigation.
+        prefix = json.dumps(self._console_error_prefix)
+        return """(() => {
+          const emit = console.debug.bind(console);
+          const encode = JSON.stringify;
+          const report = (kind, event) => {
+            try {
+              if (kind === 'error' && typeof event.message !== 'string') return;
+              const reason = event.reason;
+              const message = kind === 'error' ? event.message :
+                (typeof reason === 'string' ? reason :
+                 reason && typeof reason.message === 'string' ? reason.message :
+                 'Unhandled promise rejection');
+              emit(PREFIX + encode({kind, message: String(message),
+                page_url: location.href, url: event.filename || '',
+                line: event.lineno || 0, column: event.colno || 0,
+                timestamp: Date.now() / 1000}));
+            } catch (_) {}
+          };
+          addEventListener('error', event => report('error', event), true);
+          addEventListener('unhandledrejection',
+            event => report('rejection', event), true);
+        })();""".replace("PREFIX", prefix)
+
+    def _on_native_console(self, params: dict[str, Any]) -> None:
+        message = params.get("message", {})
+        text = str(message.get("text", ""))
+        level = str(message.get("level", "log"))
+        if level == "debug" and text.startswith(self._console_error_prefix):
+            try:
+                raw = json.loads(text[len(self._console_error_prefix) :])
+                record = cast("dict[str, Any]", raw) if isinstance(raw, dict) else None
+            except (ValueError, TypeError):
+                record = None
+            if (
+                record is not None
+                and record.get("kind") in ("error", "rejection")
+                and isinstance(record.get("message"), str)
+                and isinstance(record.get("page_url"), str)
+                and isinstance(record.get("timestamp"), (int, float))
+                and isinstance(record.get("line"), int)
+                and isinstance(record.get("column"), int)
+            ):
+                self._record_console_entry(
+                    level="error",
+                    text=record["message"],
+                    url=str(record.get("url", "")),
+                    page_url=record["page_url"],
+                    timestamp=record.get("timestamp"),
+                    line=max(int(record.get("line", 0)) - 1, 0),
+                    column=max(int(record.get("column", 0)) - 1, 0),
+                    is_error=True,
+                )
+                return
+        line = message.get("line")
+        column = message.get("column")
+        self._record_console_entry(
+            level=self._CONSOLE_LEVEL_MAP.get(level, level),
+            text=text,
+            url=str(message.get("url", "")),
+            page_url=str(params.get("pageUrl", "")),
+            line=line - 1 if isinstance(line, int) else None,
+            column=column - 1 if isinstance(column, int) else None,
+        )
 
     def _on_cdp_console(self, params: dict[str, Any]) -> None:
-        """Handle CDP ``Runtime.consoleAPICalled`` — reliable on all backends."""
+        """Handle Playwright's ``Runtime.consoleAPICalled`` event."""
         with contextlib.suppress(Exception):
             raw_type = str(params.get("type", "log"))
             level = self._CONSOLE_LEVEL_MAP.get(raw_type, raw_type)
@@ -982,10 +1113,26 @@ class PlaywrightContext(BrowserContextBase):
                 level=level,
                 text=text,
                 url=url,
+                page_url=str(params.get("pageUrl", "")),
+                timestamp=params["timestamp"] / 1000 if "timestamp" in params else None,
                 line=line_no,
                 column=column_no,
                 is_error=False,
             )
+
+    def _on_cdp_exception(self, params: dict[str, Any]) -> None:
+        details = params.get("exceptionDetails", {})
+        exception = details.get("exception", {})
+        self._record_console_entry(
+            level="error",
+            text=str(exception.get("description") or details.get("text", "")),
+            url=str(details.get("url", "")),
+            page_url=str(params.get("pageUrl", "")),
+            timestamp=params["timestamp"] / 1000 if "timestamp" in params else None,
+            line=details.get("lineNumber"),
+            column=details.get("columnNumber"),
+            is_error=True,
+        )
 
     # ------------------------------------------------------------------
     # Atomic: download (7a R2)
@@ -1667,8 +1814,34 @@ class PlaywrightContext(BrowserContextBase):
             return existing
         session = await self._page.context.new_cdp_session(self._page)
 
+        page = self._page
+        document_url = str(page.url)
+
         def _forward(event: dict[str, Any]) -> None:
-            self._dispatch_cdp_event(event.get("method", ""), event.get("params", {}))
+            nonlocal document_url
+            method = event.get("method", "")
+            params = event.get("params", {})
+            if method == "Page.frameNavigated":
+                frame = params.get("frame", {})
+                if not frame.get("parentId"):
+                    document_url = str(frame.get("url", document_url))
+                    self._console_main_frame_ids[tab_id] = str(frame["id"])
+            elif method == "Page.navigatedWithinDocument" and params.get(
+                "frameId"
+            ) == self._console_main_frame_ids.get(tab_id):
+                document_url = str(params["url"])
+            if method in (
+                "Runtime.consoleAPICalled",
+                "Runtime.exceptionThrown",
+                "Console.messageAdded",
+            ):
+                origin = (
+                    document_url
+                    if self.stealth_tier == StealthTier.CLOAK
+                    else str(page.url)
+                )
+                params = {**params, "pageUrl": origin}
+            self._dispatch_cdp_event(method, params)
 
         session.on("event", _forward)
         self._cdp_sessions[tab_id] = session
@@ -1682,11 +1855,14 @@ class PlaywrightContext(BrowserContextBase):
         being torn down with its page, and a half-closed session must not
         block tab cleanup.
         """
-        session = self._cdp_sessions.pop(tab_id, None)
-        if session is None:
-            return
-        with contextlib.suppress(Exception):
-            await session.detach()
+        for sessions in (self._cdp_sessions, self._raw_cdp_sessions):
+            session = sessions.pop(tab_id, None)
+            if session is not None:
+                with contextlib.suppress(Exception):
+                    await session.detach()
+
+        self._console_native_tabs.discard(tab_id)
+        self._console_main_frame_ids.pop(tab_id, None)
 
     async def _cdp_send_impl(
         self, method: str, params: dict[str, Any]
@@ -1727,45 +1903,45 @@ class PlaywrightContext(BrowserContextBase):
     # ------------------------------------------------------------------
     # Route interception (7b T1.3)
     # ------------------------------------------------------------------
-    # We register a single catch-all ``page.route("**/*")`` handler keyed by
-    # the rule's pattern string. The handler defers the actual match decision
-    # to the shared :class:`RouteManager` so abort/fulfill/continue semantics
-    # and field precedence are identical to the RemoteBridge backend (DRY —
-    # one matcher, two transports). Keying by pattern lets ``unroute`` target a
-    # single rule without disturbing the others.
-
     async def _route_add_impl(self, rule: Any) -> None:
-        glob = self._route_glob(rule.pattern)
+        key = str(self._active_tab)
+        if key in self._route_handlers:
+            return
+        page = self._page
+        tasks: set[asyncio.Task[Any]] = set()
+
+        def _cancel_pending() -> None:
+            for task in tasks:
+                task.cancel()
 
         async def _handler(route: Any, request: Any) -> None:
-            await self._apply_route(route, request, rule)
+            task = asyncio.current_task()
+            if task is not None:
+                self._route_tasks.add(task)
+                tasks.add(task)
+            try:
+                await self._apply_route(route, request, None)
+            finally:
+                if task is not None:
+                    self._route_tasks.discard(task)
+                    tasks.discard(task)
 
-        # Stash the handler so a later ``page.unroute`` can pass the same
-        # callable (Playwright matches handlers by identity).
-        self._route_handlers[rule.pattern] = _handler
-        await self._page.route(glob, _handler)
+        # Playwright's single-star globs do not cross '/', unlike our matcher.
+        await page.route("**/*", _handler)
+        page.on("close", _cancel_pending)
+        self._route_handlers[key] = (page, _handler, _cancel_pending)
 
     async def _route_remove_impl(self, pattern: str | None) -> None:
-        if pattern is None:
-            for pat, handler in list(self._route_handlers.items()):
-                with contextlib.suppress(Exception):
-                    await self._page.unroute(self._route_glob(pat), handler)
-            self._route_handlers.clear()
+        if self.route_manager.list_rules():
             return
-        handler = self._route_handlers.pop(pattern, None)
-        with contextlib.suppress(Exception):
-            await self._page.unroute(self._route_glob(pattern), handler)
-
-    @staticmethod
-    def _route_glob(pattern: str) -> str:
-        """Map a rule pattern to a Playwright route glob.
-
-        A bare substring rule (no ``*``) becomes ``*<substr>*`` so Playwright's
-        matcher fires; the precise disposition is still decided by the shared
-        RouteManager matcher inside the handler. Patterns that already contain
-        ``*`` are passed through unchanged.
-        """
-        return pattern if "*" in pattern else f"*{pattern}*"
+        if self._route_tasks:
+            await asyncio.gather(*self._route_tasks, return_exceptions=True)
+        for page, handler, cancel_pending in self._route_handlers.values():
+            page.remove_listener("close", cancel_pending)
+            if page.is_closed():
+                continue
+            await page.unroute("**/*", handler)
+        self._route_handlers.clear()
 
     async def _apply_route(self, route: Any, request: Any, rule: Any) -> None:
         """Execute ``rule`` against a paused Playwright request."""
@@ -1778,11 +1954,16 @@ class PlaywrightContext(BrowserContextBase):
             resource_type=getattr(request, "resource_type", None),
             method=getattr(request, "method", None),
         )
-        if applicable is None or applicable.pattern != rule.pattern:
+        if applicable is None:
             with contextlib.suppress(Exception):
                 await route.fallback()
             return
 
+        rule = applicable
+        if rule.action == "hold":
+            await self.route_manager.hold(rule, request.url)
+            await route.continue_()
+            return
         if rule.action == "abort":
             await route.abort()
             return
@@ -1802,25 +1983,39 @@ class PlaywrightContext(BrowserContextBase):
     # ------------------------------------------------------------------
 
     async def _raw_cdp_impl(self, method: str, params: dict[str, Any] | None) -> Any:
-        cdp = await self._page.context.new_cdp_session(self._page)
+        tab_id = self._active_tab
+        cdp = self._raw_cdp_sessions.get(tab_id)
+        if cdp is None:
+            cdp = await self._page.context.new_cdp_session(self._page)
+            self._raw_cdp_sessions[tab_id] = cdp
         try:
             return await cdp.send(method, params or {})
+        except asyncio.CancelledError:
+            # Cancel pending raw calls without dropping manager event subscriptions.
+            self._raw_cdp_sessions.pop(tab_id, None)
+            with contextlib.suppress(Exception):
+                await cdp.detach()
+            raise
         except Exception as exc:
             raise BackendError(
                 error="cdp_call_failed",
                 hint=f"{method}: {exc}",
                 action="check CDP method name and parameters",
             ) from exc
-        finally:
-            await cdp.detach()
 
     async def _close_impl(self) -> None:
         # Detach persistent CDP sessions first. Closing the browser/context
         # below tears them down anyway, but detaching explicitly avoids a
         # spurious "session orphaned" warning on a still-attached session and
         # keeps the cache from outliving the browser if close() is retried.
-        for tab_id in list(self._cdp_sessions.keys()):
+        for tab_id in set(self._cdp_sessions) | set(self._raw_cdp_sessions):
             await self._invalidate_cdp_session(tab_id)
+        if not self._owns_browser:
+            for page in self._tabs.values():
+                if not page.is_closed():
+                    await page.close()
+            self._tabs.clear()
+            return
         if self._browser is not None:
             await self._browser.close()
         elif self._browser_context is not None:

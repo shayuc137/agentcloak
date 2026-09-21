@@ -171,7 +171,9 @@ class ActionRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     kind: str = Field(
-        description="Verb: click/fill/type/scroll/hover/select/press/keydown/keyup.",
+        description=(
+            "Verb: click/fill/type/scroll/hover/drag/select/press/keydown/keyup."
+        ),
     )
     index: int | None = Field(
         None,
@@ -181,6 +183,12 @@ class ActionRequest(BaseModel):
         "",
         description="Element selector or 'x,y' coordinate fallback when no index.",
     )
+    at: str | None = Field(None, description="Hover absolute x,y coordinates.")
+    offset: str | None = Field(None, description="Hover dx,dy from element center.")
+    destination: str | None = Field(None, description="Drag destination N or '[N]'.")
+    from_point: str | None = Field(None, description="Drag source x,y coordinates.")
+    to_point: str | None = Field(None, description="Drag destination x,y coordinates.")
+    steps: int = Field(20, ge=1, le=1000, description="Drag mouse movement steps.")
     include_snapshot: bool = Field(
         False,
         description="Attach a snapshot after the action to see the result.",

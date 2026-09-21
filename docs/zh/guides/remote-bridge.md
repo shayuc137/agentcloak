@@ -65,6 +65,8 @@ RemoteBridge 默认发送物理坐标鼠标事件。已知 overlay 优先运行
 export AGENTCLOAK_DEFAULT_TIER=remote_bridge
 ```
 
+Bridge 由一个 session 持有，其他 session 不会静默接管同一个用户 tab。`session close` 解绑调用方自己的 Bridge 上下文，并保留本地其他 session。视口、拖拽、坐标悬停、按键别名和请求级 `cdp send --timeout` 与本地后端使用相同命令。
+
 ## 通过 bridge 做网页逆向
 
 Phase 7b 的所有网页逆向能力都能通过 bridge 工作——调试器断点、网络路由拦截、WebSocket/SSE 流式监控、source map、init script 注入、GraphQL。扩展会在 agent 首次使用需要某个 CDP 域的能力时**按需** enable 对应的域（`Debugger`、`Fetch`、`Network`），而不是为每个会话一直开着。命令与本地后端完全一致，详见 CLI 参考的[网页逆向](../reference/cli.md#网页逆向)段。

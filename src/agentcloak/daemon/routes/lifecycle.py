@@ -128,7 +128,13 @@ async def handle_launch(
         profile_kwarg["profile"] = body.profile
     # else: omit → switch_tier keeps the current profile
 
-    result = await manager.switch_tier(tier_enum, **profile_kwarg)
+    session_mgr = getattr(request.app.state, "session_manager", None)
+    if session_mgr is not None:
+        result = await session_mgr.launch_session(
+            session_id_of(request), tier_enum, **profile_kwarg
+        )
+    else:
+        result = await manager.switch_tier(tier_enum, **profile_kwarg)
 
     if tier_enum == StealthTier.REMOTE_BRIDGE:
         request.app.state.remote_session_id = session_id_of(request)
@@ -156,17 +162,8 @@ async def handle_resume(
                 "action": "restart the daemon",
             },
         )
-    # Persisted resume snapshot only updates on navigate/action (via
-    # _update_resume). Runtime-mutable fields like ``capture_active`` and
-    # ``stealth_tier`` need to be re-read from the live context, otherwise
-    # ``resume`` returns stale values when the agent toggled capture between
-    # actions (dogfood F2). ``page_valid`` flips on every navigate
-    # attempt so it must always come from the live context, never from
-    # the persisted snapshot.
     data = resume_writer.current_snapshot.to_dict()
-    data["capture_active"] = ctx.capture_store.recording
-    data["stealth_tier"] = ctx.stealth_tier.value
-    data["page_valid"] = bool(getattr(ctx, "_page_valid", True))
+    data.update(await ctx.resume_snapshot())
     return _ok(data, seq=ctx.seq)
 
 

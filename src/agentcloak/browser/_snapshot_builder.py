@@ -322,14 +322,20 @@ def _build_tree(
         name = _clean_text(node.get("name", {}).get("value", ""))
         child_ids: list[str] = node.get("childIds", [])
 
-        if role in _SKIP_ROLES or ignored or _should_fold(node, role, name):
+        focusable = any(
+            prop.get("name") == "focusable" and _ax_value(prop.get("value")) is True
+            for prop in node.get("properties", [])
+        ) and role not in ("RootWebArea", "WebArea")
+        if ignored or (
+            not focusable and (role in _SKIP_ROLES or _should_fold(node, role, name))
+        ):
             promoted: list[SnapshotNode] = []
             for cid in child_ids:
                 promoted.extend(visit(cid))
             return promoted
 
         role_lower = role.lower()
-        is_interactive = role_lower in _INTERACTIVE_ROLES
+        is_interactive = role_lower in _INTERACTIVE_ROLES or focusable
         is_context = role_lower in _CONTEXT_ROLES
 
         sn = SnapshotNode(

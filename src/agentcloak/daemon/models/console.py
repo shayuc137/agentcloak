@@ -25,6 +25,7 @@ class ConsoleEntryModel(BaseModel):
     level: str = Field(description="Console level: log, warn, error, info, or debug.")
     text: str = Field(description="Sanitized message text (ANSI/control stripped).")
     url: str | None = Field(None, description="Source URL the message came from.")
+    page_url: str = Field("", description="Page URL at capture time.")
     line: int | None = Field(None, description="Source line number, if known.")
     column: int | None = Field(None, description="Source column number, if known.")
     is_error: bool = Field(

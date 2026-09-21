@@ -54,6 +54,8 @@ cloak click 5            # clicks in the real browser
 cloak navigate "https://example.com"
 ```
 
+Bridge access has one owning session; other callers cannot share its user tab silently. `cloak session close` detaches the caller and preserves local sibling sessions. Use the same viewport, drag, hover and `cdp send --timeout` commands as local backends.
+
 ### Privacy Note
 
 In RemoteBridge mode `cloak tab list` returns **every open tab** in the

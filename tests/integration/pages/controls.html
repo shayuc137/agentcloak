@@ -1,0 +1,12 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Snapshot control coverage</title>
+<div id="panel">
+  <button aria-label="当前同事 Alex，切换或修改设置" onclick="document.querySelector('#menu').hidden=false">同事</button>
+  <div id="menu" role="menu" hidden>
+    <div role="group"><div role="menuitem" onclick="window.selected='settings'">设置</div></div>
+  </div>
+  <div tabindex="0" aria-label="自定义面板" onclick="window.selected='panel'">面板</div>
+  <div tabindex="-1" aria-label="程序聚焦" onclick="window.selected='negative'">程序聚焦</div>
+</div>
+<button onclick="window.selected='outside'">Outside</button>

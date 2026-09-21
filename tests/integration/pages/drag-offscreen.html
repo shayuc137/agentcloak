@@ -1,0 +1,24 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Offscreen drag fixture</title>
+<style>
+  body { margin: 0; height: 1300px; }
+  button { position: absolute; width: 100px; height: 60px; left: 30px; }
+  #source { top: 20px; }
+  #destination { top: 1050px; }
+</style>
+<button id="source" draggable="true">Source</button>
+<button id="destination">Destination</button>
+<script>
+window.dragLog = [];
+document.addEventListener('pointerdown', e => dragLog.push(['down', e.target.id, e.isTrusted]));
+source.addEventListener('dragstart', e => {
+  e.dataTransfer.setData('text/plain', 'source');
+  dragLog.push(['dragstart', e.isTrusted]);
+});
+destination.addEventListener('dragover', e => e.preventDefault());
+destination.addEventListener('drop', e => {
+  e.preventDefault();
+  dragLog.push(['drop', e.isTrusted]);
+});
+</script>

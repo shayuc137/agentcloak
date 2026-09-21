@@ -153,8 +153,7 @@ class TestNavigate:
 
     @pytest.mark.asyncio
     async def test_navigate_timeout(self) -> None:
-        page = MagicMock()
-        page.on = MagicMock()
+        page = _default_page()
         page.goto = AsyncMock(side_effect=Exception("Timeout 30000ms exceeded"))
         ctx = _make_ctx(page=page)
         with pytest.raises(BrowserTimeoutError):
@@ -162,8 +161,7 @@ class TestNavigate:
 
     @pytest.mark.asyncio
     async def test_navigate_failure(self) -> None:
-        page = MagicMock()
-        page.on = MagicMock()
+        page = _default_page()
         page.goto = AsyncMock(side_effect=Exception("net::ERR_NAME_NOT_RESOLVED"))
         ctx = _make_ctx(page=page)
         with pytest.raises(NavigationError):
@@ -1314,8 +1312,7 @@ class TestPageValid:
     @pytest.mark.asyncio
     async def test_navigate_failure_marks_page_invalid(self) -> None:
         """Failed navigate flips page_valid to False."""
-        page = MagicMock()
-        page.on = MagicMock()
+        page = _default_page()
         page.goto = AsyncMock(side_effect=Exception("net::ERR_NAME_NOT_RESOLVED"))
         ctx = _make_ctx(page=page)
         with pytest.raises(NavigationError):
@@ -1325,8 +1322,7 @@ class TestPageValid:
     @pytest.mark.asyncio
     async def test_navigate_timeout_marks_page_invalid(self) -> None:
         """Navigate timeout flips page_valid to False (same path as failure)."""
-        page = MagicMock()
-        page.on = MagicMock()
+        page = _default_page()
         page.goto = AsyncMock(side_effect=Exception("Timeout 30000ms exceeded"))
         ctx = _make_ctx(page=page)
         with pytest.raises(BrowserTimeoutError):
@@ -1470,3 +1466,23 @@ class TestPageValid:
         with pytest.raises(NavigationError) as exc_info:
             await ctx.screenshot()
         assert exc_info.value.error == "no_valid_page"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "not-json",
+        '{"kind":"ordinary","message":"data"}',
+        '{"kind":"error","message":"data","timestamp":"bad"}',
+    ],
+)
+def test_native_console_does_not_misclassify_marker_shaped_data(payload: str) -> None:
+    ctx = _make_ctx()
+    text = ctx._console_error_prefix + payload
+    ctx._on_native_console(
+        {"message": {"level": "debug", "text": text}, "pageUrl": "https://example.com"}
+    )
+    entries = list(ctx._console_buffer)
+    assert len(entries) == 1
+    assert entries[0].text == text
+    assert not entries[0].is_error

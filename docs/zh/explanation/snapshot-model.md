@@ -19,7 +19,7 @@ main "Content"
 
 每一行树正文是 `<缩进><role> "<name>" <属性>`。可交互节点按文档顺序分配 `[N]` 编号；这个编号就是 action 命令的目标参数（位置参数 `cloak click 5` 或 `--index 5`），只在页面状态未变时有效。
 
-共享构建器位于 `src/agentcloak/browser/_snapshot_builder.py`——`CloakBrowser` 和 `RemoteBridge` 两个后端都用同一份 CDP 节点输入调用它，所以无论用哪个后端，树的格式完全一致。
+共享构建器位于 `src/agentcloak/browser/_snapshot_builder.py`——`Playwright`、`CloakBrowser` 和 `RemoteBridge` 三个后端都用同一份 CDP 节点输入调用它，所以无论用哪个后端，树的格式完全一致。
 
 ## Snapshot 模式
 
@@ -27,12 +27,15 @@ main "Content"
 
 | 模式 | 输出内容 | 何时使用 |
 |------|---------|---------|
-| `compact`（默认） | 仅交互节点 + landmark；折叠 `generic`/`group` | token 紧张的交互循环 |
+| `compact`（默认） | 交互节点 + landmark；折叠不可聚焦的 `generic`/`group` 包装层 | token 紧张的交互循环 |
 | `accessible` | 完整 a11y 树，包含全部 `[N]` 引用 | 首次观察、复杂布局 |
 | `content` | 纯可见文本，无 role 无引用 | 文章抽取、内容摘要 |
 | `dom` | 原始 outer HTML | ARIA 隐藏了需要的信息时（罕见） |
 
 `compact` 是 v0.2.0 以后的默认——agent 几乎总是只需要交互元素和结构 landmark（`navigation`、`main`、`form`、`dialog`），不需要匿名 `<div>` 包装层。只在默认输出缺了上下文时才退到 `accessible`。
+
+
+两种模式都会为 `button`、`menuitem` 等交互角色，以及 AX 标记为 `focusable` 的节点分配引用。这包括带 `tabindex="0"` 或 `tabindex="-1"` 的自定义 `generic` 元素；action 通过其 backend DOM node ID 精确定位。文档根节点和被 AX 忽略的节点不分配引用。隐藏菜单展开后重新 snapshot，才能获取菜单项引用。
 
 ## ARIA 状态提取
 

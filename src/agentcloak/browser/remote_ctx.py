@@ -178,6 +178,7 @@ class RemoteBridgeContext(BrowserContextBase):
         # fail is dispatched to a task).
         self._fetch_enabled: bool = False
         self._route_tasks: set[asyncio.Task[None]] = set()
+        self._route_task_tabs: dict[asyncio.Task[None], int] = {}
 
     @property
     def stealth_tier(self) -> StealthTier:
@@ -203,7 +204,12 @@ class RemoteBridgeContext(BrowserContextBase):
         return await self._send(cmd, params, **kw)
 
     async def _send(
-        self, cmd: str, params: dict[str, Any] | None = None, **kw: Any
+        self,
+        cmd: str,
+        params: dict[str, Any] | None = None,
+        *,
+        _timeout: float | None = 60.0,
+        **kw: Any,
     ) -> dict[str, Any]:
         if self._ws.closed:
             raise BackendError(
@@ -221,11 +227,13 @@ class RemoteBridgeContext(BrowserContextBase):
         await self._ws.send_str(json.dumps(message))
 
         try:
-            response = await asyncio.wait_for(self._wait_response(msg_id), timeout=60.0)
+            response = await asyncio.wait_for(
+                self._wait_response(msg_id), timeout=_timeout
+            )
         except TimeoutError as exc:
             raise BrowserTimeoutError(
                 error="bridge_timeout",
-                hint=f"Bridge command '{cmd}' timed out after 60s",
+                hint=f"Bridge command '{cmd}' timed out after {_timeout}s",
                 action="check bridge and extension connectivity",
             ) from exc
 
@@ -274,6 +282,8 @@ class RemoteBridgeContext(BrowserContextBase):
             # eventSourceMessageReceived) even when capture is off. The legacy
             # handlers above and the manager dispatch are independent consumers
             # of the same event.
+            if method == "Fetch.requestPaused" and isinstance(msg.get("tabId"), int):
+                params = {**params, "_tab_id": msg["tabId"]}
             self._dispatch_cdp_event(method, params)
             return
 
@@ -285,6 +295,9 @@ class RemoteBridgeContext(BrowserContextBase):
                 self._last_new_tab_event = {"tab_id": tab_id, "url": url}
                 logger.debug("ext_tab_created", tab_id=tab_id, url=url)
             elif event == "removed":
+                for task, target in list(self._route_task_tabs.items()):
+                    if target == tab_id:
+                        task.cancel()
                 logger.debug("ext_tab_removed", tab_id=tab_id)
             elif event == "updated":
                 logger.debug(
@@ -641,6 +654,12 @@ class RemoteBridgeContext(BrowserContextBase):
         )
         return {"scrolled": True, "direction": direction, "amount": amount}
 
+    async def _element_center_impl(self, index: int) -> tuple[float, float]:
+        self._require_snapshot(index)
+        object_id = await self._resolve_element_object_id(index)
+        await self._cdp_send("DOM.scrollIntoViewIfNeeded", {"objectId": object_id})
+        return await self._resolve_element_center(index)
+
     async def _hover_impl(
         self,
         *,
@@ -714,22 +733,69 @@ class RemoteBridgeContext(BrowserContextBase):
         return {"selected": True, "value": value, "label": label}
 
     async def _press_impl(self, *, target: str, key: str) -> dict[str, Any]:
-        # Note: target is intentionally ignored on remote bridge — the CDP key
-        # event dispatches at the focused element. Callers wanting to focus
-        # first should issue a click or fill on the target before pressing.
-        await self._send(
-            "cdp",
-            {
-                "method": "Input.dispatchKeyEvent",
-                "params": {"type": "keyDown", "key": key},
-            },
-        )
-        await self._send(
-            "cdp",
-            {
-                "method": "Input.dispatchKeyEvent",
-                "params": {"type": "keyUp", "key": key},
-            },
+        from agentcloak.core.input import invalid_input
+
+        if target:
+            object_id = await self._resolve_element_object_id(int(target))
+            await self._cdp_send(
+                "Runtime.callFunctionOn",
+                {
+                    "objectId": object_id,
+                    "functionDeclaration": "function(){this.focus()}",
+                    "returnByValue": True,
+                },
+            )
+        parts = key.split("+")
+        modifiers = {"Alt": 1, "Control": 2, "Meta": 4, "Shift": 8}
+        if any(part not in modifiers for part in parts[:-1]):
+            raise invalid_input(f"Unsupported keyboard modifier in {key}")
+        flags = sum(modifiers[part] for part in set(parts[:-1]))
+        main_key = parts[-1]
+        key_codes = {
+            "Enter": 13,
+            "Tab": 9,
+            "Escape": 27,
+            "Backspace": 8,
+            "Delete": 46,
+            "ArrowLeft": 37,
+            "ArrowUp": 38,
+            "ArrowRight": 39,
+            "ArrowDown": 40,
+            "Home": 36,
+            "End": 35,
+            "PageUp": 33,
+            "PageDown": 34,
+            "Control": 17,
+            "Shift": 16,
+            "Alt": 18,
+            "Meta": 91,
+            "Space": 32,
+        }
+        if len(main_key) == 1:
+            code = ord(main_key.upper())
+        elif main_key in key_codes:
+            code = key_codes[main_key]
+        elif (
+            main_key.startswith("F")
+            and main_key[1:].isdigit()
+            and 1 <= int(main_key[1:]) <= 24
+        ):
+            code = 111 + int(main_key[1:])
+        else:
+            raise invalid_input(f"Unsupported key: {main_key}")
+        event: dict[str, Any] = {
+            "key": " " if main_key == "Space" else main_key,
+            "modifiers": flags,
+            "windowsVirtualKeyCode": code,
+        }
+        if not flags & (1 | 2 | 4):
+            if len(main_key) == 1 or main_key == "Space":
+                event["text"] = event["key"]
+            elif main_key == "Enter":
+                event["text"] = "\r"
+        await self._cdp_send("Input.dispatchKeyEvent", {**event, "type": "keyDown"})
+        await self._cdp_send(
+            "Input.dispatchKeyEvent", {**event, "type": "keyUp", "text": ""}
         )
         return {"pressed": True, "key": key}
 
@@ -949,10 +1015,7 @@ class RemoteBridgeContext(BrowserContextBase):
         # exceptionThrown events flow. Unlike the Playwright backend (which
         # registers listeners for free), remote console capture is opt-in so
         # we don't spam the bridge with Runtime traffic until asked.
-        try:
-            await self._send("cdp", {"method": "Runtime.enable", "params": {}})
-        except Exception:
-            logger.warning("runtime_enable_failed", exc_info=True)
+        await self._send("cdp", {"method": "Runtime.enable", "params": {}})
 
     def _handle_console_event(self, params: dict[str, Any]) -> None:
         raw_type = str(params.get("type", "log"))
@@ -1502,7 +1565,7 @@ class RemoteBridgeContext(BrowserContextBase):
 
     async def _raw_cdp_impl(self, method: str, params: dict[str, Any] | None) -> Any:
         return await self.send_command(
-            "cdp", {"method": method, "params": params or {}}
+            "cdp", {"method": method, "params": params or {}}, _timeout=None
         )
 
     # ------------------------------------------------------------------
@@ -1579,11 +1642,17 @@ class RemoteBridgeContext(BrowserContextBase):
         task = asyncio.ensure_future(self._resume_paused_request(params))
         self._route_tasks.add(task)
         task.add_done_callback(self._route_tasks.discard)
+        tab_id = params.get("_tab_id")
+        if isinstance(tab_id, int):
+            self._route_task_tabs[task] = tab_id
+            task.add_done_callback(lambda done: self._route_task_tabs.pop(done, None))
 
     async def _resume_paused_request(self, params: dict[str, Any]) -> None:
         request_id = str(params.get("requestId", ""))
         if not request_id:
             return
+        tab_id = params.get("_tab_id")
+        target = {"tabId": tab_id} if isinstance(tab_id, int) else {}
         request = cast("dict[str, Any]", params.get("request") or {})
         url = str(request.get("url", ""))
         method = str(request.get("method", "")) or None
@@ -1594,13 +1663,16 @@ class RemoteBridgeContext(BrowserContextBase):
             method=method,
         )
         try:
-            if rule is None or rule.action == "continue":
+            if rule is not None and rule.action == "hold":
+                await self.route_manager.hold(rule, url)
+            if rule is None or rule.action in ("continue", "hold"):
                 await self._send(
                     "cdp",
                     {
                         "method": "Fetch.continueRequest",
                         "params": {"requestId": request_id},
                     },
+                    **target,
                 )
             elif rule.action == "abort":
                 await self._send(
@@ -1612,6 +1684,7 @@ class RemoteBridgeContext(BrowserContextBase):
                             "errorReason": "Aborted",
                         },
                     },
+                    **target,
                 )
             elif rule.action == "fulfill":
                 await self._send(
@@ -1620,6 +1693,7 @@ class RemoteBridgeContext(BrowserContextBase):
                         "method": "Fetch.fulfillRequest",
                         "params": _fulfill_params(request_id, rule),
                     },
+                    **target,
                 )
         except Exception:
             logger.debug("route_resume_failed", request_id=request_id, exc_info=True)

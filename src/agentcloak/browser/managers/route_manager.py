@@ -25,8 +25,10 @@ state and lets a new tab replay the existing rules.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import asyncio
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 if TYPE_CHECKING:
     from agentcloak.browser.base import BrowserContextBase
@@ -53,12 +55,14 @@ class RouteRule:
     """
 
     pattern: str
-    action: str  # "abort" | "fulfill" | "continue"
+    action: str  # "abort" | "fulfill" | "hold" | "continue"
     resource_type: str | None = None
     method: str | None = None
     status: int | None = None
     content_type: str | None = None
     body: str | None = None
+    identifier: str = field(default_factory=lambda: uuid4().hex[:12])
+    hits: int = 0
 
     def matches(
         self, url: str, *, resource_type: str | None, method: str | None
@@ -76,7 +80,12 @@ class RouteRule:
 
     def to_dict(self) -> dict[str, object]:
         """Serialise for ``route list`` output (omit unset optional fields)."""
-        out: dict[str, object] = {"pattern": self.pattern, "action": self.action}
+        out: dict[str, object] = {
+            "identifier": self.identifier,
+            "pattern": self.pattern,
+            "action": self.action,
+            "hits": self.hits,
+        }
         if self.resource_type:
             out["resource_type"] = self.resource_type
         if self.method:
@@ -114,11 +123,16 @@ class RouteManager:
     def __init__(self, ctx: BrowserContextBase) -> None:
         self._ctx = ctx
         self._rules: list[RouteRule] = []
+        self._pending: dict[str, tuple[RouteRule, str, asyncio.Event]] = {}
 
     async def add(self, rule: RouteRule) -> None:
         """Register ``rule`` and start intercepting matching requests."""
         self._rules.append(rule)
-        await self._ctx._route_add_impl(rule)
+        try:
+            await self._ctx._route_add_impl(rule)
+        except Exception:
+            self._rules.remove(rule)
+            raise
 
     async def remove(self, pattern: str | None) -> int:
         """Remove rules by ``pattern`` (or all when ``None``); return count removed.
@@ -128,6 +142,9 @@ class RouteManager:
         RemoteBridge ``Fetch`` path checks whether any rules remain) observes
         the post-removal set and can fully disable when the last rule is gone.
         """
+        for identifier, (rule, _, _) in list(self._pending.items()):
+            if pattern is None or rule.pattern == pattern:
+                self.release(identifier)
         if pattern is None:
             removed = len(self._rules)
             self._rules.clear()
@@ -154,6 +171,7 @@ class RouteManager:
         """
         for rule in self._rules:
             if rule.matches(url, resource_type=resource_type, method=method):
+                rule.hits += 1
                 return rule
         return None
 
@@ -166,3 +184,35 @@ class RouteManager:
         """
         for rule in list(self._rules):
             await self._ctx._route_add_impl(rule)
+
+    @property
+    def has_holds(self) -> bool:
+        return any(rule.action == "hold" for rule in self._rules)
+
+    async def hold(self, rule: RouteRule, url: str) -> None:
+        identifier = uuid4().hex[:12]
+        event = asyncio.Event()
+        self._pending[identifier] = (rule, url, event)
+        try:
+            await event.wait()
+        finally:
+            self._pending.pop(identifier, None)
+
+    def pending(self) -> list[dict[str, str]]:
+        return [
+            {"identifier": identifier, "rule_id": rule.identifier, "url": url}
+            for identifier, (rule, url, event) in self._pending.items()
+            if not event.is_set()
+        ]
+
+    def release(self, identifier: str) -> int:
+        released = 0
+        for pending_id, (rule, _, event) in self._pending.items():
+            if identifier in (pending_id, rule.identifier) and not event.is_set():
+                event.set()
+                released += 1
+        return released
+
+    def release_all(self) -> None:
+        for _, _, event in self._pending.values():
+            event.set()

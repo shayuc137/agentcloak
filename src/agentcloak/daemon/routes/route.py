@@ -21,13 +21,14 @@ from agentcloak.daemon.models import (
     RouteOpResponse,
     RouteRemoveRequest,
 )
+from agentcloak.daemon.models.route import RouteReleaseRequest, RouteReleaseResponse
 from agentcloak.daemon.routes._helpers import _ok
 
 __all__ = ["router"]
 
 router = APIRouter()
 
-_VALID_ACTIONS = ("abort", "fulfill", "continue")
+_VALID_ACTIONS = ("abort", "fulfill", "continue", "hold")
 
 
 @router.post("/route/add", response_model=OkEnvelope[RouteOpResponse])
@@ -54,7 +55,12 @@ async def handle_route_add(body: RouteAddRequest, ctx: BrowserCtxDep) -> dict[st
     mgr = ctx.route_manager
     await mgr.add(rule)
     return _ok(
-        {"pattern": body.pattern, "removed": 0, "count": len(mgr.list_rules())},
+        {
+            "identifier": rule.identifier,
+            "pattern": body.pattern,
+            "removed": 0,
+            "count": len(mgr.list_rules()),
+        },
         seq=ctx.seq,
     )
 
@@ -75,4 +81,34 @@ async def handle_route_remove(
 @router.get("/route/list", response_model=OkEnvelope[RouteListResponse])
 async def handle_route_list(ctx: BrowserCtxDep) -> dict[str, Any]:
     rules = [r.to_dict() for r in ctx.route_manager.list_rules()]
-    return _ok({"rules": rules, "count": len(rules)}, seq=ctx.seq)
+    return _ok(
+        {
+            "rules": rules,
+            "count": len(rules),
+            "pending": ctx.route_manager.pending(),
+            "warnings": [
+                f"Rule {rule['identifier']} ({rule['pattern']}) has 0 hits"
+                for rule in rules
+                if not rule["hits"]
+            ],
+        },
+        seq=ctx.seq,
+    )
+
+
+@router.post("/route/release", response_model=OkEnvelope[RouteReleaseResponse])
+async def handle_route_release(
+    body: RouteReleaseRequest, ctx: BrowserCtxDep
+) -> dict[str, Any]:
+    released = ctx.route_manager.release(body.identifier)
+    if not released:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "ok": False,
+                "error": "held_request_not_found",
+                "hint": f"No pending request for {body.identifier}",
+                "action": "run route list to find held request IDs",
+            },
+        )
+    return _ok({"identifier": body.identifier, "released": released}, seq=ctx.seq)

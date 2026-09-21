@@ -19,7 +19,7 @@ main "Content"
 
 Each body line is `<indent><role> "<name>" <attributes>`. Interactive nodes get an `[N]` index assigned in document order; that index is the action target (positional `cloak click 5` or via `--index 5`) and is only valid until the page changes.
 
-The shared builder lives in `src/agentcloak/browser/_snapshot_builder.py` — both `CloakBrowser` and `RemoteBridge` backends call it with the raw CDP nodes, so the tree format is identical regardless of backend.
+The shared builder lives in `src/agentcloak/browser/_snapshot_builder.py` — `Playwright`, `CloakBrowser`, and `RemoteBridge` backends call it with the raw CDP nodes, so the tree format is identical regardless of backend.
 
 ## Snapshot modes
 
@@ -27,12 +27,15 @@ The shared builder lives in `src/agentcloak/browser/_snapshot_builder.py` — bo
 
 | Mode | What you get | When to use |
 |------|-------------|------------|
-| `compact` (default) | Interactive + landmark nodes only; `generic`/`group` folded | Token-tight interaction loops |
+| `compact` (default) | Interactive + landmark nodes; non-focusable `generic`/`group` wrappers folded | Token-tight interaction loops |
 | `accessible` | Full a11y tree with all `[N]` refs | First look, complex layouts |
 | `content` | Pure visible text, no roles or refs | Article extraction, summarization |
 | `dom` | Raw outer HTML | When ARIA hides what you need (rare) |
 
 `compact` is the default since v0.2.0 — agents almost always want interactive elements + structural landmarks (`navigation`, `main`, `form`, `dialog`...) without the anonymous wrapper `<div>`s. Reach for `accessible` only when the default omitted context you need.
+
+
+Nodes with interactive roles such as `button` and `menuitem`, or an AX `focusable` property, receive refs in both modes. This includes custom `generic` elements with `tabindex="0"` or `tabindex="-1"`; their backend DOM node IDs allow actions to target the exact element. The document root and ignored AX nodes do not receive refs. Expand a hidden menu and take a fresh snapshot to address its items.
 
 ## ARIA state extraction
 

@@ -50,7 +50,7 @@ class ResumeSnapshot:
 class ResumeWriter:
     """Debounced writer for resume.json — marks dirty, flushes periodically."""
 
-    def __init__(self, paths: Paths) -> None:
+    def __init__(self, paths: Paths | None = None) -> None:
         self._paths = paths
         self._dirty = False
         self._snapshot = ResumeSnapshot()
@@ -84,7 +84,7 @@ class ResumeWriter:
 
     def flush(self) -> None:
         """Write snapshot to disk if dirty."""
-        if not self._dirty:
+        if not self._dirty or self._paths is None:
             return
         try:
             self._paths.ensure_dirs()
@@ -111,8 +111,9 @@ class ResumeWriter:
         """Cancel background task and remove resume.json from disk."""
         if self._task is not None and not self._task.done():
             self._task.cancel()
-        with contextlib.suppress(FileNotFoundError):
-            self._paths.resume_file.unlink()
+        if self._paths is not None:
+            with contextlib.suppress(FileNotFoundError):
+                self._paths.resume_file.unlink()
         self._dirty = False
 
     @property

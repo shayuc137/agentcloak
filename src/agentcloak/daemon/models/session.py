@@ -15,10 +15,10 @@ class SessionListResponse(BaseModel):
 
 class SessionCloseRequest(BaseModel):
     session_id: str = Field(
-        default="", description="Session to close (empty = default)."
+        default="", description="Session to close (empty = caller session)."
     )
 
 
 class SessionCloseResponse(BaseModel):
-    closed: bool = Field(description="True if a known session was removed.")
+    closed: bool = Field(description="True if an active session was closed.")
     session_id: str = Field(description="The session that was requested.")

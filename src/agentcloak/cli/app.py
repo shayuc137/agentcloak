@@ -7,6 +7,7 @@ import os
 import sys
 from pathlib import Path
 
+import click
 import structlog
 import typer
 
@@ -22,6 +23,8 @@ from agentcloak.core.errors import AgentBrowserError
 
 __all__ = ["app", "main"]
 
+_TYPER_ERROR: type[Exception] = getattr(typer, "TyperException", click.ClickException)
+
 # The shortcut commands registered below (``cloak navigate``, ``cloak click``,
 # etc.) are intentionally hidden so the Commands panel stays scannable. To
 # avoid them being invisible, the epilog spells them out — agents and humans
@@ -29,14 +32,14 @@ __all__ = ["app", "main"]
 # path to deeper command trees.
 _SHORTCUTS = (
     "navigate, snapshot, screenshot, resume, click, fill, type, "
-    "press, scroll, hover, select, keydown, keyup"
+    "press, scroll, hover, drag, select, keydown, keyup"
 )
 _GROUPS = (
     "browser, do, js, tab, profile, spell, capture, frame, daemon, doctor, "
     "launch, network, fetch, bridge, cookies, skill, cdp, dialog, wait, "
     "upload, config, console, download, storage, clipboard, pdf, serve, diff, "
     "script, route, emulation, graphql, debugger, ws, sse, sourcemap, "
-    "profiler, performance, session, hide"
+    "profiler, performance, session, hide, viewport"
 )
 _EPILOG = (
     f"Shortcuts (top-level, also documented under their groups):\n  {_SHORTCUTS}\n"
@@ -125,7 +128,22 @@ def _extract_global_flags(argv: list[str]) -> tuple[list[str], dict[str, object]
     verbose = 0
     version = False
     json_mode = False
-    for arg in argv:
+    session = None
+    args = iter(argv)
+    for arg in args:
+        if arg == "--":
+            cleaned.extend([arg, *args])
+            break
+        if arg == "--session":
+            session = next(args, None)
+            if not session or session.startswith("--"):
+                raise typer.BadParameter("--session requires an ID")
+            continue
+        if arg.startswith("--session="):
+            session = arg.partition("=")[2]
+            if not session:
+                raise typer.BadParameter("--session requires an ID")
+            continue
         if arg == "--pretty":
             pretty = True
         elif arg in ("--verbose", "-v"):
@@ -141,12 +159,16 @@ def _extract_global_flags(argv: list[str]) -> tuple[list[str], dict[str, object]
         "verbose": verbose,
         "version": version,
         "json": json_mode,
+        "session": session,
     }
     return cleaned, state
 
 
 @app.callback()
 def _root_callback(  # pyright: ignore[reportUnusedFunction]
+    session: str | None = typer.Option(
+        None, "--session", help="Caller session (defaults to worktree name)."
+    ),
     verbose: int = typer.Option(
         0, "--verbose", "-v", count=True, help="Increase log verbosity."
     ),
@@ -178,6 +200,10 @@ def _root_callback(  # pyright: ignore[reportUnusedFunction]
     # runs and Typer parses ``--json`` itself. We OR-merge so a True coming
     # from either path wins; we never *clear* an already-enabled flag because
     # ``main()`` may have set it from argv or AGENTCLOAK_OUTPUT before us.
+    if session is not None:
+        from agentcloak.core.session import cli_session_id
+
+        cli_session_id.set(session)
     if json or _detect_env_json_mode():
         set_json_mode(enabled=True)
     if pretty:
@@ -223,6 +249,7 @@ def _register_commands() -> None:
         streaming,
         tab,
         upload,
+        viewport,
         wait_cmd,
     )
 
@@ -364,6 +391,7 @@ def _register_commands() -> None:
         name="route",
         help="Network route interception: abort/fulfill/continue requests.",
     )
+    app.add_typer(viewport.app, name="viewport", help="Resize the current page.")
     app.add_typer(
         emulation.app,
         name="emulation",
@@ -420,6 +448,7 @@ def _register_shortcuts() -> None:
     """Top-level shortcut commands (cloak open, cloak snapshot, cloak click, etc.)."""
     from agentcloak.cli.commands.action import (
         do_click,
+        do_drag,
         do_fill,
         do_hover,
         do_keydown,
@@ -446,6 +475,7 @@ def _register_shortcuts() -> None:
     app.command("press", hidden=True)(do_press)
     app.command("scroll", hidden=True)(do_scroll)
     app.command("hover", hidden=True)(do_hover)
+    app.command("drag", hidden=True)(do_drag)
     app.command("select", hidden=True)(do_select)
     app.command("keydown", hidden=True)(do_keydown)
     app.command("keyup", hidden=True)(do_keyup)
@@ -473,14 +503,32 @@ def show_version() -> None:
 
 
 def main() -> None:
-    from agentcloak.cli.output import error_from_exception
+    from agentcloak.cli.output import error, error_from_exception
 
+    set_json_mode(enabled="--json" in sys.argv[1:] or _detect_env_json_mode())
+    set_pretty(enabled="--pretty" in sys.argv[1:])
+    try:
+        _run_cli()
+    except AgentBrowserError as exc:
+        error_from_exception(exc)
+    except (click.Abort, typer.Abort):
+        error("command aborted", code="command_aborted")
+    except (click.ClickException, _TYPER_ERROR) as exc:
+        error(str(exc), code="invalid_request", exit_code=getattr(exc, "exit_code", 2))
+    except Exception as exc:
+        error(str(exc) or type(exc).__name__, code="internal_error")
+
+
+def _run_cli() -> None:
     _maybe_emit_first_run_banner()
     # Lift ``--pretty``/``--verbose``/``--version``/``--json`` out of argv
     # before Typer sees it (see :func:`_extract_global_flags`). This is what
     # makes these flags work in any position — including after a subcommand
     # name.
     cleaned_argv, state = _extract_global_flags(sys.argv[1:])
+    from agentcloak.core.session import cli_session_id
+
+    cli_session_id.set(str(state["session"]) if state["session"] is not None else None)
     if state["version"]:
         typer.echo(f"agentcloak {__version__}")
         return
@@ -502,22 +550,8 @@ def main() -> None:
             "warning: --pretty has no effect without --json (text output mode)\n"
         )
 
-    try:
-        app(args=cleaned_argv)
-    except AgentBrowserError as exc:
-        # In JSON mode the envelope was serialised to stdout. In text mode we
-        # emit ``Error: <hint>`` to stderr. Either way the call exits with 1.
-        # Using ``sys.exit`` rather than ``raise typer.Exit from exc`` keeps
-        # Python from dumping the exception chain — agents already have the
-        # structured info they need and a traceback would burn ~800 tokens.
-        # ``error_from_exception`` will raise SystemExit(1) itself; the catch
-        # below just guards against the rare path where it doesn't.
-        try:
-            error_from_exception(exc)
-        except SystemExit:
-            raise
-        # Reached only if error_from_exception returns normally (it shouldn't).
-        sys.exit(1)
-    # Surface the post-call json mode to anyone calling main() in-process so
-    # they see the flag was honoured (kept silent under normal CLI use).
-    _ = is_json_mode()
+    exit_code = app(args=cleaned_argv, standalone_mode=False)
+    if isinstance(exit_code, int) and exit_code:
+        from agentcloak.cli.output import error
+
+        error("command failed", exit_code=exit_code)

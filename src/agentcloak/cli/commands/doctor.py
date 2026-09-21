@@ -126,6 +126,10 @@ def run_doctor(
     report["runtime"] = runtime
 
     if is_json_mode():
+        if not report["healthy"]:
+            from agentcloak.cli.output import error
+
+            error("environment checks failed", code="doctor_failed", data=report)
         emit_envelope({"ok": True, "seq": 0, "data": report})
     elif detail:
         # Backward-compat path: print every check, same shape as pre-v0.3.x.
@@ -145,4 +149,6 @@ def run_doctor(
             sys.stderr.write("(or re-run with: agentcloak doctor --fix --sudo)\n\n")
 
     if not report["healthy"]:
-        raise typer.Exit(1)
+        from agentcloak.cli.output import error
+
+        error("environment checks failed", code="doctor_failed")

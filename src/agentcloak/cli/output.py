@@ -138,34 +138,35 @@ def info(text: str) -> None:
     sys.stderr.flush()
 
 
-def error(hint: str, action: str = "", *, exit_code: int = 1) -> None:
-    """Write a two-line error message to stderr and exit.
-
-    Format::
-
-        Error: <hint>
-          → <action>
-
-    When ``action`` is empty only the first line is printed. Always exits via
-    :class:`SystemExit` so callers don't need to ``raise typer.Exit`` after.
-    """
-    sys.stderr.write(f"Error: {hint}\n")
+def error(
+    hint: str,
+    action: str = "",
+    *,
+    exit_code: int = 1,
+    code: str = "command_failed",
+    data: dict[str, Any] | None = None,
+) -> None:
+    """Emit a failure in the selected format and always exit nonzero."""
+    if _json_mode:
+        _write_envelope(
+            {
+                "ok": False,
+                "error": {"code": code, "message": hint},
+                "hint": hint,
+                "action": action,
+                **({"data": data} if data is not None else {}),
+            }
+        )
+    sys.stderr.write(f"Error [{code}]: {hint}\n")
     if action:
         sys.stderr.write(f"  -> {action}\n")
     sys.stderr.flush()
-    raise SystemExit(exit_code)
+    raise SystemExit(exit_code or 1)
 
 
 def error_from_exception(exc: AgentBrowserError) -> None:
-    """Convert an ``AgentBrowserError`` into stderr ``Error:`` + exit.
-
-    In JSON mode the full envelope is printed to stdout instead (backwards
-    compat with the pre-v0.3.0 contract).
-    """
-    if _json_mode:
-        _write_envelope(exc.to_dict())
-        raise SystemExit(1)
-    error(exc.hint or exc.error, exc.action)
+    """Render domain failures through the same exit path as local failures."""
+    error(exc.hint or exc.error, exc.action, code=exc.error)
 
 
 # ---------------------------------------------------------------------------

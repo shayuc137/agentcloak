@@ -14,7 +14,7 @@ sits at the outermost layer and counts every request that reaches the daemon.
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from fastapi.responses import JSONResponse
 
@@ -78,6 +78,58 @@ def install_middlewares(app: FastAPI) -> None:
             )
 
         app.state.last_request_time = time.monotonic()
-        return await call_next(request)
+        manager = getattr(app.state, "session_manager", None)
+        if manager is None or request.url.path in {
+            "/health",
+            "/shutdown",
+            "/session/list",
+            "/openapi.json",
+            "/docs",
+            "/redoc",
+        }:
+            return await call_next(request)
+        session_id = request.headers.get("x-agentcloak-session", "default")
+        if request.url.path == "/session/close":
+            import json
+
+            try:
+                body: object = json.loads(await request.body())
+                if isinstance(body, dict):
+                    target = cast("dict[str, object]", body).get("session_id")
+                    if isinstance(target, str) and target:
+                        session_id = target
+            except ValueError:
+                pass
+        slot = manager.slot(session_id)
+        slot.users += 1
+        try:
+            path = request.url.path
+            if path in {"/route/release", "/route/list"}:
+                return await call_next(request)
+            route_manager = getattr(slot.ctx, "_route_mgr", None)
+            if path in {"/snapshot", "/screenshot"} and (
+                route_manager is not None and route_manager.pending()
+            ):
+                # Held navigation cannot own the lock needed to observe or release it.
+                async with slot.observation_lock:
+                    return await call_next(request)
+            async with slot.lock:
+                if path in {
+                    "/snapshot",
+                    "/screenshot",
+                    "/viewport",
+                    "/session/close",
+                    "/launch",
+                    "/tab/switch",
+                    "/tab/close",
+                }:
+                    async with slot.observation_lock:
+                        return await call_next(request)
+                async with slot.observation_lock:
+                    pass
+                return await call_next(request)
+        finally:
+            slot.users -= 1
+            slot.last_request_time = time.monotonic()
 
     install_metrics_middleware(app)

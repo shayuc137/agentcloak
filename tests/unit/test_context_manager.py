@@ -148,6 +148,7 @@ class TestBridgeTokenCLI:
 def _fake_app_state() -> Any:
     """Minimal stand-in for FastAPI's app.state for ContextManager."""
     state = MagicMock()
+    state.config_root = None
     state.browser_ctx = None
     state.local_ctx = None
     state.local_tier = None

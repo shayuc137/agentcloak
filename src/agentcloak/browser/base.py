@@ -92,6 +92,7 @@ _VALID_ACTION_KINDS: frozenset[str] = frozenset(
         "type",
         "scroll",
         "hover",
+        "drag",
         "select",
         "press",
         "keydown",
@@ -271,6 +272,7 @@ class BrowserContextBase(ABC):
         )
         self._console_seq: int = 0
         self._console_listening: bool = False
+        self._console_page_url: str = ""
 
         # R2 (7a): Completed downloads (both direct-URL and click-triggered).
         self._downloads: list[DownloadEntry] = []
@@ -673,9 +675,8 @@ class BrowserContextBase(ABC):
     ) -> dict[str, Any]:
         """Send a raw CDP command and return its result.
 
-        Unlike :meth:`_raw_cdp_impl` (a one-shot session that detaches
-        immediately), this routes through whatever persistent CDP channel the
-        backend keeps alive for event streaming — Playwright caches a
+        This routes through the persistent channel used for manager events,
+        separate from cancellable raw requests. Playwright caches a
         per-tab ``CDPSession``; RemoteBridge forwards over the bridge
         WebSocket. The public wrapper :meth:`_cdp_send` owns audit logging and
         the closed-browser guard, so implementations only translate the call.
@@ -912,6 +913,8 @@ class BrowserContextBase(ABC):
         # except/success branches keeps the bug fix tight to its real
         # cause (navigation actually failing) and avoids accidental
         # collateral damage to overlapping requests.
+        await self._ensure_console_cdp()
+        self._console_page_url = url
         try:
             result = await self._navigate_impl(url, timeout=timeout)
         except Exception as exc:
@@ -936,7 +939,6 @@ class BrowserContextBase(ABC):
         )
         logger.info("audit_action", action="navigate", seq=new_seq, url=url)
         result.setdefault("seq", new_seq)
-        await self._ensure_console_cdp()
         if self._browser_config.auto_stream_monitor:
             await self.streaming_monitor.ensure_listening()
         return result
@@ -1230,6 +1232,7 @@ class BrowserContextBase(ABC):
         format: str = "jpeg",
         quality: int | None = None,
         output_path: str | None = None,
+        viewport: str | None = None,
     ) -> bytes:
         # ``output_path`` writes the capture to disk in addition to returning
         # the bytes. Writing lives here rather than in ``_screenshot_impl`` so
@@ -1242,13 +1245,23 @@ class BrowserContextBase(ABC):
         self._check_page_valid()
         if quality is None:
             quality = self._browser_config.screenshot_quality
+        previous_viewport = (
+            await self._get_viewport_impl() if viewport is not None else None
+        )
         try:
+            if viewport is not None:
+                from agentcloak.core.input import parse_viewport
+
+                await self.set_viewport(*parse_viewport(viewport))
             data = await self._screenshot_impl(
                 full_page=full_page, fmt=format, quality=quality
             )
         except Exception as exc:
             self._maybe_mark_browser_closed(exc)
             raise
+        finally:
+            if previous_viewport is not None:
+                await self._set_viewport_impl(*previous_viewport)
         if output_path:
             from pathlib import Path
 
@@ -1538,15 +1551,34 @@ class BrowserContextBase(ABC):
         return await self._tab_list_impl()
 
     async def tab_new(self, url: str | None = None) -> dict[str, Any]:
-        result = await self._tab_new_impl(url)
+        if self._script_mgr is not None:
+            await self._script_mgr.detach()
+        result = await self._tab_new_impl(None)
         await self._replay_managers_on_new_page()
+        if url:
+            result.update(await self.navigate(url))
         return result
 
     async def tab_close(self, tab_id: int) -> dict[str, Any]:
-        return await self._tab_close_impl(tab_id)
+        closing_active = any(
+            tab.tab_id == tab_id and tab.active for tab in await self.tab_list()
+        )
+        result = await self._tab_close_impl(tab_id)
+        if closing_active:
+            await self._replay_managers_on_new_page()
+        return result
 
     async def tab_switch(self, tab_id: int) -> dict[str, Any]:
-        result = await self._tab_switch_impl(tab_id)
+        if not any(tab.tab_id == tab_id for tab in await self.tab_list()):
+            return await self._tab_switch_impl(tab_id)
+        if self._script_mgr is not None:
+            await self._script_mgr.detach()
+        try:
+            result = await self._tab_switch_impl(tab_id)
+        except Exception:
+            if self._script_mgr is not None:
+                await self._script_mgr.on_tab_switched()
+            raise
         await self._replay_managers_on_new_page()
         return result
 
@@ -1560,6 +1592,10 @@ class BrowserContextBase(ABC):
         sessions that never touched these capabilities, keeping tab switches
         free of overhead in the common path.
         """
+        self._enabled_domains.clear()
+        self._console_listening = False
+        self._console_page_url = (await self._get_page_info())[0]
+        await self._ensure_console_cdp()
         if self._script_mgr is not None:
             await self._script_mgr.on_tab_switched()
         if self._hide_mgr is not None:
@@ -1743,13 +1779,153 @@ class BrowserContextBase(ABC):
         return ""
 
     async def close(self) -> None:
+        if self._route_mgr is not None:
+            self._route_mgr.release_all()
         with contextlib.suppress(Exception):
             await self._dump_localstorage_all_tabs()
         with contextlib.suppress(Exception):
             await self._close_impl()
 
-    async def raw_cdp(self, method: str, params: dict[str, Any] | None = None) -> Any:
-        return await self._raw_cdp_impl(method, params)
+    async def raw_cdp(
+        self, method: str, params: dict[str, Any] | None = None, *, timeout: int = 30000
+    ) -> Any:
+        self._check_browser_alive()
+        self._check_page_valid()
+        if timeout <= 0:
+            from agentcloak.core.input import invalid_input
+
+            raise invalid_input("CDP timeout must be positive milliseconds")
+        try:
+            async with asyncio.timeout(timeout / 1000):
+                return await self._raw_cdp_impl(method, params)
+        except TimeoutError as exc:
+            raise BackendError(
+                error="cdp_timeout",
+                hint=f"{method} timed out after {timeout}ms",
+                action="increase --timeout or check the target",
+            ) from exc
+        except AgentBrowserError:
+            raise
+        except Exception as exc:
+            self._maybe_mark_browser_closed(exc)
+            raise BackendError(
+                error="cdp_call_failed",
+                hint=f"{method}: {exc}",
+                action="check CDP method and parameters",
+            ) from exc
+
+    async def _get_viewport_impl(self) -> tuple[int, int]:
+        result = await self._cdp_send(
+            "Runtime.evaluate",
+            {"expression": "[innerWidth, innerHeight]", "returnByValue": True},
+        )
+        width, height = result["result"]["value"]
+        return int(width), int(height)
+
+    async def _set_viewport_impl(self, width: int, height: int) -> None:
+        await self._cdp_send(
+            "Emulation.setDeviceMetricsOverride",
+            {"width": width, "height": height, "deviceScaleFactor": 1, "mobile": False},
+        )
+
+    async def set_viewport(self, width: int, height: int) -> dict[str, int]:
+        from agentcloak.core.input import parse_viewport
+
+        parse_viewport(f"{width}x{height}")
+        self._check_browser_alive()
+        self._check_page_valid()
+        await self._set_viewport_impl(width, height)
+        return {"width": width, "height": height}
+
+    async def _element_center_impl(self, index: int) -> tuple[float, float]:
+        raise NotImplementedError
+
+    async def _drag(self, target: str, **kw: Any) -> dict[str, Any]:
+        from agentcloak.core.input import invalid_input, parse_point, parse_ref
+
+        destination = kw.get("destination")
+        source_point, destination_point = kw.get("from_point"), kw.get("to_point")
+        steps = kw.get("steps", 20)
+        if not isinstance(steps, int) or not 1 <= steps <= 1000:
+            raise invalid_input("Drag steps must be an integer between 1 and 1000")
+        if (
+            target
+            and destination
+            and source_point is None
+            and destination_point is None
+        ):
+            start = await self._element_center_impl(parse_ref(target))
+            end = None
+        elif (
+            not target
+            and not destination
+            and isinstance(source_point, str)
+            and isinstance(destination_point, str)
+        ):
+            start, end = parse_point(source_point), parse_point(destination_point)
+        else:
+            raise invalid_input(
+                "Drag requires two references or --from x,y and --to x,y"
+            )
+        await self._cdp_send(
+            "Input.dispatchMouseEvent",
+            {"type": "mouseMoved", "x": start[0], "y": start[1]},
+        )
+        await self._cdp_send(
+            "Input.dispatchMouseEvent",
+            {
+                "type": "mousePressed",
+                "x": start[0],
+                "y": start[1],
+                "button": "left",
+                "buttons": 1,
+                "clickCount": 1,
+            },
+        )
+        x, y = start
+        try:
+            if end is None:
+                # Start the gesture before resolving a target that can scroll the page.
+                width, _ = await self._get_viewport_impl()
+                x += 10 if x + 10 < width else -10
+                await self._cdp_send(
+                    "Input.dispatchMouseEvent",
+                    {
+                        "type": "mouseMoved",
+                        "x": x,
+                        "y": y,
+                        "button": "left",
+                        "buttons": 1,
+                    },
+                )
+                end = await self._element_center_impl(parse_ref(str(destination)))
+            move_start = (x, y)
+            for step in range(1, steps + 1):
+                x = move_start[0] + (end[0] - move_start[0]) * step / steps
+                y = move_start[1] + (end[1] - move_start[1]) * step / steps
+                await self._cdp_send(
+                    "Input.dispatchMouseEvent",
+                    {
+                        "type": "mouseMoved",
+                        "x": x,
+                        "y": y,
+                        "button": "left",
+                        "buttons": 1,
+                    },
+                )
+        finally:
+            await self._cdp_send(
+                "Input.dispatchMouseEvent",
+                {
+                    "type": "mouseReleased",
+                    "x": x,
+                    "y": y,
+                    "button": "left",
+                    "buttons": 0,
+                    "clickCount": 1,
+                },
+            )
+        return {"dragged": True, "from": list(start), "to": list(end), "steps": steps}
 
     # ------------------------------------------------------------------
     # Capture (network traffic recording)
@@ -1796,6 +1972,8 @@ class BrowserContextBase(ABC):
         level: str,
         text: str,
         url: str = "",
+        page_url: str = "",
+        timestamp: float | None = None,
         line: int | None = None,
         column: int | None = None,
         is_error: bool = False,
@@ -1814,7 +1992,8 @@ class BrowserContextBase(ABC):
                 seq=self._console_seq,
                 level=level,
                 text=sanitize_terminal_text(text),
-                timestamp=time.time(),
+                timestamp=timestamp if timestamp is not None else time.time(),
+                page_url=page_url or self._console_page_url or url,
                 url=url,
                 line=line,
                 column=column,
@@ -1825,14 +2004,13 @@ class BrowserContextBase(ABC):
     async def _ensure_console_cdp(self) -> None:
         """Activate CDP console capture if not already listening.
 
-        Called eagerly after navigate so page-load console messages are not
-        lost between page load and the first ``console show`` query.
+        Called before navigation so page-load messages are captured before
+        the first ``console show`` query.
         Idempotent — skips if already set up.
         """
         if self._console_listening:
             return
-        with contextlib.suppress(Exception):
-            await self._console_setup_impl()
+        await self._console_setup_impl()
         self._console_listening = True
 
     async def console_entries(
@@ -1863,6 +2041,7 @@ class BrowserContextBase(ABC):
                     "level": e.level,
                     "text": e.text,
                     "url": e.url,
+                    "page_url": e.page_url,
                     "line": e.line,
                     "column": e.column,
                     "is_error": e.is_error,
@@ -1875,6 +2054,7 @@ class BrowserContextBase(ABC):
 
     async def console_clear(self) -> dict[str, Any]:
         """Drop all buffered console messages."""
+        await self._ensure_console_cdp()
         self._console_buffer.clear()
         return {"cleared": True}
 
@@ -2158,6 +2338,19 @@ class BrowserContextBase(ABC):
         return result
 
     async def _run_action(self, kind: str, target: str, **kw: Any) -> dict[str, Any]:
+        from agentcloak.core.input import (
+            invalid_input,
+            normalize_key,
+            parse_point,
+            parse_ref,
+        )
+
+        if target.startswith("["):
+            target = str(parse_ref(target))
+        if kind == "drag":
+            return await self._drag(target, **kw)
+        if kind in ("press", "keydown", "keyup"):
+            kw["key"] = normalize_key(str(kw.get("key", "")))
         if kind == "click":
             button = kw.get("button", "left")
             click_count = int(kw.get("click_count", 1))
@@ -2191,7 +2384,29 @@ class BrowserContextBase(ABC):
                 amount=int(kw.get("amount", 300)),
             )
         if kind == "hover":
-            return await self._hover_impl(target=target, x=kw.get("x"), y=kw.get("y"))
+            x, y = kw.get("x"), kw.get("y")
+            at, offset = kw.get("at"), kw.get("offset")
+            if at is not None:
+                if target or x is not None or y is not None or offset is not None:
+                    raise invalid_input(
+                        "--at cannot be combined with a reference, "
+                        "coordinates or --offset"
+                    )
+                x, y = parse_point(str(at))
+            if offset is not None:
+                if not target or x is not None or y is not None:
+                    raise invalid_input(
+                        "--offset requires an element reference "
+                        "without absolute coordinates"
+                    )
+                dx, dy = parse_point(str(offset))
+                cx, cy = await self._element_center_impl(parse_ref(target))
+                x, y = cx + dx, cy + dy
+            if (x is None) != (y is None):
+                raise invalid_input("Both x and y coordinates are required")
+            if x is not None and y is not None:
+                x, y = parse_point(f"{x},{y}")
+            return await self._hover_impl(target=target, x=x, y=y)
         if kind == "select":
             value_raw = kw.get("value")
             label_raw = kw.get("label")

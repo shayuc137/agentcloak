@@ -540,22 +540,15 @@ async def start(
 
     resume_writer = ResumeWriter(paths)
 
-    # SessionManager multiplexes *named* sessions (X-Agentcloak-Session
-    # header) — each gets an isolated browser created on first request. The
-    # startup browser above remains the "default" session under
-    # ContextManager, so legacy header-less callers (every plain CLI run)
-    # keep the existing tier-switch / remote-bridge / proxy behaviour
-    # untouched. We do not pre-create any named session here; they spin up
-    # lazily on demand.
     from agentcloak.daemon.services import SessionManager
 
     # Build FastAPI app and wire runtime state.
     app = create_app()
 
     def _profile_hide_selectors() -> list[str]:
-        """Give per-session browsers the active profile's hide selectors.
+        """Give session tabs the active profile's hide selectors.
 
-        Named sessions keep ephemeral browser data, but observation
+        Named sessions share browser data and observation
         preferences are daemon-scoped behaviour: a daemon launched with a
         profile should hide the same overlays in every session. Reads the
         live ``local_profile`` so profile hot-switches are picked up, and
@@ -580,7 +573,7 @@ async def start(
             return []
 
     session_manager = SessionManager(
-        cfg, hide_selectors_provider=_profile_hide_selectors
+        cfg, app_state=app.state, hide_selectors_provider=_profile_hide_selectors
     )
     configure_app_state(
         app,

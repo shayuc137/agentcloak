@@ -17,6 +17,12 @@ from agentcloak.daemon.models import (
     HeadersResponse,
     OkEnvelope,
 )
+from agentcloak.daemon.models.emulation import (
+    CdpSendRequest,
+    CdpSendResponse,
+    ViewportRequest,
+    ViewportResponse,
+)
 from agentcloak.daemon.routes._helpers import _ok
 
 __all__ = ["router"]
@@ -30,3 +36,14 @@ async def handle_emulation_headers(
 ) -> dict[str, Any]:
     result = await ctx.set_extra_headers(body.headers)
     return _ok(result, seq=ctx.seq)
+
+
+@router.post("/viewport", response_model=OkEnvelope[ViewportResponse])
+async def handle_viewport(body: ViewportRequest, ctx: BrowserCtxDep) -> dict[str, Any]:
+    return _ok(await ctx.set_viewport(body.width, body.height), seq=ctx.seq)
+
+
+@router.post("/cdp/send", response_model=OkEnvelope[CdpSendResponse])
+async def handle_cdp_send(body: CdpSendRequest, ctx: BrowserCtxDep) -> dict[str, Any]:
+    result = await ctx.raw_cdp(body.method, body.params, timeout=body.timeout)
+    return _ok({"result": result}, seq=ctx.seq)

@@ -25,6 +25,7 @@ ActionKind = Literal[
     "type",
     "scroll",
     "hover",
+    "drag",
     "select",
     "press",
     "keydown",
@@ -42,6 +43,12 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         value: str = "",
         direction: str = "down",
         include_snapshot: bool = False,
+        at: str | None = None,
+        offset: str | None = None,
+        destination: str | None = None,
+        from_point: str | None = None,
+        to_point: str | None = None,
+        steps: int = 20,
     ) -> str:
         """Interact with the page. Use [N] refs from agentcloak_snapshot as target.
 
@@ -50,7 +57,8 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
           fill    — clear input [N] and set text (use 'text' param)
           type    — type into [N] character by character (use 'text' param)
           scroll  — scroll page (use 'direction': up/down)
-          hover   — hover over element [N]
+          hover   — hover over element [N], at x,y, or offset dx,dy from its center
+          drag    — drag target to destination refs, or from_point/to_point x,y
           select  — pick dropdown option [N] (use 'value' param)
           press   — press keyboard key (use 'key': Enter/Tab/Control+a)
           keydown — hold a key down (use 'key': Shift/Control/Alt)
@@ -76,6 +84,12 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             key: Key name for press/keydown/keyup (e.g. 'Enter', 'Control+a', 'Shift')
             value: Option value for select action
             direction: Scroll direction — 'up' or 'down'
+            at: Hover absolute x,y coordinates, without target
+            offset: Hover dx,dy from target element center
+            destination: Drag destination N or '[N]', paired with target
+            from_point: Drag source x,y, without target/destination refs
+            to_point: Drag destination x,y, paired with from_point
+            steps: Drag mouse movement steps, 1 to 1000
             include_snapshot: If true, attach a compact snapshot to the
                 action result. Saves a round-trip when you need to see
                 the page state after an action.
@@ -86,6 +100,18 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             tree_text, mode, total_nodes, and total_interactive.
         """
         extras: dict[str, Any] = {}
+        if kind == "hover":
+            if at is not None:
+                extras["at"] = at
+            if offset is not None:
+                extras["offset"] = offset
+        if kind == "drag":
+            extras.update(
+                destination=destination,
+                from_point=from_point,
+                to_point=to_point,
+                steps=steps,
+            )
         if kind in ("fill", "type") and text:
             extras["text"] = text
         if kind in ("press", "keydown", "keyup") and key:

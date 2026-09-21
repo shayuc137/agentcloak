@@ -101,6 +101,7 @@ __all__ = [
     "render_resume_text",
     "render_route_list_text",
     "render_route_op_text",
+    "render_route_release_text",
     "render_scope_variables_text",
     "render_screenshot_text",
     "render_script_add_text",
@@ -466,6 +467,7 @@ def render_action_text(kind: str, target: str, data: dict[str, Any]) -> str:
         "press": "pressed",
         "scroll": "scrolled",
         "hover": "hovered",
+        "drag": "dragged",
         "select": "selected",
         "keydown": "keydown",
         "keyup": "keyup",
@@ -1207,7 +1209,11 @@ def render_console_text(data: dict[str, Any]) -> str:
         loc = ""
         if url:
             loc = f" ({url}:{line_no})" if line_no is not None else f" ({url})"
-        lines.append(f"{marker}[{level}] {text}{loc}")
+        timestamp = entry.get("timestamp")
+        stamp = f" t={timestamp:.3f}" if isinstance(timestamp, (int, float)) else ""
+        page = str(entry.get("page_url", "") or "")
+        origin = f" page={page}" if page else ""
+        lines.append(f"{marker}[{level}]{stamp}{origin} {text}{loc}")
     seq = int(data.get("seq", 0) or 0)
     lines.append(f"--- seq={seq} ---")
     return "\n".join(lines)
@@ -1389,7 +1395,8 @@ def render_script_list_text(data: dict[str, Any]) -> str:
         ident = str(entry.get("identifier", "") or "")
         # Collapse the source to a single line so the listing stays scannable.
         src = " ".join(str(entry.get("source", "") or "").split())
-        lines.append(f"{ident}: {src}")
+        status = str(entry.get("status", "unknown"))
+        lines.append(f"{ident} [{status}]: {src}")
     return "\n".join(lines)
 
 
@@ -1432,8 +1439,15 @@ def render_route_op_text(data: dict[str, Any]) -> str:
         return f"removed {removed} rule{'s' if removed != 1 else ''} ({count} active)"
     pattern = str(data.get("pattern", "") or "")
     if pattern:
-        return f"added rule {pattern} ({count} active)"
+        identifier = str(data.get("identifier", "") or "")
+        label = f" {identifier}" if identifier else ""
+        return f"added rule{label} {pattern} ({count} active)"
     return f"{count} active rules"
+
+
+def render_route_release_text(data: dict[str, Any]) -> str:
+    count = data.get("released", 0)
+    return f"released {count} request(s) for {data.get('identifier', '')}"
 
 
 def render_route_list_text(data: dict[str, Any]) -> str:
@@ -1454,7 +1468,16 @@ def render_route_list_text(data: dict[str, Any]) -> str:
             if val:
                 extras.append(f"{key}={val}")
         suffix = f" [{', '.join(extras)}]" if extras else ""
-        lines.append(f"{action} {pattern}{suffix}")
+        identifier = str(rule.get("identifier", "") or "")
+        hits = int(rule.get("hits", 0) or 0)
+        lines.append(f"{identifier} {action} {pattern}{suffix} hits={hits}")
+    for pending in data.get("pending", []):
+        lines.append(
+            f"pending {pending['identifier']} rule={pending['rule_id']} "
+            f"{pending['url']}"
+        )
+    for warning in data.get("warnings", []):
+        lines.append(f"warning: {warning}")
     return "\n".join(lines)
 
 
@@ -1914,3 +1937,13 @@ def render_performance_metrics_text(data: dict[str, Any]) -> str:
         value = m.get("value", 0)
         lines.append(f"{name} = {value}")
     return "\n".join(lines)
+
+
+def render_viewport_text(data: dict[str, Any]) -> str:
+    return f"viewport {data['width']}x{data['height']}"
+
+
+def render_cdp_send_text(data: dict[str, Any]) -> str:
+    import json
+
+    return json.dumps(data.get("result"), ensure_ascii=False)

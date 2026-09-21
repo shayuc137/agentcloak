@@ -94,6 +94,14 @@ def bridge_doctor() -> None:
 
     all_ok = all(c["ok"] for c in checks)
     if is_json_mode():
+        if not all_ok:
+            from agentcloak.cli.output import error
+
+            error(
+                "bridge checks failed",
+                code="bridge_check_failed",
+                data={"healthy": all_ok, "checks": checks},
+            )
         emit_envelope(
             {"ok": True, "seq": 0, "data": {"healthy": all_ok, "checks": checks}}
         )
@@ -106,7 +114,9 @@ def bridge_doctor() -> None:
             value(line)
 
     if not all_ok:
-        raise typer.Exit(1)
+        from agentcloak.cli.output import error
+
+        error("bridge checks failed", code="bridge_check_failed")
 
 
 @app.command("extension-path")

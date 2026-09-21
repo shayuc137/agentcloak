@@ -94,7 +94,7 @@ async def test_launching_session_routes_to_shared_remote_ctx() -> None:
 
 
 @pytest.mark.asyncio
-async def test_other_session_keeps_local_browser() -> None:
+async def test_other_session_bridge_isolation_is_explicitly_rejected() -> None:
     """Session B (a different named session) stays on its isolated local ctx."""
     mgr = _FakeSessionManager()
     req = _make_request(
@@ -104,9 +104,11 @@ async def test_other_session_keeps_local_browser() -> None:
         session_header="claude-B",
         session_manager=mgr,
     )
-    ctx = await get_browser_ctx(req)
-    assert ctx is mgr.ctx
-    assert mgr.calls == ["claude-B"]
+    with pytest.raises(HTTPException) as exc:
+        await get_browser_ctx(req)
+    assert exc.value.status_code == 409
+    assert exc.value.detail["error"] == "session_isolation_unavailable"
+    assert mgr.calls == []
 
 
 @pytest.mark.asyncio

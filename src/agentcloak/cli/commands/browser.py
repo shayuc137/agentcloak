@@ -77,6 +77,9 @@ def browser_screenshot(
         "-o",
         help="Save to a specific file. Default: <system-temp>/agentcloak-<ts>.<ext>.",
     ),
+    viewport: str | None = typer.Option(
+        None, "--viewport", help="Temporary WIDTHxHEIGHT, restored after capture."
+    ),
     full_page: bool = typer.Option(
         False, "--full-page", help="Capture full scrollable page."
     ),
@@ -142,7 +145,7 @@ def browser_screenshot(
             if wait_timeout is not None:
                 wait_body["timeout"] = wait_timeout
             client._send_sync("POST", "/wait", json_body=wait_body)  # pyright: ignore[reportPrivateUsage]
-        if hide or keep_overlays:
+        if hide or keep_overlays or viewport is not None:
             result = client.screenshot_sync(
                 full_page=full_page,
                 format=resolution.format,
@@ -151,6 +154,7 @@ def browser_screenshot(
                 wait_timeout=wait_timeout,
                 hide=hide,
                 keep_overlays=keep_overlays,
+                **({"viewport": viewport} if viewport is not None else {}),
             )
         else:
             result = client.screenshot_sync(

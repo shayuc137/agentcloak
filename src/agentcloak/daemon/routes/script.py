@@ -77,8 +77,13 @@ async def handle_script_remove(
 @router.get("/script/list", response_model=OkEnvelope[ScriptListResponse])
 async def handle_script_list(ctx: BrowserCtxDep) -> dict[str, Any]:
     scripts = ctx.script_manager.list_scripts()
+    statuses = await ctx.script_manager.statuses()
     rows = [
-        {"identifier": ident, "source": src[:_SOURCE_PREVIEW]}
+        {
+            "identifier": ident,
+            "source": src[:_SOURCE_PREVIEW],
+            "status": statuses.get(ident, "pending navigation"),
+        }
         for ident, src in scripts.items()
     ]
     return _ok({"scripts": rows, "count": len(rows)}, seq=ctx.seq)

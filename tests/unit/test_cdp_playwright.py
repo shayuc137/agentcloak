@@ -1,8 +1,8 @@
 """PlaywrightContext persistent CDP session cache (7b T0.2).
 
 The reverse-engineering managers need a long-lived CDP session per tab (for
-event streams), distinct from the seven short-lived ``new_cdp_session +
-detach`` call sites elsewhere in ``playwright_ctx``. This file covers:
+event streams), distinct from raw command sessions and short-lived
+observation sessions. This file covers:
 
 * cache hit — repeated ``_get_or_create_cdp_session`` returns the same object
   and creates exactly one session.

@@ -48,6 +48,6 @@ class ScriptRemoveResponse(BaseModel):
 
 class ScriptListResponse(BaseModel):
     scripts: list[dict[str, str]] = Field(
-        description="Active init scripts: [{identifier, source}], source truncated."
+        description="Init scripts: identifier, source, current-page injection status."
     )
     count: int = Field(description="Number of active init scripts.")

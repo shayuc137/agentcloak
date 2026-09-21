@@ -1,12 +1,4 @@
-"""Daemon portfile read + stale-cleanup (06-02 routing fix, PRD R3).
-
-The daemon writes ``~/.agentcloak/daemon.json`` (pid/port/host/version/profile)
-after binding its port so a CLI invocation discovers the live port and active
-profile even when the daemon stepped off the default 18765.
-:func:`DaemonClient._read_daemon_file` is the read side; these tests pin its
-outcomes — fresh, stale (dead pid), missing, malformed — and assert the stale
-file is removed so a future read falls back to the configured default.
-"""
+"""Read-only daemon discovery uses HTTP health, independent of PID namespaces."""
 
 from __future__ import annotations
 
@@ -17,9 +9,26 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
+from unittest.mock import MagicMock
+
+import httpx
 import orjson
+import pytest
 
 from agentcloak.client.daemon_client import _read_daemon_file
+
+
+@pytest.fixture(autouse=True)
+def healthy(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    get = MagicMock(
+        return_value=httpx.Response(
+            200,
+            json={"ok": True},
+            request=httpx.Request("GET", "http://localhost/health"),
+        )
+    )
+    monkeypatch.setattr("agentcloak.client.daemon_client.httpx.get", get)
+    return get
 
 
 def _paths_for(tmp_path: Path) -> SimpleNamespace:
@@ -59,12 +68,28 @@ def test_wildcard_host_normalized_to_localhost(tmp_path: Path) -> None:
     assert port == 18770
 
 
-def test_stale_portfile_dead_pid_returns_none_and_unlinks(tmp_path: Path) -> None:
-    """A dead pid is treated as stale: returns all-None and deletes the file."""
+def test_stale_portfile_retains_original_bytes(
+    tmp_path: Path, healthy: MagicMock
+) -> None:
     portfile = _write_portfile(tmp_path, pid=0x7FFFFFFF, host="127.0.0.1", port=18766)
-    host, port, profile = _read_daemon_file(_paths_for(tmp_path))
-    assert (host, port, profile) == (None, None, None)
-    assert not portfile.exists()
+    before = portfile.read_bytes()
+    healthy.side_effect = httpx.ConnectError("unreachable")
+    assert _read_daemon_file(_paths_for(tmp_path)) == (None, None, None)
+    assert portfile.read_bytes() == before
+
+
+def test_invisible_pid_healthy_readonly_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    portfile = _write_portfile(tmp_path, pid=0x7FFFFFFF, host="127.0.0.1", port=18766)
+    before = portfile.read_bytes()
+    monkeypatch.setattr(
+        "agentcloak.core.process.pid_alive",
+        MagicMock(side_effect=AssertionError("PID probe forbidden")),
+    )
+    portfile.chmod(0o444)
+    assert _read_daemon_file(_paths_for(tmp_path))[:2] == ("127.0.0.1", 18766)
+    assert portfile.read_bytes() == before
 
 
 def test_missing_portfile_returns_none(tmp_path: Path) -> None:

@@ -1,19 +1,26 @@
 # Troubleshooting
 
-CLI output is text-first. The useful data lands on **stdout**, hints and errors land on **stderr**, and `$?` is `0` on success, `1` on failure, `2` on bad usage. Add `--json` (or set `AGENTCLOAK_OUTPUT=json`) if you want the legacy envelope shape for `jq` scripting.
+CLI output is text-first. The useful data lands on **stdout**, hints and errors land on **stderr**, and `$?` is `0` on success, `1` on failure, `2` on bad usage. Add `--json` (or set `AGENTCLOAK_OUTPUT=json`) if you want structured errors (`error.code` and `error.message`) for `jq` scripting.
 
 ## Error Recovery Quick Reference
 
-When a command exits non-zero, read the `Error: …` line on stderr — the `-> hint` after the arrow tells you the next move.
+When a command exits non-zero, read the `Error [code]: …` line on stderr — the `-> hint` after the arrow tells you the next move.
 
 ```text
 $ cloak click 99
-Error: Element [99] not in selector_map (4 entries)
+Error [element_not_found]: Element [99] not in selector_map (4 entries)
   -> run 'snapshot' to refresh the selector_map, or re-snapshot if the page changed
 ```
 
 | Error text on stderr | Cause | Recovery |
 |----------------------|-------|----------|
+| `invalid_request` / `command_failed` | Invalid arguments or local validation | Read `error.message` and check the command help |
+| `command_aborted` | Interrupted command | Retry when ready |
+| `internal_error` | Unexpected exception | Read the message and check daemon logs |
+| `config_error` | Invalid config key/value | Run `cloak config list` |
+| `doctor_failed` / `bridge_check_failed` | Diagnostic checks failed | Inspect JSON `data.checks` and follow the failing check's hint |
+| `skill_uninstall_failed` | File access/removal failed | Fix the reported path permissions and retry |
+| `daemon_invalid_response` / `daemon_request_failed` | Invalid body or failed daemon request | Check daemon logs and the selected endpoint |
 | `element_not_found` / `[N] not in selector_map` | `[N]` ref is stale (page changed) | Auto-retried once; if still fails, re-snapshot and use the new ref |
 | `element_covered` / visible ref does not react | Overlay intercepted coordinate click | Hide the overlay with `cloak hide add CSS`, then re-snapshot; use `--force` only as a one-off single-left-click fallback |
 | `navigation_timeout` | Page took too long to load | Retry with `--timeout 60`, or check the URL is correct |
@@ -22,6 +29,7 @@ Error: Element [99] not in selector_map (4 entries)
 | `debugger_paused` | Execution is paused at a breakpoint — page actions can't run | `cloak debugger resume` or `debugger step`, then retry. `debugger`/`console`/`tab` commands stay available while paused |
 | `wait_timeout` | Wait condition not met in time | Increase `--timeout` (`screenshot --wait-for`: `--wait-timeout`), or verify selector/condition; screenshot does not write a file after this failure |
 | `evaluate_failed` | JavaScript syntax/runtime failure | Read the bounded exception message and first source location; fix the script or probe nullable elements with optional chaining |
+| `cdp_timeout` / `cdp_call_failed` | Raw CDP exceeded its request budget or failed at protocol level | Fix method/params or raise `--timeout`; after timeout reapply raw CDP settings because its channel was reset |
 | `frame_not_found` | Frame name/URL doesn't match | `cloak frame list` to see available frames |
 | `daemon_not_running` / `daemon_unreachable` | Daemon crashed or wasn't started | Should auto-start; if not, run `cloak daemon start -b` (or `cloak doctor --fix`) |
 | `daemon_auto_start_failed` | Daemon couldn't come up on first command | `cloak doctor --fix` — its in-process diagnosis reports what's missing |
@@ -51,6 +59,9 @@ cloak dialog dismiss                # Cancel
 When any action errors with `blocked_by_dialog`, the stderr line includes the dialog type and message — you already know what it says without calling `dialog status`.
 
 ## Daemon Issues
+
+Clients discover the daemon through `/health` and never delete `daemon.json`. Sandboxed callers do not need to see the host PID or write the state directory. A closed local page/browser is recreated on the next request; re-navigate if the browser lost its page state.
+
 
 ### Daemon won't start
 
@@ -152,7 +163,9 @@ JSON envelope shape:
 
 ```json
 {"ok": true, "seq": 3, "data": {"...": "..."}}
-{"ok": false, "error": "element_not_found", "hint": "...", "action": "..."}
+{"ok": false, "error": {"code": "element_not_found", "message": "..."}, "hint": "...", "action": "..."}
 ```
 
-MCP tools return the same human-readable text the CLI prints (rendered locally via `core/text_renderers`). `agentcloak_screenshot` returns `ImageContent` for multimodal LLMs. Errors stay as the three-field JSON envelope so failure handling matches the CLI `--json` contract.
+CLI failures, including argument errors, exit nonzero with one JSON envelope on stdout and a diagnostic on stderr. JavaScript throws and rejected promises fail; ordinary returned strings containing `Error:` do not.
+
+MCP tools return the same human-readable text the CLI prints (rendered locally via `core/text_renderers`). `agentcloak_screenshot` returns `ImageContent` for multimodal LLMs. Direct daemon responses and MCP errors keep the existing string `error` plus `hint` and `action`; CLI JSON exposes the code and explanation as `error.code` and `error.message`.

@@ -15,6 +15,7 @@ from typing import Any
 import structlog
 
 from agentcloak.core.errors import DialogBlockedError, ElementNotFoundError
+from agentcloak.core.input import parse_ref
 
 __all__ = ["ActionService"]
 
@@ -64,6 +65,8 @@ class ActionService:
 
         Returns ``(result, retried)`` so callers can flag it in the response.
         """
+        if target.startswith("["):
+            target = str(parse_ref(target))
         try:
             result = await ctx.action(kind, target, **extra)
             return result, False

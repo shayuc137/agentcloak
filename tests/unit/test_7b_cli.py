@@ -199,3 +199,52 @@ class TestGraphqlCli:
             )
         assert result.exit_code != 0
         m.assert_not_called()
+
+
+def test_hold_and_release_use_the_same_id() -> None:
+    with patch(
+        "agentcloak.client.DaemonClient._send_sync",
+        return_value=_envelope({"identifier": "rule-1", "pattern": "/api", "count": 1}),
+    ) as send:
+        result = runner.invoke(app, ["route", "add", "--hold", "/api"])
+        assert result.exit_code == 0
+        assert send.call_args.kwargs["json_body"]["action"] == "hold"
+        assert "rule-1" in result.stdout
+    with patch(
+        "agentcloak.client.DaemonClient._send_sync",
+        return_value=_envelope({"identifier": "rule-1", "released": 1}),
+    ) as send:
+        result = runner.invoke(app, ["route", "release", "rule-1"])
+        assert result.exit_code == 0
+        assert send.call_args.args == ("POST", "/route/release")
+        assert send.call_args.kwargs["json_body"] == {"identifier": "rule-1"}
+
+
+def test_zero_hit_warning_is_on_stderr() -> None:
+    payload = _envelope(
+        {
+            "rules": [
+                {"identifier": "rule-1", "pattern": "/api", "action": "hold", "hits": 0}
+            ],
+            "warnings": ["Rule rule-1 has 0 hits"],
+        }
+    )
+    with patch("agentcloak.client.DaemonClient._send_sync", return_value=payload):
+        result = runner.invoke(app, ["route", "list"])
+    assert "hits=0" in result.stdout
+    assert "warning:" not in result.stdout
+    assert "0 hits" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "arguments", [["console", "clear"], ["console", "show", "--clear"]]
+)
+def test_console_clear_entrypoint_and_legacy_alias(arguments: list[str]) -> None:
+    with patch(
+        "agentcloak.client.DaemonClient._send_sync",
+        return_value=_envelope({"cleared": True}),
+    ) as send:
+        result = runner.invoke(app, arguments)
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "console cleared"
+    assert send.call_args.args == ("POST", "/console/clear")

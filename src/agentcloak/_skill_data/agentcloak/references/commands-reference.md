@@ -58,6 +58,7 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak screenshot`
 - MCP: `agentcloak_screenshot`
 - Query:
+  - `viewport` (string | null, default: —) — Temporary WIDTHxHEIGHT; restored after capture.
   - `full_page` (boolean, default: false) — Capture the full scrollable page instead of the viewport.
   - `format` (string | null, default: —) — Format override: jpeg or png. Unset uses browser.screenshot_format.
   - `quality` (integer | null, default: —) — JPEG quality 1-100; unset uses the default. Ignored for png.
@@ -81,9 +82,15 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak click|fill|type|scroll|hover|select|press|keydown|keyup N`
 - MCP: `agentcloak_action`
 - Body:
-  - `kind` (string, default: *required*) — Verb: click/fill/type/scroll/hover/select/press/keydown/keyup.
+  - `kind` (string, default: *required*) — Verb: click/fill/type/scroll/hover/drag/select/press/keydown/keyup.
   - `index` (integer | null, default: —) — Element [N] from snapshot. Preferred over target/coordinates.
   - `target` (string, default: "") — Element selector or 'x,y' coordinate fallback when no index.
+  - `at` (string | null, default: —) — Hover absolute x,y coordinates.
+  - `offset` (string | null, default: —) — Hover dx,dy from element center.
+  - `destination` (string | null, default: —) — Drag destination N or '[N]'.
+  - `from_point` (string | null, default: —) — Drag source x,y coordinates.
+  - `to_point` (string | null, default: —) — Drag destination x,y coordinates.
+  - `steps` (integer, default: 20) — Drag mouse movement steps.
   - `include_snapshot` (boolean, default: false) — Attach a snapshot after the action to see the result.
   - `snapshot_mode` (enum("compact" | "accessible"), default: "compact") — Snapshot density: compact (token-lean) or accessible (full ARIA).
 
@@ -296,7 +303,7 @@ Read this file when you need full parameter detail. For the common path, the qui
 
 ### `POST /console/clear`
 
-- CLI: `cloak console show --clear`
+- CLI: `cloak console clear`
 - MCP: `agentcloak_console (action=clear)`
 
 ## Download
@@ -465,7 +472,7 @@ Read this file when you need full parameter detail. For the common path, the qui
 - MCP: `agentcloak_route (action=add)`
 - Body:
   - `pattern` (string, default: *required*) — URL glob ('*' = any run of chars; no '*' = substring match).
-  - `action` (string, default: "continue") — Disposition: 'abort', 'fulfill', or 'continue'.
+  - `action` (string, default: "continue") — Disposition: 'abort', 'fulfill', 'hold', or 'continue'.
   - `resource_type` (string, default: "") — Only match this resource type (document, xhr, image, ...).
   - `method` (string, default: "") — Only match this HTTP method (GET, POST, ...).
   - `status` (integer, default: 0) — Response status for 'fulfill' (default 200).
@@ -484,6 +491,13 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak route list`
 - MCP: `agentcloak_route (action=list)`
 
+### `POST /route/release`
+
+- CLI: `cloak route release`
+- MCP: `agentcloak_route (action=release)`
+- Body:
+  - `identifier` (string, default: *required*) — Pending request ID or rule ID from route add/list.
+
 ## Header Injection
 
 ### `POST /emulation/headers`
@@ -492,6 +506,23 @@ Read this file when you need full parameter detail. For the common path, the qui
 - MCP: `agentcloak_headers`
 - Body:
   - `headers` (object, default: —) — Header name → value map. Empty clears all overrides.
+
+### `POST /viewport`
+
+- CLI: `cloak viewport set`
+- MCP: `agentcloak_viewport`
+- Body:
+  - `width` (integer, default: *required*)
+  - `height` (integer, default: *required*)
+
+### `POST /cdp/send`
+
+- CLI: `cloak cdp send`
+- MCP: `agentcloak_cdp_send`
+- Body:
+  - `method` (string, default: *required*)
+  - `params` (object, default: —)
+  - `timeout` (integer, default: 30000) — Request timeout in milliseconds.
 
 ## GraphQL
 
@@ -810,7 +841,7 @@ Read this file when you need full parameter detail. For the common path, the qui
 - CLI: `cloak session close SESSION_ID`
 - MCP: `(session management — CLI only)`
 - Body:
-  - `session_id` (string, default: "") — Session to close (empty = default).
+  - `session_id` (string, default: "") — Session to close (empty = caller session).
 
 
 _End of generated content. Updates flow from `daemon/models/` + `daemon/routes/`; run `python scripts/generate_skill.py --write` after changing routes._

@@ -24,10 +24,10 @@ You need a browser. Your agents do too.
 - **CloakBrowser built-in stealth** -- 57 C++ patches on Chromium for realistic browser fingerprinting; agents browse without being misidentified as bots
 - **Session reuse** -- save/restore login profiles (cookies + localStorage auto-persisted across launches, so SPAs that stash auth tokens client-side stay logged in) + RemoteBridge to operate your real Chrome browser
 - **Network config** -- proxy (SOCKS5/HTTP), DNS-over-HTTPS control, and custom Chromium args via `cloak config set`
-- **Daemon architecture** -- auto-starts on first command, manages browser lifecycle with a monotonic seq counter
+- **Parallel worktree sessions** -- one daemon and shared login profile, isolated tabs inferred from each worktree; live viewport changes, drag, and request hold/release support UI verification
 - **Spells + API capture** -- wrap common site operations as one-liners; capture traffic, analyze patterns, generate spells automatically
 - **Web reverse engineering** -- CDP-native debugger, network route interception, WebSocket/SSE capture, init-script hooks, and source-map decode -- one tool covers 90%+ of browser RE
-- **MCP server with 39 tools** -- full compatibility with MCP-native clients (Claude Code, Codex, Cursor, etc.)
+- **MCP server with 41 tools** -- full compatibility with MCP-native clients (Claude Code, Codex, Cursor, etc.)
 
 ## Installation
 

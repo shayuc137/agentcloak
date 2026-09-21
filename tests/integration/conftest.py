@@ -122,6 +122,8 @@ async def browser_context(
             headless=_HEADLESS,
             viewport_width=1280,
             viewport_height=720,
+            # Coordinate assertions must not inherit humanized pointer jitter.
+            humanize=False,
         )
     else:
         from agentcloak.browser.playwright_ctx import launch_playwright

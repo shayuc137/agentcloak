@@ -97,6 +97,7 @@ class ConsoleEntry:
     level: str
     text: str
     timestamp: float
+    page_url: str = ""
     url: str = ""
     line: int | None = None
     column: int | None = None

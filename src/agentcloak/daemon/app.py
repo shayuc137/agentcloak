@@ -69,16 +69,7 @@ def create_app() -> FastAPI:
     app.state.local_tier = None
     app.state.local_profile = None
     app.state.active_tier = None
-    # The session id that switched the daemon to remote_bridge tier (set by
-    # ``/launch``). ``get_browser_ctx`` routes only this session to the shared
-    # extension-backed ``browser_ctx``; everyone else keeps an isolated local
-    # browser. ``None`` falls back to the default session so a daemon booted
-    # straight into remote_bridge serves header-less callers from the remote.
     app.state.remote_session_id = None
-    # SessionManager owns every *named* session (X-Agentcloak-Session header);
-    # the default session stays on ``browser_ctx`` above. ``None`` here means
-    # "single-session mode" — the provider falls back to ``browser_ctx`` so
-    # tests that never call ``configure_app_state`` keep working unchanged.
     app.state.session_manager = None
     # Embedded static file server for ``cloak serve`` (7a R7). Lazily created
     # on first ``/serve/start`` and torn down by the daemon shutdown path.
@@ -118,7 +109,7 @@ def configure_app_state(
     function returns.
 
     ``session_manager`` is the :class:`SessionManager` that multiplexes
-    named (non-default) sessions. ``None`` keeps the daemon in
+    all caller sessions over a shared browser/profile. ``None`` keeps the daemon in
     single-session mode where every request resolves to ``browser_ctx``.
     """
     app.state.browser_ctx = browser_ctx

@@ -31,7 +31,8 @@ cloak profile create my-session  # persist cookies for reuse
 
 ```bash
 cloak click 5
-# stderr: Error: blocked by dialog (confirm) — "Delete item?"
+# stderr: Error [blocked_by_dialog]: A dialog is pending — handle it before continuing
+cloak dialog status      # optional: read the dialog type and message
 cloak dialog accept      # or: cloak dialog dismiss
 cloak snapshot           # continue
 ```

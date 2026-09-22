@@ -19,15 +19,15 @@ Agent 原生隐身浏览器 -- 看见、交互、自动化。
 
 ## 亮点
 
-- **视觉证据与高效调用** -- 会话 WebM/帧序列录屏、标注截图、唯一 CSS 定位、定时拖动采样、在途请求和 JSONL 批量调用
-- **视觉模拟** -- 支持 DPR 截图、会话级深浅色与减少动画，以及有头浏览器的触摸/指针模拟和 reset
-- **可恢复会话与可靠截图** -- 强制关闭卡住的会话、检查排队、断言页面 URL、返回页面与视口元数据，并将 CDP 客户端连接到准确的会话页面
-- **页面即结构化文本** -- 页面转化为无障碍树，每个可交互元素带有 `[N]` 索引，agent 可通过引用或显式的唯一 CSS 选择器操作
+- **页面即结构化文本** -- 页面转化为无障碍树，每个可交互元素带有 `[N]` 索引；agent 按引用操作，已知控件也可用唯一 CSS 选择器
 - **CLI + Skill 按需加载** -- agent 通过 Bash 调用 `cloak` 命令，Skill 按需加载仅占 ~300 tokens（MCP 工具定义常驻 ~6,000 tokens）
 - **CloakBrowser 内置隐身** -- 基于 57 个 C++ 补丁的 Chromium，呈现真实浏览器指纹，让 agent 浏览时不会被误判为机器人
 - **登录态复用** -- 保存/恢复登录 profile（cookies + localStorage 跨启动自动持久化，把 auth token 塞在客户端存储的 SPA 也能保持登录状态），或通过 RemoteBridge 操控真实 Chrome 浏览器
 - **网络配置** -- 代理（SOCKS5/HTTP）、DNS-over-HTTPS 控制、自定义 Chromium 参数，通过 `cloak config set` 管理
-- **工作空间会话** -- Git worktree 和普通目录均可隔离页面；默认共享登录，可开启按空间隔离存储，支持热切视口、拖拽与请求暂停/放行
+- **工作空间会话** -- 一个 daemon 服务所有 Git worktree 或普通目录，各自拥有独立的页面、队列和引用；默认共享登录，可选按工作空间隔离存储
+- **可信的取证** -- 截图返回 URL、标题、视口、DPR 与像素尺寸；`--expect-url` / `--expect-path` 拒绝静默跳转；`--annotate` 在图上标出 `[N]` 引用；`record` 录制 WebM 或帧序列
+- **真实输入与模拟** -- 带逐步采样的定时拖拽、坐标悬停、按键别名、热切视口/DPR，以及深浅色与减少动画模拟（触摸/指针需要有头浏览器）
+- **面向恢复的设计** -- 有界的 session 队列、`session close --force` 处理冻结页面、请求暂停/放行、在途请求观测，以及每个状态目录一个加锁的 daemon
 - **Spell + API 流量捕获** -- 常见站点操作封装为一行命令；捕获流量，分析模式，自动生成 spell
 - **网页逆向** -- CDP 原生调试器、网络路由拦截、WebSocket/SSE 捕获、init script hook、source map 解码 -- 一个工具覆盖 90%+ 的网页逆向场景
 - **MCP server 43 个工具** -- 完整兼容 MCP 原生客户端（Claude Code、Codex、Cursor 等）
@@ -109,7 +109,7 @@ cloak screenshot
 错误输出到 stderr，附带恢复建议和非零 exit code：
 
 ```text
-Error: Element [99] not in selector_map (1 entries)
+Error [element_not_found]: Element [99] not in selector_map (1 entries)
   -> run 'snapshot' to refresh the selector_map, or re-snapshot if the page changed
 ```
 

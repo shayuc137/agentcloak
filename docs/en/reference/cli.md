@@ -77,12 +77,13 @@ Other domain codes, such as `element_not_found`, pass through unchanged. Direct 
 Navigate the browser to a URL.
 
 ```bash
-cloak navigate URL [--timeout SECONDS] [--snap] [--snapshot-mode MODE]
+cloak navigate URL [--timeout SECONDS] [--expect-path /PATH] [--snap] [--snapshot-mode MODE]
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--timeout` | `30` | Max seconds to wait for page load |
+| `--expect-path` | none | Fail with `url_mismatch` unless the final URL's pathname equals this value exactly (query and fragment ignored) — catches silent redirects to a login page |
 | `--snap` (alias `--snapshot`) | off | Attach a compact snapshot to the result (saves a round-trip) |
 | `--snapshot-mode` | `compact` | Snapshot mode when `--snap` is set (`compact` or `accessible`) |
 
@@ -90,7 +91,7 @@ A simple `#fragment` waits up to 3 seconds for an element with that id and scrol
 
 ### snapshot
 
-Get the page as an accessibility tree with `[N]` element references. Both `compact` and `accessible` include exposed `button`/`menuitem` roles and focusable custom elements, including `tabindex="0"` and `tabindex="-1"`. Ignored AX nodes remain excluded; open a collapsed menu before taking a new snapshot.
+Get the page as an accessibility tree with `[N]` element references.
 
 ```bash
 cloak snapshot [--mode MODE] [--selector CSS] [--find TEXT] [--limit N] [--focus N] [--offset N] [--frames] [--diff] [--hide CSS] [--keep-overlays]
@@ -100,7 +101,8 @@ cloak snapshot [--mode MODE] [--selector CSS] [--find TEXT] [--limit N] [--focus
 |------|---------|-------------|
 | `--mode` | `compact` | `compact` (default), `accessible`, `content`, `dom` |
 | `--selector` (aliases `--within`, `-s`) | none | Scope the accessibility tree to a main-document CSS selector |
-| `--limit` (alias `--max-nodes`) | `0` | Truncate after N nodes (0 = no limit) |
+| `--find` | none | Keep only nodes whose accessible name, description or value contains TEXT (case-insensitive), plus their ancestors and descendants |
+| `--limit` (alias `--max-nodes`) | `browser.snapshot_max_nodes` (80) in `compact`, unlimited otherwise | Truncate after N nodes; `0` disables the cap |
 | `--focus` | `0` | Expand subtree around element `[N]` |
 | `--offset` | `0` | Start output from Nth element (pagination) |
 | `--frames` | off | Include iframe content |
@@ -111,11 +113,17 @@ cloak snapshot [--mode MODE] [--selector CSS] [--find TEXT] [--limit N] [--focus
 
 `--selector` scopes the tree before `[N]` refs are assigned, keeping refs and output limited to the selected subtree. It cannot be combined with `--frames` or `--mode dom`.
 
+`--find` filters before pagination, so the returned `[N]` refs stay actionable. A matching container keeps its whole subtree, so children whose names do not match can still appear. It works in `compact`/`accessible`/`content` modes and with `--selector`; combining it with `--frames` or `--mode dom` is rejected.
+
+Both `compact` and `accessible` give refs to exposed `button`/`menuitem` roles and to focusable custom elements (including `tabindex="0"` and `tabindex="-1"`). Nodes the accessibility tree ignores stay hidden — expand a collapsed menu and re-snapshot before addressing its items.
+
 Output starts with a header line:
 
 ```text
 # <title> | <url> | <total_nodes> nodes (<interactive> interactive) | seq=<n>
 ```
+
+With `--json`, the rendered tree is a string in `data.tree_text` (for example `"[1] button \"Save\""`), not a node array; add `--selector-map` for the structured `data.selector_map`.
 
 ### viewport
 
@@ -148,14 +156,17 @@ HTTP: `POST /emulation` with optional `color_scheme`, `reduced_motion`, `pointer
 Take a screenshot of the current page.
 
 ```bash
-cloak screenshot [--output FILE] [--viewport WIDTHxHEIGHT] [--dpr RATIO] [--full-page] [--format FORMAT] [--quality N] [--wait-for CSS] [--hide CSS] [--keep-overlays]
+cloak screenshot [--output FILE] [--viewport WIDTHxHEIGHT] [--dpr RATIO] [--expect-url GLOB] [--annotate [--within CSS] [--find TEXT] [--limit N]] [--full-page] [--format FORMAT] [--quality N] [--wait-for CSS] [--hide CSS] [--keep-overlays]
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--output` | auto-named in OS temp dir (`tempfile.gettempdir()`) | Save to file; `.png` selects PNG and `.jpg`/`.jpeg` selects JPEG |
+| `--output` | auto-named in OS temp dir (`tempfile.gettempdir()`) | Save to file; `.png` selects PNG and `.jpg`/`.jpeg` selects JPEG. The parent directory must exist |
 | `--viewport` | current page | Temporary `WIDTHxHEIGHT`, restored after capture |
 | `--dpr` | current page | Temporary device pixel ratio, restored after capture |
+| `--expect-url` | none | Fail with `url_mismatch` (and write no file) unless the page URL matches this case-sensitive glob |
+| `--annotate` | off | Draw fresh `[N]` refs and boxes on the image; see [Annotated screenshots](#annotated-screenshots) |
+| `--within` / `--find` / `--limit` | none | Filter which refs get annotated (require `--annotate`); same semantics as the snapshot flags |
 | `--full-page` | off | Capture full scrollable page |
 | `--format` | output suffix, then `browser.screenshot_format` (`jpeg`) | Explicit `jpeg` or `png` override; must agree with a recognized suffix |
 | `--quality` | `80` | JPEG quality 0-100 (ignored for PNG) |
@@ -177,6 +188,19 @@ cloak screenshot [--output FILE] [--viewport WIDTHxHEIGHT] [--dpr RATIO] [--full
 > `browser.screenshot_format`; an extensionless path falls back quietly. MCP tools
 > use JPEG quality 50 (configurable via `browser.mcp_screenshot_quality`); CLI uses
 > quality 80.
+
+`--json` output identifies the capture: `url`, `title`, `viewport` (CSS width/height), `dpr`, and `pixel_width`/`pixel_height` decoded from the image. A navigation during capture fails with `page_changed`. See [recovery and evidence](../guides/recovery.md) for the full evidence workflow.
+
+### Annotated screenshots
+
+```bash
+cloak screenshot --annotate -o annotated.png --json
+cloak screenshot --annotate --within '#panel' --find 'Save' --limit 20 --json
+```
+
+`--annotate` takes a fresh compact snapshot and draws each displayed ref's box and `[N]` label on the image without adding overlays to the page. `--within`, `--find` and `--limit` narrow which refs are labeled (they reuse the snapshot filters; ancestors count toward the limit, `0` is unlimited, omitted uses `browser.snapshot_max_nodes`) — the captured area is unchanged. Geometry comes from native CDP, so no JavaScript runs in the page.
+
+JSON adds `annotated` and `annotations`, one `{"ref":1,"role":"button","name":"Save","box":[100,80,140,40],"in_viewport":true}` per labeled ref. `box` is `[x,y,width,height]` in CSS pixels, relative to the viewport (or to the document with `--full-page`); DPR only scales the image. `in_viewport` is true when the box has a positive-area intersection with the capture-time viewport — for `--full-page` that still means the viewport, not the whole image, and offscreen refs stay in the list. Detached or non-rendered nodes have no box; no matches returns the plain image with an empty list. The refs belong to this capture's page state: re-snapshot after further DOM changes. CLI JSON also carries `data.saved`; HTTP returns the image as `data.base64`.
 
 ### diff screenshot
 
@@ -217,6 +241,8 @@ Returns current URL, open tabs, last 5 actions, capture state, and stealth tier.
 All interaction commands accept the element index positionally (`cloak click 5`) or via `--index N` / `-i N`. Most also take a positional secondary value (`cloak fill 5 "query"`).
 
 Positional references accept both `12` and `'[12]'`. Quote bracket references in shells such as zsh to prevent glob expansion.
+
+`click`, `fill` and `hover` also accept `--selector CSS` instead of a ref when the target is a known control and a snapshot round-trip is unnecessary: `cloak fill --selector '#email' --text 'user@example.com'`. The selector must match exactly one main-document element and cannot be combined with a ref or absolute coordinates (hover `--offset` is fine). Existing refs keep working.
 
 Add `--snap` to any interaction to attach a compact snapshot to the response.
 
@@ -291,10 +317,6 @@ cloak hover '[12]' --offset 10,-5
 
 `--offset` is relative to the element center; `--at` is an absolute viewport coordinate.
 
-`--find TEXT` matches accessible names, descriptions or values by case-insensitive substring before pagination. Matching nodes keep their ancestry and descendants, and returned `[N]` refs remain actionable. It supports compact/accessible/content modes and CSS scoping; combining it with `--frames` or DOM mode is rejected.
-
-`click`, `fill` and `hover` accept `--selector CSS` instead of a ref, with exactly one main-document match required. Existing refs remain usable. For example: `cloak fill --selector '#email' --text 'user@example.com'`. Do not combine selectors with refs or absolute coordinates; hover offsets are supported.
-
 ### drag
 
 ```bash
@@ -313,6 +335,16 @@ Select a dropdown option.
 ```bash
 cloak select N --value "option" [--snap]
 ```
+
+### do batch
+
+Run several actions from one JSONL or JSON-array file in a single request, with `$N.path` references to earlier results. Navigation and dialogs stop the batch.
+
+```bash
+cloak do batch --calls-file actions.jsonl [--sleep 0.15]
+```
+
+A batch may contain `{"kind":"snapshot","find":"Ready"}` steps. Snapshot steps default to `compact` with the configured node limit; explicit `mode`/`max_nodes` override it. A read-only batch never waits for the network. After actions, the next snapshot waits up to `browser.batch_settle_timeout` for requests started since those actions; consecutive snapshots do not repeat that wait. A new action starts a new wait window for the next snapshot. EventSource and `text/event-stream` responses (including fetch-based SSE) never block settling. For application readiness, use an explicit selector/JS wait step. For mixed daemon requests (navigate, wait, snapshot, raw routes) in one process, see [`cloak batch`](#batch).
 
 ## Content and network
 
@@ -343,6 +375,10 @@ characters so a page cannot flood agent context with a stack trace.
 
 A mistyped preset returns an `unknown_preset` error listing the valid names.
 
+On local backends, page-level evaluation always targets the active tab's main document — `frame focus` scopes iframe snapshots and element actions, not `js evaluate` or screenshot identity. `--world main` selects that document's default world by frame ID and unique execution-context identity, so iframe arrival order, names or duplicate URLs cannot redirect it. If navigation destroys the selected context, evaluation fails with `evaluate_failed` and the script is neither replayed nor run in a child frame; inspect the page before retrying scripts with side effects. RemoteBridge evaluation is unchanged.
+
+Right after `session close`, the fresh page is `about:blank`: JavaScript runs, but touching `localStorage`/`sessionStorage` returns `storage_origin_error` with the current URL. Navigate to the target origin first.
+
 ### fetch
 
 HTTP request using the browser's cookies and user agent. The response body goes to stdout; status / headers go to stderr.
@@ -361,15 +397,16 @@ cloak network [--since SEQ] [--pending] [--filter GLOB]
 
 Use `--since last_action` to see requests triggered by the most recent action.
 
-`--pending` lists requests still in flight across this session's owned tabs, with URL, method, resource type, response status when available and elapsed milliseconds. Receiving response headers does not end a request: SSE streams stay pending until closed. `--filter GLOB` filters URLs (`*` spans slashes), and combines with `--since`. Pending observation requires a local backend; RemoteBridge returns `unsupported_operation`.
+`--pending` lists requests still in flight across this session's owned tabs, with URL, method, resource type, response status when available and elapsed milliseconds. Receiving response headers does not end a request: SSE and EventSource streams stay pending until closed, which does not mean the page is stuck. Pending requests follow their document: replacing a document or detaching its frame retires them, while same-document history/hash updates keep them. `--filter GLOB` filters URLs (`*` spans slashes) and combines with `--since`. Pending observation requires a local backend; RemoteBridge returns `unsupported_operation`.
 
-### console show
-
-List console messages.
+### console
 
 ```bash
-cloak console show [--since SEQ]
+cloak console show [--since SEQ] [--level error] [--limit N]
+cloak console clear
 ```
+
+Console messages and uncaught page errors accumulate across navigations, each tagged with its page URL and timestamp. `console clear` empties the buffer explicitly (`console show --clear` remains supported).
 
 ## Dialog handling
 
@@ -498,7 +535,7 @@ cloak route list
 cloak route release RULE_OR_REQUEST_ID
 ```
 
-Release resumes pending requests; the rule remains installed for future requests. Remove the rule when finished. Held requests do not block snapshot/screenshot. Console messages accumulate across navigation with timestamps and page URLs; `cloak console clear` explicitly empties the buffer (`console show --clear` remains supported).
+Release resumes pending requests; the rule remains installed for future requests. Remove the rule when finished. Held requests do not block snapshot/screenshot.
 
 ### Raw CDP
 
@@ -637,8 +674,11 @@ reference](config.md#per-profile-config-overlay).
 cloak tab list                    # git-branch style: * marks active
 cloak tab new [--url URL]
 cloak tab close --tab-id N
+cloak tab close --others          # close every other tab owned by this session
 cloak tab switch --tab-id N
 ```
+
+`tab close --others` only touches tabs this session owns and returns their IDs in `closed`; text output shows the count and IDs, or `closed 0 tabs` when nothing else was open. Actions and evaluations report popups via `new_tab`; a popup still loading may first appear as `pending: true` without a tab ID, so check `tab list` before targeting it. Close finished popups proactively; agentcloak does not trim tabs just because many popups are open. Session idle reclamation and shutdown still close their pages.
 
 ## Bridge commands
 
@@ -705,6 +745,8 @@ screenshots, and click hit-testing. `--keep-overlays` reveals all three layers
 for one snapshot or screenshot. Profile selectors are stored in `hide.json`;
 the builtin `[data-cloak-hide]` rule cannot be removed.
 
+Hiding only affects elements matched by a configured selector. Overlays injected by other CDP tools are not removed automatically — add their selector explicitly.
+
 ## Launch
 
 Hot-switch the daemon's active browser tier (and optionally its profile) without restarting the daemon.
@@ -736,7 +778,7 @@ daemon's liveness metrics — `uptime <duration> | <N> requests | <N> active` �
 so it doubles as a lightweight monitoring readout. The line is omitted when the
 daemon predates the metrics fields.
 
-`hide` only hides configured matching DOM elements; it does not remove arbitrary overlays injected by external CDP tools. Add a selector explicitly when needed.
+`--log-level` overrides `daemon.log_level` for that process; `info` logs when each request entered, acquired, started and finished, with its session ID.
 
 ## Session management
 
@@ -747,12 +789,14 @@ One daemon hosts workspace-scoped sessions. Each session owns its tabs, referenc
 ```bash
 cloak navigate http://localhost:5173 --session panel-a
 cloak screenshot --session panel-a
-cloak session list                     # id | state | tier | idle
+cloak session list                     # label (id) | state | tier | idle | active actions | queued | workspace path
+cloak session list --all               # include sessions from every workspace
 cloak session close                    # close only the current caller's session
 cloak session close panel-a            # explicitly close this session
+cloak session close --force            # cancel queued/stuck work, then close (local backends)
 ```
 
-An idle session releases its own tabs after `daemon.session_idle_timeout` seconds (default 300s); the next request recreates them. A closed page or disconnected local browser is rebuilt on the next request. A shared browser failure loses volatile page state, so page actions report `page_recreated` until a new navigation. Changing the shared tier/profile while other sessions are active is rejected rather than changing those callers' browser. RemoteBridge does not silently share its user tab between callers.
+An idle session releases its own tabs after `daemon.session_idle_timeout` seconds (default 300s); the next request recreates them. `session close` releases the pages but keeps the session identity as `suspended` until the daemon exits — reusing the ID creates a fresh page and does not restore the old DOM; persistent storage follows the profile/workspace policy. A closed page or disconnected local browser is rebuilt on the next request. A shared browser failure loses volatile page state, so page actions report `page_recreated` until a new navigation. Changing the shared tier/profile while other sessions are active is rejected rather than changing those callers' browser. RemoteBridge does not silently share its user tab between callers. Queue limits, `--force` semantics and diagnostics are in [recovery and evidence](../guides/recovery.md).
 
 Clients discover the daemon by probing the recorded `/health` endpoint. They only read `daemon.json`; PID visibility or a read-only state directory does not invalidate a live daemon. Raw HTTP callers can send `X-Agentcloak-Workspace` and `X-Agentcloak-Session`; omitted headers use the legacy empty workspace and `default` session. CLI/MCP send their resolved identities.
 
@@ -788,9 +832,7 @@ cloak cdp endpoint                 # raw ws:// URL for jshookmcp / other CDP too
 
 ## Recovery and evidence
 
-[Bounded queues, force close, capture identity, URL assertions and page CDP endpoints](../guides/recovery.md). `session list --all` includes labels, workspace paths, active actions and queue counts. `tab close --others` affects only the current session.
-
-`tab close --others` returns `closed` as the list of closed IDs; text output shows the count and IDs, or `closed 0 tabs` when no sibling tabs remain.
+Bounded session queues, `session close --force`, screenshot identity, `navigate --expect-path` / `screenshot --expect-url`, `cdp endpoint --page` and build identification are described in the [recovery and evidence guide](../guides/recovery.md).
 
 ## batch
 
@@ -807,7 +849,9 @@ cloak batch --calls-file calls.jsonl --json
 
 Each line is one daemon JSON request: `method`, relative `path`, optional `params` and `body`. One process and HTTP connection pool serve the sequence. Session/workspace come from the usual global flags/config and cannot change per record. Full URLs and arbitrary headers are rejected; use `params` for query strings.
 
-`--json` emits one compact envelope per record, adding zero-based `index` and one-based input `line`; each is flushed before reading the next record (`--pretty` does not expand JSONL). The first invalid input or failed request emits `ok:false` and exits nonzero. Earlier operations remain applied; no rollback or automatic action replay occurs. An empty input is a no-op. Use generated HTTP route references for request fields. This complements `cloak do batch --calls-file`, which remains the action-only batch with result references and navigation/dialog stopping rules.
+`--json` emits one compact envelope per record, adding zero-based `index` and one-based input `line`; each is flushed before reading the next record (`--pretty` does not expand JSONL). The first invalid input or failed request emits `ok:false` and exits nonzero. Earlier operations remain applied; no rollback or automatic action replay occurs. An empty input is a no-op. Request fields follow the generated HTTP route reference.
+
+Unlike [`do batch`](#do-batch), this runner has no implicit settle wait between records: insert `{"method":"POST","path":"/wait","body":{"condition":"selector","value":"#ready","timeout":5000}}` before reading asynchronously rendered content. `do batch` remains the action-only runner with result references and navigation/dialog stopping rules.
 
 ## record
 
@@ -818,27 +862,8 @@ cloak record stop -o transition.webm
 # No encoder required:
 cloak record start --format zip
 cloak record stop -o frames.zip
-cloak screenshot --annotate --dpr 2 -o annotated.png --json
 ```
 
 Screen recording uses a dedicated CDP screencast pinned to the tab active at start. Navigation on that tab stays recorded; switching tabs does not switch the recording target. Each session owns its recording. No audio is recorded. Local Playwright and CloakBrowser are supported; RemoteBridge rejects recording.
 
 WebM export requires `ffmpeg` with the VP9 encoder on the daemon host. ZIP contains JPEG frames and `manifest.json` with per-frame URLs, elapsed timestamps and CDP metadata. Screencast captures compositor updates, not a fixed FPS; WebM preserves their timing. Frames are capped at 1920×1080 and letterboxed to the first frame's dimensions if the viewport changes. Limits are 600 frames/120 seconds by default, configurable up to 3000 frames/600 seconds, with a fixed 64 MiB frame-data cap. A limit or tab close stops capture but retains frames until `record stop`; session close discards unfinished recordings. Start rejects an unfinished recording. Stop writes on the CLI/MCP client host, or returns base64 over HTTP.
-
-`--annotate` creates fresh snapshot refs and draws their boxes and `[N]` labels on the image, without adding page overlays. JSON includes `annotated` and `annotations` (`ref`, `role`, `name`, `box`). Boxes use CSS pixels relative to the viewport, or the document for full-page captures; the drawing scales by the captured DPR. Native CDP geometry avoids JavaScript fingerprint noise. Detached/non-rendered nodes have no box. Returned refs belong to this capture's page state; re-snapshot after subsequent DOM changes. Temporary viewport/DPR still restore after capture.
-
-### Lifecycle and response details
-
-`network --pending` includes live EventSource streams. Replacing a document or detaching its frame retires old requests; history/hash updates preserve them. Action batches accept `{"kind":"snapshot","find":"Ready"}`. Snapshot steps default to `compact` with the configured node limit; explicit `mode`/`max_nodes` override it. A read-only batch does not wait for network settling. After actions, the next snapshot waits up to `settle_timeout` for requests started since those actions; subsequent snapshots do not repeat that wait. EventSource and responses with `Content-Type: text/event-stream` (including fetch-based SSE) remain visible in pending output but do not block settling. Use an explicit selector/JS wait for application readiness. Top-level JSONL batch has no implicit SPA-ready wait: insert `{"method":"POST","path":"/wait","body":{"condition":"selector","value":"#ready","timeout":5000}}` before reading asynchronously rendered content.
-
-`session close` closes pages and retains a `suspended` session identity until daemon shutdown. Reusing it creates a fresh page; it does not restore the old DOM. Persistent storage follows the configured profile/workspace policy.
-
-Snapshot JSON puts the rendered tree in `data.tree_text`, e.g. `"[1] button \"Save\""`, including `--find`; use `--selector-map` for the optional structured `data.selector_map`.
-
-Annotation filters require `--annotate`: `--within '#panel' --find 'Save' --limit 20`. They reuse compact snapshot filtering and line limits (ancestors count); omitted limit uses the snapshot config, `0` is unlimited. Only displayed refs are labeled; the screenshot area is unchanged. No matches returns an image with an empty `data.annotations` list. Each item is `{"ref":1,"role":"button","name":"Save","box":[100,80,140,40],"in_viewport":true}`. The box is `[x,y,width,height]` in CSS pixels, viewport-relative or document-relative for `--full-page`; DPR scales only the image. CLI JSON also contains `data.saved`; HTTP returns the image as `data.base64`.
-
-On local backends, page-level JavaScript evaluation always targets the active tab's main document. `world="main"` selects that document's default world by its frame ID and unique execution-context identity; iframe arrival order, names and duplicate URLs do not affect selection. `frame focus` scopes iframe snapshots and element operations, not page-level evaluate or screenshot identity. Navigation that destroys the selected context fails without replaying JavaScript or falling back to a child frame. RemoteBridge evaluation is unchanged by this fix.
-
-`find` retains matching containers and their descendants, plus ancestor context; a matching container can therefore include children whose names do not match. Each annotation also has `in_viewport`: true when its box has a positive-area intersection with the current viewport. This still means the capture-time viewport for `--full-page`, not the whole image. Offscreen annotations remain in the list; filter on this field when needed.
-
-After `session close`, a storage-access evaluation on the fresh `about:blank` page returns `storage_origin_error` with the URL and a navigation hint. Other JavaScript remains available; navigate to the target origin before accessing its storage.

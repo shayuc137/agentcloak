@@ -45,14 +45,14 @@ export AGENTCLOAK_HUMANIZE=true
 
 ### Headed vs headless
 
-CloakBrowser runs in headed mode by default because anti-bot systems detect headless browsers. On servers without a display, agentcloak automatically starts Xvfb (a virtual framebuffer).
+CloakBrowser runs headless by default (`browser.headless = true`), so a fresh install needs no display. Headed mode survives more bot checks; opt in with `headless = false` (or `cloak daemon start --headed`). On a Linux host without `$DISPLAY`, agentcloak then starts Xvfb (a virtual framebuffer) automatically — it must be installed:
 
 ```bash
 # Install Xvfb on Debian/Ubuntu
 sudo apt-get install -y xvfb
 ```
 
-On desktop environments (Linux with display, macOS, Windows), headed mode uses the real display.
+On desktop environments (Linux with a display, macOS, Windows), headed mode uses the real display and Xvfb is never started.
 
 ### Binary management
 
@@ -176,16 +176,16 @@ The `auto` tier (default) resolves to `cloak`.
 | Bot detection bypass | High | Low | Inherent |
 | Cloudflare bypass | Built-in (screenX patch) | No | Inherent |
 | Browser binary | Auto-download | Manual install | User's Chrome |
-| Headed mode | Default (Xvfb auto) | Optional | Always |
+| Headed mode | Opt-in (`headless = false`; Xvfb auto on Linux) | Opt-in | Always |
 | Humanize support | Yes | No | N/A |
 | Profile persistence | Yes | Yes | Inherent |
 | Proxy support | Full (incl. SOCKS5 auth) | Limited | N/A |
 | Setup complexity | Zero | One command | Extension install |
-| Reverse engineering | Full (debugger / route / streaming / sourcemap) | Full | Full |
+| Reverse engineering | Debugger / route / streaming / sourcemap | Debugger / route / streaming / sourcemap | Implemented; full parity unverified |
 
 ## Reverse-engineering support
 
-All three backends support the Phase 7b reverse-engineering capabilities — debugger, network route interception, WebSocket/SSE streaming, source maps, init-script injection, and GraphQL. The commands are identical regardless of backend; see the [CLI reference](../reference/cli.md#reverse-engineering).
+The backends implement debugger, network route interception, WebSocket/SSE streaming, source maps, init-script injection, and GraphQL through common commands. RemoteBridge full parity remains unverified; see the [verification boundaries](#workspace-and-verification-boundaries) and [CLI reference](../reference/cli.md#reverse-engineering).
 
 CloakBrowser and Playwright keep a per-tab persistent CDP channel for manager events (debugger pauses, WebSocket frames). `cdp send` uses a separate persistent channel, retaining settings such as viewport overrides across successful calls. A raw-call timeout or cancellation closes only that channel; reapply its CDP settings after recovery. Closing a tab/session cleans up its channels. RemoteBridge sends CDP through its existing extension connection. Domains are enabled lazily.
 
@@ -214,4 +214,4 @@ Local screen recording uses page-pinned CDP screencast with bounded frames; WebM
 
 Local pending-request observation follows document/frame lifetimes: document replacement and frame detach retire old requests, while same-document history/hash updates retain them. Live EventSource streams remain observable but do not block action-batch snapshot settling.
 
-On local backends, page-level JavaScript evaluation always targets the active tab's main document. `world="main"` selects that document's default world by its frame ID and unique execution-context identity; iframe arrival order, names and duplicate URLs do not affect selection. `frame focus` scopes iframe snapshots and element operations, not page-level evaluate or screenshot identity. Navigation that destroys the selected context fails without replaying JavaScript or falling back to a child frame. RemoteBridge evaluation is unchanged by this fix.
+On local backends, page-level JavaScript evaluation is pinned to the active tab's main document by frame and execution-context identity; `frame focus` never retargets it, and a context destroyed by navigation fails without replay. RemoteBridge evaluation is unchanged. Details: [`js evaluate`](../reference/cli.md#js-evaluate).

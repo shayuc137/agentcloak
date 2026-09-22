@@ -28,6 +28,7 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 43 个工具。已包含在�
 | `timeout` | `float` | `30.0` | 等待页面加载的最大秒数 |
 | `include_snapshot` | `bool` | `false` | 在响应中包含无障碍树 snapshot |
 | `snapshot_mode` | `str` | `compact` | `include_snapshot` 为 true 时的 snapshot 模式 |
+| `expect_path` | `str` | `""` | 最终 URL 的 pathname 必须与该值完全一致（忽略查询串/fragment），否则以 `url_mismatch` 失败 |
 
 简单的 `#id` fragment 会等待最多 3 秒，让延迟渲染的 SPA 锚点出现并滚动到目标。未命中仍成功并报告 `[anchor] not found`；hashbang 和参数型 fragment 会跳过。
 
@@ -39,8 +40,9 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 43 个工具。已包含在�
 |------|------|-------|------|
 | `mode` | `str` | `compact` | `compact`（默认）、`accessible`、`content` 或 `dom` |
 | `selector` | `str` | `""` | 将无障碍树限制到主文档中的 CSS 选择器范围 |
+| `find` | `str` | `""` | 只保留可访问名称/描述/值包含该文本（大小写不敏感）的节点及其祖先和后代；引用仍可操作 |
 | `max_chars` | `int` | `0` | 截断 tree_text 到 N 个字符（0 = 不限制） |
-| `max_nodes` | `int` | `0` | 在 N 个节点后截断（0 = 不限制） |
+| `max_nodes` | `int` | `-1` | 在 N 个节点后截断；`-1` 表示 `compact` 模式使用 `browser.snapshot_max_nodes`（80），`0` 关闭上限 |
 | `focus` | `int` | `0` | 展开元素 `[N]` 周围的子树 |
 | `offset` | `int` | `0` | 从第 N 个元素开始（分页） |
 | `frames` | `bool` | `false` | 包含 iframe 内容 |
@@ -48,7 +50,7 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 43 个工具。已包含在�
 | `hide` | `str \| null` | `null` | 本次 snapshot 隐藏的逗号分隔 CSS 选择器 |
 | `keep_overlays` | `bool` | `false` | 本次显示持久、一次性和 `[data-cloak-hide]` overlay |
 
-`selector` 不能与 `frames=true` 或 `mode="dom"` 组合使用。仅当模式、选择器和 frame 设置一致时，才会复用 diff 基线。
+`selector` 和 `find` 不能与 `frames=true` 或 `mode="dom"` 组合使用。仅当模式、选择器和 frame 设置一致时，才会复用 diff 基线。该工具把树渲染为文本；HTTP/CLI 的 JSON 对应字段是 `data.tree_text`。
 
 ### agentcloak_screenshot
 
@@ -56,6 +58,11 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 43 个工具。已包含在�
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|-------|------|
+| `annotate` | `bool` | `false` | 在图片上绘制新生成的 `[N]` 引用和元素框；元数据返回 `annotations: [{ref, role, name, box: [x,y,width,height], in_viewport}]`，单位 CSS 像素（相对视口，`full_page` 时相对文档） |
+| `within` / `find` / `limit` | `str` / `str` / `int \| null` | `""` / `""` / `null` | 筛选被标注的引用（须配合 `annotate`）；语义与 snapshot 同名参数一致，`limit=0` 不限。截图范围不变 |
+| `viewport` | `str \| null` | `null` | 一次性 `WIDTHxHEIGHT`，截图后恢复 |
+| `dpr` | `float \| null` | `null` | 一次性设备像素比，截图后恢复 |
+| `expect_url` | `str` | `""` | 页面 URL 必须匹配该大小写敏感的 glob，否则以 `url_mismatch` 失败且不返回图像 |
 | `full_page` | `bool` | `false` | 捕获完整可滚动页面 |
 | `format` | `str \| null` | `null` | 用 `jpeg` 或 `png` 覆盖；省略时使用 `browser.screenshot_format` |
 | `quality` | `int` | `config.mcp_screenshot_quality` | JPEG 质量 0-100（默认比 CLI 小，匹配 MCP token 预算） |
@@ -65,7 +72,7 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 43 个工具。已包含在�
 | `hide` | `str \| null` | `null` | 本次截图隐藏的逗号分隔 CSS 选择器 |
 | `keep_overlays` | `bool` | `false` | 本次显示持久、一次性和 `[data-cloak-hide]` overlay |
 
-返回的 `format` 同时决定 `ImageContent` MIME 类型和元数据。
+返回的 `format` 同时决定 `ImageContent` MIME 类型和元数据。元数据同时标识本次截图——`url`、`title`、`viewport`、`dpr`、`pixel_width`、`pixel_height`；截图期间发生导航会以 `page_changed` 失败。见[恢复与证据](../guides/recovery.md)。
 
 ## 交互
 
@@ -75,15 +82,23 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 43 个工具。已包含在�
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|-------|------|
-| `kind` | `str` | 必填 | `click`、`fill`、`type`、`scroll`、`hover`、`select`、`press`、`keydown`、`keyup` |
-| `target` | `str` | `""` | 元素 `[N]` 引用（scroll/press/key 时可为空） |
+| `kind` | `str` | 必填 | `click`、`fill`、`type`、`scroll`、`hover`、`drag`、`select`、`press`、`keydown`、`keyup` |
+| `target` | `str` | `""` | 元素 `[N]` 引用（scroll/press/key 时可为空）；drag 的起点 |
+| `selector` | `str \| null` | `null` | click/fill/hover 用主文档中唯一匹配的 CSS 选择器替代引用；不能与 `target`、`at` 或坐标组合 |
 | `text` | `str` | `""` | fill/type 的文本 |
-| `key` | `str` | `""` | press/keydown/keyup 的按键（如 `Enter`、`Control+a`） |
+| `key` | `str` | `""` | press/keydown/keyup 的按键（如 `Enter`、`Control+a`）；`Ctrl`/`Cmd`/`Opt` 等修饰键别名大小写不敏感 |
 | `value` | `str` | `""` | select 的选项值 |
 | `direction` | `str` | `down` | 滚动方向（up/down） |
+| `at` | `str \| null` | `null` | hover 到视口绝对坐标 `x,y`（不带 `target`） |
+| `offset` | `str \| null` | `null` | hover 相对目标元素中心的 `dx,dy` 偏移 |
+| `destination` | `str \| null` | `null` | drag 的终点引用，与 `target` 配对 |
+| `from_point` / `to_point` | `str \| null` | `null` | 用绝对坐标 `x,y` 代替引用进行拖拽 |
+| `steps` | `int` | `20` | drag 的移动步数（1-1000） |
+| `hold` / `duration` | `int` | `0` | drag：按下后停留的毫秒数 / 移动过程摊开的毫秒数（0-60000） |
+| `sample` | `str \| null` | `null` | drag：每一步之后求值的 JavaScript 表达式；结果记录步骤号、经过毫秒数和值 |
 | `include_snapshot` | `bool` | `false` | 在响应中附带 compact snapshot |
 
-返回值包含主动状态反馈：`pending_requests`、`dialog`、`navigation`、`current_value`。
+返回值包含主动状态反馈：`pending_requests`、`dialog`、`navigation`、`current_value`、`new_tab`。drag 使用真实指针输入；失败或取消都会释放鼠标。
 
 ## 内容
 
@@ -97,6 +112,8 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 43 个工具。已包含在�
 | `world` | `str` | `main` | `main`（可见页面全局对象）或 `isolated`（隔离环境） |
 | `max_return_size` | `int` | `50000` | 序列化结果的最大字节数 |
 | `preset` | `str` | `""` | 逆向 preset（覆盖 `js`，强制 main world）：`vue_inspect`、`react_inspect`、`jwt_decode`、`cookie_parse`、`storage_dump` |
+
+本地后端的求值始终面向当前标签页的主文档——`agentcloak_frame` 只作用于 iframe 快照和元素操作，不影响 evaluate。`world="main"` 按主 frame ID 和唯一执行上下文身份选择该文档的默认世界，iframe 顺序、名称或重复 URL 都无法把它引到别处；导航销毁了上下文时以 `evaluate_failed` 失败，不重放脚本也不回落到子 frame。RemoteBridge 的求值行为不变。刚关闭 session 后页面是 `about:blank`，访问存储会返回 `storage_origin_error`，先导航再访问。
 
 ### agentcloak_fetch
 
@@ -118,7 +135,9 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 43 个工具。已包含在�
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|-------|------|
-| `since` | `str` | `0` | seq 编号或 `last_action` |
+| `since` | `str` | `0` | seq 编号或 `last_action`（包含最近一次动作自身触发的请求） |
+| `pending` | `bool` | `false` | 只列出本 session 标签页上仍在进行的请求，包括已收到响应头的 SSE/EventSource 流；仅本地后端（RemoteBridge 返回 `unsupported_operation`） |
+| `filter` | `str` | `""` | 大小写敏感的 URL glob（`*` 可跨斜线）；可与 `since` 组合 |
 
 ## 捕获
 
@@ -200,6 +219,7 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 43 个工具。已包含在�
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|-------|------|
 | `query` | `str` | `health` | `health` 或 `cdp_endpoint` |
+| `page` | `bool` | `false` | 配合 `cdp_endpoint`：返回本 session 的精确页面 target（`ws_endpoint` + `target_id`）而非浏览器端点；仅本地后端 |
 
 ### agentcloak_launch
 
@@ -219,6 +239,7 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 43 个工具。已包含在�
 | `action` | `str` | `list` | `list`、`new`、`close` 或 `switch` |
 | `tab_id` | `int` | `-1` | 标签页 ID（用于 close/switch） |
 | `url` | `str` | `""` | 新标签页的 URL |
+| `others` | `bool` | `false` | 配合 `close`：关闭本 session 拥有的其他所有标签页而非 `tab_id`；在 `closed` 中返回它们的 ID |
 
 ### agentcloak_profile
 
@@ -399,14 +420,17 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 43 个工具。已包含在�
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|-------|------|
-| `action` | `str` | `list` | `add`、`remove` 或 `list` |
-| `pattern` | `str` | `""` | URL glob（`*` = 任意字符；不含 `*` = 子串匹配） |
-| `rule_action` | `str` | `continue` | `add` 的处置方式：`abort`、`fulfill` 或 `continue` |
+| `action` | `str` | `list` | `add`、`remove`、`list` 或 `release` |
+| `pattern` | `str` | `""` | URL glob（`*` = 任意字符，可跨 `/`；不含 `*` = 子串匹配） |
+| `rule_action` | `str` | `continue` | `add` 的处置方式：`abort`、`fulfill`、`continue` 或 `hold`（挂起匹配请求直到放行） |
+| `identifier` | `str` | `""` | `release` 使用：要放行的挂起请求 ID 或规则 ID；规则仍保留 |
 | `resource_type` | `str` | `""` | 只匹配该资源类型（`xhr`、`image`...） |
 | `method` | `str` | `""` | 只匹配该 HTTP 方法 |
 | `status` | `int` | `0` | `fulfill` 规则的响应状态码（默认 200） |
 | `content_type` | `str` | `""` | `fulfill` 响应的 Content-Type |
 | `body` | `str` | `""` | `fulfill` 响应的 body |
+
+`list` 返回规则 ID、命中次数和挂起请求 ID；零命中的规则会被标记，避免把“登记成功”当作“拦截已验证”。挂起的请求不会阻塞 snapshot 和截图。
 
 ### agentcloak_headers
 
@@ -491,18 +515,54 @@ JS 代码覆盖率、CPU 性能分析和堆内存快照——找出哪些代码�
 |------|------|--------|------|
 | （无） | | | 返回所有可用的 `Performance.getMetrics` 计数器 |
 
-## 证据参数
+## 视口、模拟与原生 CDP
 
-`agentcloak_navigate(expect_path=...)` 检查最终 pathname；`agentcloak_screenshot(expect_url=...)` 检查截图 URL，并随图片返回 URL、标题、视口、DPR 与像素尺寸。`agentcloak_status(query="cdp_endpoint", page=True)` 选择调用方页面 target；`agentcloak_tab(action="close", others=True)` 只关闭同会话其他标签页。会话列表与强制关闭仍是 CLI/HTTP 管理操作，见[恢复与证据](../guides/recovery.md)。
+### agentcloak_viewport
 
-## agentcloak_record
+调整当前 session 页面的尺寸，不导航也不丢失登录态。
 
-`action`: `start` / `status` / `stop`; `format`: `webm` (default) / `zip`; `max_frames`: 600; `max_seconds`: 120; `output_path`: "".
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|-------|------|
+| `width` / `height` | `int` | 必填 | CSS 像素，1-16384 |
+| `dpr` | `float \| null` | `null` | 设备像素比；省略时保留当前值 |
 
-start 固定当前 session 的活动标签页。status 返回采集状态和限制；stop 在 MCP 客户端机器写入文件（默认临时路径），返回路径、帧数和时长。WebM 要求 daemon 安装 ffmpeg，ZIP 不需要。关闭 session 会丢弃未导出的录屏。限制与归属见[录屏说明](cli.md#record)。
+### agentcloak_emulate
 
-`agentcloak_screenshot(annotate=true)` 返回标注图片及引用/框元数据。`agentcloak_snapshot(find="文本")` 在分页前搜索可访问名称/值。`agentcloak_action` 的 click/fill/hover 支持 `selector`，drag 支持 `hold`、`duration`、`sample`；`agentcloak_network` 支持 `pending` 和 URL `filter`。
+本地后端的 session 级媒体与指针覆盖。不带参数调用时返回当前覆盖值（`null` = 浏览器默认）。
 
-`agentcloak_screenshot(annotate=true, within="#panel", find="Save", limit=20)` 筛选标注引用，不裁剪图片；`limit=0` 不限。标注元数据为 CSS 像素的 `annotations: [{ref, role, name, box: [x,y,width,height]}]`；snapshot 的 HTTP/CLI JSON 使用 `data.tree_text`，MCP snapshot 工具则渲染为文本。
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|-------|------|
+| `color_scheme` | `light` \| `dark` \| `null` | `null` | 配色方案覆盖 |
+| `reduced_motion` | `bool \| null` | `null` | `true` 偏好减少动画，`false` 表示无偏好 |
+| `pointer` | `coarse` \| `fine` \| `null` | `null` | 触控/指针覆盖；要求有头的本地浏览器——无头请求在改动页面前即失败 |
+| `reset` | `bool` | `false` | 清除全部覆盖；不能与其他设置组合。视口、DPR 和 HTTP header 不受影响 |
 
-本地后端的页面级 JavaScript 求值始终面向当前标签页的主文档。`world="main"` 根据主 frame ID 和唯一执行上下文身份选择该文档的默认世界，不依赖 iframe 事件顺序、名称或重复 URL。`frame focus` 用于 iframe 快照和元素操作，不改变页面级 evaluate 或截图身份。导航销毁所选上下文时返回失败，不重放 JavaScript，也不回落到子 frame；本次未更改 RemoteBridge 求值。
+覆盖应用到所有已拥有的标签页和新标签页，跨导航保留，随 session 关闭或 daemon 重启结束。RemoteBridge 对修改请求返回 `unsupported_operation`。
+
+### agentcloak_cdp_send
+
+向本 session 的页面发送原生 CDP 命令。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|-------|------|
+| `method` | `str` | 必填 | CDP 方法，如 `Runtime.evaluate` |
+| `params` | `dict \| null` | `null` | 方法参数（默认 `{}`） |
+| `timeout` | `int` | `30000` | 单次请求超时（毫秒）；失败时为 `cdp_timeout` / `cdp_call_failed` |
+
+本地原生调用共用一条独立的 per-tab 通道，成功调用之间保留视口覆盖等状态；超时或取消会重置该通道，之后需重新设置其 CDP 状态。
+
+## 录屏
+
+### agentcloak_record
+
+录制本 session 当前标签页，并把产物导出到 MCP 所在主机。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|-------|------|
+| `action` | `str` | 必填 | `start`、`status` 或 `stop` |
+| `format` | `str` | `webm` | `webm`（daemon 主机需要含 VP9 的 `ffmpeg`）或 `zip`（JPEG 帧 + `manifest.json`，无需编码器） |
+| `max_frames` | `int` | `600` | 帧数上限，最高 3000；另有固定 64 MiB 帧数据上限 |
+| `max_seconds` | `int` | `120` | 时长上限，最高 600 |
+| `output_path` | `str` | `""` | `stop` 的输出路径；留空写入临时文件。父目录必须已存在 |
+
+`start` 固定当时的活动标签页：该页导航继续录制，切换标签不会转移目标，未导出的录屏会阻止再次 `start`。达到上限或关闭标签页会停止采集但保留帧供 `stop` 导出；关闭 session 则丢弃。`status` 报告录制状态与上限；`stop` 返回保存路径、帧数和时长。RemoteBridge 拒绝录屏。

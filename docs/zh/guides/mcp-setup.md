@@ -110,11 +110,14 @@ MCP server 暴露 43 个工具。完整参数列表参见 [MCP 参考](../refere
 | 上传 | `agentcloak_upload` |
 | Frame | `agentcloak_frame` |
 | 管理 | `agentcloak_status`、`agentcloak_launch`、`agentcloak_tab`、`agentcloak_profile`、`agentcloak_doctor`、`agentcloak_resume` |
+| 视口、模拟与原生 CDP | `agentcloak_viewport`、`agentcloak_emulate`、`agentcloak_cdp_send` |
+| 录屏 | `agentcloak_record` |
 | Cookie | `agentcloak_cookies` |
 | 页面隐藏 | `agentcloak_hide` |
 | Spell | `agentcloak_spell_run`、`agentcloak_spell_list` |
 | Bridge | `agentcloak_bridge` |
-| 网页逆向 | `agentcloak_script`、`agentcloak_route`、`agentcloak_headers`、`agentcloak_graphql`、`agentcloak_streaming`、`agentcloak_debugger`、`agentcloak_sourcemap` |
+| 控制台、下载与存储 | `agentcloak_console`、`agentcloak_download`、`agentcloak_storage`、`agentcloak_clipboard`、`agentcloak_pdf`、`agentcloak_serve` |
+| 网页逆向 | `agentcloak_script`、`agentcloak_route`、`agentcloak_headers`、`agentcloak_graphql`、`agentcloak_streaming`、`agentcloak_debugger`、`agentcloak_sourcemap`、`agentcloak_profiler`、`agentcloak_performance` |
 
 ## 验证 MCP 配置
 

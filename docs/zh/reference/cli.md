@@ -77,12 +77,13 @@ AGENTCLOAK_OUTPUT=json cloak snapshot
 导航浏览器到指定 URL。
 
 ```bash
-cloak navigate URL [--timeout SECONDS] [--snap] [--snapshot-mode MODE]
+cloak navigate URL [--timeout SECONDS] [--expect-path /PATH] [--snap] [--snapshot-mode MODE]
 ```
 
 | 参数 | 默认值 | 说明 |
 |------|-------|------|
 | `--timeout` | `30` | 等待页面加载的最大秒数 |
+| `--expect-path` | 无 | 最终 URL 的 pathname 必须与该值完全一致（忽略查询串和 fragment），否则以 `url_mismatch` 失败——用于识别被静默跳转到登录页 |
 | `--snap`（别名 `--snapshot`） | 关闭 | 附带 compact snapshot（省一次往返） |
 | `--snapshot-mode` | `compact` | `--snap` 启用时的 snapshot 模式（`compact` 或 `accessible`） |
 
@@ -90,7 +91,7 @@ cloak navigate URL [--timeout SECONDS] [--snap] [--snapshot-mode MODE]
 
 ### snapshot
 
-获取带有 `[N]` 元素引用的无障碍树。`compact` 和 `accessible` 都包含无障碍树暴露的 `button`/`menuitem` 及可聚焦自定义元素，包括 `tabindex="0"` 和 `tabindex="-1"`。被 AX 忽略的节点仍不显示；菜单展开后重新 snapshot，才能获取菜单项引用。
+获取带有 `[N]` 元素引用的无障碍树。
 
 ```bash
 cloak snapshot [--mode MODE] [--selector CSS] [--find TEXT] [--limit N] [--focus N] [--offset N] [--frames] [--diff] [--hide CSS] [--keep-overlays]
@@ -100,7 +101,8 @@ cloak snapshot [--mode MODE] [--selector CSS] [--find TEXT] [--limit N] [--focus
 |------|-------|------|
 | `--mode` | `compact` | `compact`（默认）、`accessible`、`content`、`dom` |
 | `--selector`（别名 `--within`、`-s`） | 无 | 将无障碍树限制到主文档中的 CSS 选择器范围 |
-| `--limit`（别名 `--max-nodes`） | `0` | 在 N 个节点后截断（0 = 不限制） |
+| `--find` | 无 | 只保留可访问名称、描述或值包含 TEXT（大小写不敏感）的节点及其祖先和后代 |
+| `--limit`（别名 `--max-nodes`） | `compact` 模式为 `browser.snapshot_max_nodes`（80），其他模式不限 | 在 N 个节点后截断；`0` 关闭上限 |
 | `--focus` | `0` | 展开元素 `[N]` 周围的子树 |
 | `--offset` | `0` | 从第 N 个元素开始输出（分页） |
 | `--frames` | 关闭 | 包含 iframe 内容 |
@@ -111,11 +113,17 @@ cloak snapshot [--mode MODE] [--selector CSS] [--find TEXT] [--limit N] [--focus
 
 `--selector` 会先裁剪树，再分配 `[N]` 引用，因此引用和输出都只覆盖选中的子树。它不能与 `--frames` 或 `--mode dom` 组合使用。
 
+`--find` 在分页前过滤，返回的 `[N]` 引用可直接操作。匹配的容器会保留整棵子树，所以名称不匹配的子节点也可能出现。支持 `compact`/`accessible`/`content` 模式并可与 `--selector` 组合；与 `--frames` 或 `--mode dom` 组合会被拒绝。
+
+`compact` 和 `accessible` 都会给暴露的 `button`/`menuitem` 角色以及可聚焦的自定义元素（含 `tabindex="0"` 和 `tabindex="-1"`）分配引用。被无障碍树忽略的节点仍不显示——先展开折叠的菜单，再重新 snapshot 获取菜单项引用。
+
 输出以 header 行开头：
 
 ```text
 # <title> | <url> | <total_nodes> nodes (<interactive> interactive) | seq=<n>
 ```
+
+`--json` 模式下渲染后的树是 `data.tree_text` 里的一段字符串（例如 `"[1] button \"Save\""`），不是节点数组；需要结构化引用表时加 `--selector-map` 获取 `data.selector_map`。
 
 ### viewport
 
@@ -148,14 +156,17 @@ HTTP 使用 `POST /emulation`，字段为可选的 `color_scheme`、`reduced_mot
 截取当前页面的屏幕截图。
 
 ```bash
-cloak screenshot [--output FILE] [--viewport WIDTHxHEIGHT] [--dpr RATIO] [--full-page] [--format FORMAT] [--quality N] [--wait-for CSS] [--hide CSS] [--keep-overlays]
+cloak screenshot [--output FILE] [--viewport WIDTHxHEIGHT] [--dpr RATIO] [--expect-url GLOB] [--annotate [--within CSS] [--find TEXT] [--limit N]] [--full-page] [--format FORMAT] [--quality N] [--wait-for CSS] [--hide CSS] [--keep-overlays]
 ```
 
 | 参数 | 默认值 | 说明 |
 |------|-------|------|
-| `--output` | 自动放在系统临时目录（`tempfile.gettempdir()`） | 保存到文件；`.png` 选择 PNG，`.jpg`/`.jpeg` 选择 JPEG |
+| `--output` | 自动放在系统临时目录（`tempfile.gettempdir()`） | 保存到文件；`.png` 选择 PNG，`.jpg`/`.jpeg` 选择 JPEG。父目录必须已存在 |
 | `--viewport` | 当前页面 | 一次性 `WIDTHxHEIGHT`，截图后恢复 |
 | `--dpr` | 当前页面 | 一次性设备像素比，截图后恢复 |
+| `--expect-url` | 无 | 页面 URL 必须匹配该大小写敏感的 glob，否则以 `url_mismatch` 失败且不写文件 |
+| `--annotate` | 关闭 | 在图片上绘制新生成的 `[N]` 引用和元素框；见[带标注的截图](#带标注的截图) |
+| `--within` / `--find` / `--limit` | 无 | 筛选被标注的引用（须配合 `--annotate`），语义与 snapshot 同名参数一致 |
 | `--full-page` | 关闭 | 捕获完整可滚动页面 |
 | `--format` | 输出后缀，其次为 `browser.screenshot_format`（`jpeg`） | 显式覆盖为 `jpeg` 或 `png`；必须与已识别后缀一致 |
 | `--quality` | `80` | JPEG 质量 0-100（PNG 时忽略） |
@@ -174,6 +185,19 @@ cloak screenshot [--output FILE] [--viewport WIDTHxHEIGHT] [--dpr RATIO] [--full
 > warning，再回退到实时 `browser.screenshot_format`；无后缀路径会安静回退。
 > MCP 的 JPEG 质量默认 50（可通过 `browser.mcp_screenshot_quality` 配置），
 > CLI 默认质量 80。
+
+`--json` 输出带截图身份：`url`、`title`、`viewport`（CSS 宽高）、`dpr`，以及从图片解码得到的 `pixel_width`/`pixel_height`。截图期间发生导航会以 `page_changed` 失败。完整取证流程见[恢复与证据](../guides/recovery.md)。
+
+### 带标注的截图
+
+```bash
+cloak screenshot --annotate -o annotated.png --json
+cloak screenshot --annotate --within '#panel' --find 'Save' --limit 20 --json
+```
+
+`--annotate` 先做一次新的 compact snapshot，再把每个展示出来的引用的元素框和 `[N]` 标签画到图片上，不向页面添加覆盖层。`--within`、`--find`、`--limit` 只缩小被标注的引用范围（复用 snapshot 的筛选；祖先也计入 limit，`0` 表示不限，省略时使用 `browser.snapshot_max_nodes`），截图范围本身不变。几何信息来自原生 CDP，不在页面里执行 JavaScript。
+
+JSON 增加 `annotated` 和 `annotations`，每个被标注的引用一项：`{"ref":1,"role":"button","name":"Save","box":[100,80,140,40],"in_viewport":true}`。`box` 是 CSS 像素的 `[x,y,width,height]`，相对视口（`--full-page` 时相对文档）；DPR 只缩放图片。`in_viewport` 表示元素框与截图时的视口有正面积交集——`--full-page` 下仍指视口而非整张图片，视口外的引用仍保留在列表中。已移除或未渲染的节点没有框；没有匹配时返回未标注的图片和空列表。这些引用对应本次截图时的页面状态，之后 DOM 变化需重新 snapshot。CLI JSON 另有 `data.saved`，HTTP 的图片位于 `data.base64`。
 
 ### diff screenshot
 
@@ -211,9 +235,11 @@ cloak resume
 
 所有交互命令都接受位置参数（`cloak click 5`）或 `--index N` / `-i N`。多数命令还接受第二个位置参数（`cloak fill 5 "query"`）。
 
-加 `--snap` 到任意交互命令，可附带 compact snapshot。
-
 位置引用同时接受 `12` 和 `'[12]'`；zsh 等 shell 下需为方括号引用加引号，避免通配符展开。
+
+目标是已知控件、不想多一次 snapshot 往返时，`click`、`fill`、`hover` 也接受 `--selector CSS` 替代引用：`cloak fill --selector '#email' --text 'user@example.com'`。选择器必须在主文档中唯一匹配，不能与引用或绝对坐标组合（hover 的 `--offset` 可以）；已有引用照常可用。
+
+加 `--snap` 到任意交互命令，可附带 compact snapshot。
 
 ### click
 
@@ -286,10 +312,6 @@ cloak hover '[12]' --offset 10,-5
 
 `--offset` 相对元素中心偏移；`--at` 为视口绝对坐标。
 
-`--find TEXT` 在分页前按大小写不敏感的子串匹配可访问名称、描述或值，保留匹配节点的祖先与子树，返回的 `[N]` 可直接操作。支持 compact/accessible/content 和 CSS 范围；不支持与 `--frames` 或 DOM 模式组合。
-
-`click`、`fill`、`hover` 支持以 `--selector CSS` 替代引用，要求在主文档中唯一匹配，且不影响已有引用。例如 `cloak fill --selector '#email' --text 'user@example.com'`。不能与引用或绝对坐标组合；hover 仍支持相对偏移。
-
 ### drag
 
 ```bash
@@ -308,6 +330,16 @@ cloak drag --from 100,200 --to 300,400 --steps 12
 ```bash
 cloak select N --value "option" [--snap]
 ```
+
+### do batch
+
+用一个 JSONL 或 JSON 数组文件在单次请求内执行多个动作，可用 `$N.path` 引用前面步骤的结果；导航和对话框会中断批处理。
+
+```bash
+cloak do batch --calls-file actions.jsonl [--sleep 0.15]
+```
+
+批处理可包含 `{"kind":"snapshot","find":"Ready"}` 步骤。snapshot 步骤默认 `compact` 和配置的节点上限，可用 `mode`/`max_nodes` 显式覆盖。纯读取批处理不等待网络；动作之后的第一份 snapshot 最多等待 `browser.batch_settle_timeout`，且只等这些动作之后发起的请求，连续 snapshot 不重复等待；出现新动作后，下一份 snapshot 会使用新的等待窗口。EventSource 和 `text/event-stream` 响应（含 fetch 实现的 SSE）不会阻塞收敛。应用就绪请用显式 selector/JS wait 步骤。要在一个进程里混合执行 navigate、wait、snapshot 和任意路由，见 [`cloak batch`](#batch)。
 
 ## 内容与网络
 
@@ -337,6 +369,10 @@ scalar 结果（string/number/boolean）直接输出裸值。对象和数组打�
 
 拼错 preset 名会返回 `unknown_preset` 错误并列出可用名称。
 
+本地后端的页面级求值始终面向当前标签页的主文档——`frame focus` 只作用于 iframe 快照和元素操作，不改变 `js evaluate` 或截图身份。`--world main` 按主 frame ID 和唯一执行上下文身份选择该文档的默认世界，iframe 的到达顺序、名称或重复 URL 都无法把它引到别处。导航销毁了所选上下文时，求值以 `evaluate_failed` 失败，脚本既不重放也不回落到子 frame；重试有副作用的脚本前先检查页面状态。RemoteBridge 的求值行为不变。
+
+`session close` 之后的新页面是 `about:blank`：JavaScript 可以执行，但访问 `localStorage`/`sessionStorage` 会返回带当前 URL 的 `storage_origin_error`。先导航到目标站点。
+
 ### fetch
 
 使用浏览器的 cookie 和 user agent 发起 HTTP 请求。响应 body 走 stdout；status/headers 走 stderr。
@@ -355,15 +391,16 @@ cloak network [--since SEQ] [--pending] [--filter GLOB]
 
 使用 `--since last_action` 查看最近一次操作触发的请求。
 
-`--pending` 列出当前 session 所属标签页内仍在进行的请求，包含 URL、方法、资源类型、已收到的响应状态和经过毫秒数。收到响应头不代表结束：SSE 会持续 pending 到连接关闭。`--filter GLOB` 过滤 URL（`*` 跨越斜线），可与 `--since` 组合。pending 观测要求本地后端，RemoteBridge 明确返回 `unsupported_operation`。
+`--pending` 列出当前 session 所属标签页内仍在进行的请求，包含 URL、方法、资源类型、已收到的响应状态和经过毫秒数。收到响应头不代表结束：SSE 和 EventSource 流会持续 pending 到连接关闭，这并不意味着页面卡住。挂起请求跟随其文档：替换文档或移除 frame 时清理旧请求，同文档的 history/hash 更新则保留它们。`--filter GLOB` 过滤 URL（`*` 跨越斜线），可与 `--since` 组合。pending 观测要求本地后端，RemoteBridge 明确返回 `unsupported_operation`。
 
-### console show
-
-列出控制台消息。
+### console
 
 ```bash
-cloak console show [--since SEQ]
+cloak console show [--since SEQ] [--level error] [--limit N]
+cloak console clear
 ```
+
+控制台消息和未捕获的页面错误跨导航累积，每条带页面 URL 和时间戳。`console clear` 显式清空缓冲（`console show --clear` 仍兼容）。
 
 ## 对话框处理
 
@@ -492,7 +529,7 @@ cloak route list
 cloak route release RULE_OR_REQUEST_ID
 ```
 
-放行会恢复已挂起的请求，规则仍保留以处理后续请求；完成后可移除规则。挂起期间仍可快照和截图。console 消息跨导航累积，包含时间和页面 URL；`cloak console clear` 显式清空缓冲，兼容 `console show --clear`。
+放行会恢复已挂起的请求，规则仍保留以处理后续请求；完成后可移除规则。挂起期间仍可快照和截图。
 
 ### 原生 CDP
 
@@ -624,8 +661,11 @@ Profile 目录还可以放一份 `config.toml` overlay，为该 profile 单独�
 cloak tab list                    # git-branch 风格：* 标记 active
 cloak tab new [--url URL]
 cloak tab close --tab-id N
+cloak tab close --others          # 关闭本 session 拥有的其他所有标签页
 cloak tab switch --tab-id N
 ```
+
+`tab close --others` 只处理本 session 拥有的标签页，并在 `closed` 中返回它们的 ID；文本输出显示数量与 ID，没有其他标签页时显示 `closed 0 tabs`。动作和求值会通过 `new_tab` 报告弹窗；仍在加载的弹窗可能先以 `pending: true` 出现、暂无 tab ID，定位前先 `tab list`。用完的弹窗请主动关闭；agentcloak 不会仅因为弹窗数量多就自动删减标签页。会话空闲回收和服务退出仍会关闭所属页面。
 
 ## Bridge 命令
 
@@ -688,6 +728,8 @@ h1234abcd: .promo-modal [session]
 或截图中显示全部三层。Profile 选择器保存在 `hide.json`；内置的
 `[data-cloak-hide]` 规则无法删除。
 
+隐藏只作用于已配置选择器命中的元素。其他 CDP 工具注入的覆盖层不会被自动清理——需要时显式添加其选择器。
+
 ## Launch
 
 不重启 daemon 的前提下热切换 daemon 当前的浏览器 tier（以及可选的 profile）。
@@ -716,7 +758,7 @@ cloak daemon status                # tier | browser status | seq（含 metrics �
 
 `daemon status`（以及 MCP `agentcloak_status`）会额外打印一行 daemon 存活指标——`uptime <时长> | <N> requests | <N> active`——可当作轻量监控读数。daemon 版本过旧、不带 metrics 字段时该行省略。
 
-`hide` 只隐藏已配置选择器命中的 DOM 元素，不会自动清理第三方 CDP 工具注入的任意标注层；需要时显式添加选择器。
+`--log-level` 只覆盖本进程的 `daemon.log_level`；`info` 会记录每个请求进入、获得队列、开始与结束的时间及其 session ID。
 
 ## Session 管理
 
@@ -727,12 +769,14 @@ cloak daemon status                # tier | browser status | seq（含 metrics �
 ```bash
 cloak navigate http://localhost:5173 --session panel-a
 cloak screenshot --session panel-a
-cloak session list                     # id | 状态 | tier | 闲置时间
+cloak session list                     # 标签 (id) | 状态 | tier | 闲置时间 | 进行中动作 | 排队数 | 工作空间路径
+cloak session list --all               # 包含所有工作空间的 session
 cloak session close                    # 只关闭当前调用方的 session
 cloak session close panel-a            # 显式关闭指定 session
+cloak session close --force            # 取消排队/卡住的工作后关闭（本地后端）
 ```
 
-session 闲置 `daemon.session_idle_timeout` 秒（默认 300s）后仅回收自己的 tab，下次请求重新创建。页面关闭或本地浏览器断开后，下次请求会重建；浏览器整体故障会丢失临时页面状态，必要时需重新导航。其他 session 活跃时，切换共享 tier/profile 会报错，避免改变其他调用方的浏览器。RemoteBridge 不会把多个调用方静默映射到同一个用户 tab。
+session 闲置 `daemon.session_idle_timeout` 秒（默认 300s）后仅回收自己的 tab，下次请求重新创建。`session close` 释放页面，但在 daemon 退出前保留 `suspended` 的会话身份——同名再次使用时新建页面，不恢复旧 DOM；持久存储遵循 profile/workspace 策略。页面关闭或本地浏览器断开后，下次请求会重建；共享浏览器整体故障会丢失临时页面状态，页面动作会报告 `page_recreated`，直到重新导航。其他 session 活跃时，切换共享 tier/profile 会报错，避免改变其他调用方的浏览器。RemoteBridge 不会把多个调用方静默映射到同一个用户 tab。队列上限、`--force` 语义与诊断手段见[恢复与证据](../guides/recovery.md)。
 
 客户端探测记录中的 `/health` 来发现 daemon，只读取 `daemon.json`；PID 不可见或状态目录只读不会让活着的 daemon 被判死。原始 HTTP 可发送 `X-Agentcloak-Workspace` 和 `X-Agentcloak-Session`；缺省时使用兼容的空工作空间和 `default` session。CLI/MCP 发送解析后的身份。
 
@@ -768,9 +812,7 @@ cloak cdp endpoint                 # jshookmcp / 其他 CDP 工具用的裸 ws:/
 
 ## 恢复与证据
 
-[有界队列、强制关闭、截图身份、URL 断言与页面 CDP 地址](../guides/recovery.md)。`session list --all` 展示标签、工作空间路径、进行中动作与排队数；`tab close --others` 只影响当前会话。
-
-`tab close --others` 的 `closed` 为实际关闭的 ID 列表；文本输出显示数量与 ID，没有其他标签页时显示 `closed 0 tabs`。
+有界的 session 队列、`session close --force`、截图身份、`navigate --expect-path` / `screenshot --expect-url`、`cdp endpoint --page` 与构建身份，统一见[恢复与证据指南](../guides/recovery.md)。
 
 ## batch
 
@@ -787,7 +829,9 @@ cloak batch --calls-file calls.jsonl --json
 
 每行是一个 daemon JSON 请求：`method`、相对 `path`，以及可选的 `params`、`body`。整个序列复用一个进程和 HTTP 连接池；会话/工作空间沿用全局参数与配置，不能逐行切换。不接受完整 URL 或任意 headers；查询字段放入 `params`。
 
-`--json` 每条输出一个紧凑信封，增加从零开始的 `index` 和从一开始的输入 `line`，读取下一行前立即刷新输出（`--pretty` 不展开 JSONL）。遇到第一条非法输入或请求失败，输出 `ok:false` 并非零退出；已经执行的操作保留，不回滚、不自动重放动作。空输入不执行操作。请求字段见生成的 HTTP 路由参考。原有 `cloak do batch --calls-file` 保留动作批处理、结果引用和导航/对话框中断规则。
+`--json` 每条输出一个紧凑信封，增加从零开始的 `index` 和从一开始的输入 `line`，读取下一行前立即刷新输出（`--pretty` 不展开 JSONL）。遇到第一条非法输入或请求失败，输出 `ok:false` 并非零退出；已经执行的操作保留，不回滚、不自动重放动作。空输入不执行操作。请求字段见生成的 HTTP 路由参考。
+
+与 [`do batch`](#do-batch) 不同，这个执行器在记录之间没有隐式的收敛等待：读取异步渲染的内容前，先插入 `{"method":"POST","path":"/wait","body":{"condition":"selector","value":"#ready","timeout":5000}}`。`do batch` 仍是带结果引用和导航/对话框中断规则的纯动作执行器。
 
 ## record
 
@@ -795,30 +839,11 @@ cloak batch --calls-file calls.jsonl --json
 cloak record start --format webm --max-seconds 120 --max-frames 600
 cloak record status
 cloak record stop -o transition.webm
-# No encoder required:
+# 无需编码器：
 cloak record start --format zip
 cloak record stop -o frames.zip
-cloak screenshot --annotate --dpr 2 -o annotated.png --json
 ```
 
 录屏使用独立 CDP screencast，固定录制启动时的活动标签页。该页导航继续录制，切换标签不会切换录制目标；每个 session 独立持有录屏。不录制音频。支持本地 Playwright/CloakBrowser，RemoteBridge 明确拒绝。
 
 WebM 导出要求 daemon 所在机器安装含 VP9 编码器的 `ffmpeg`。ZIP 包含 JPEG 帧和 `manifest.json`，记录逐帧 URL、经过时间和 CDP 元数据。screencast 记录合成器更新，并非固定 FPS；WebM 保留时间间隔。帧尺寸上限 1920×1080，视口变化时按首帧尺寸等比缩放并补边。默认最多 600 帧/120 秒，可配置到 3000 帧/600 秒，帧数据另有固定 64 MiB 上限。达到限制或录制页关闭后停止采集、保留帧直到 `record stop`；关闭 session 则丢弃未导出的录屏。未导出的录屏会阻止再次 start。stop 将文件写到 CLI/MCP 客户端机器，HTTP 返回 base64。
-
-`--annotate` 生成新的 snapshot 引用，在图片上绘制元素框及 `[N]`，不向页面添加覆盖层。JSON 增加 `annotated` 和 `annotations`（`ref`、`role`、`name`、`box`）。box 单位为 CSS 像素，视口截图相对视口，全页截图相对文档，绘图按实际 DPR 缩放。几何信息来自原生 CDP，避免 JavaScript 指纹扰动。已移除或未渲染的节点没有框。返回引用对应此次截图的页面状态，之后 DOM 变化需重新 snapshot；临时视口和 DPR 仍会恢复。
-
-### 生命周期与响应结构
-
-`network --pending` 保留仍在运行的 EventSource 流。替换文档或移除 frame 时清理旧请求；history/hash 更新保留当前请求。动作批处理支持 `{"kind":"snapshot","find":"Ready"}`。snapshot 默认 `compact` 和配置的节点上限，可用 `mode`/`max_nodes` 显式覆盖。纯读取批处理不等待网络收敛；动作后的第一份 snapshot 最多等待 `settle_timeout`，只等待这些动作之后发起的请求，后续连续 snapshot 不重复等待。EventSource 和 `Content-Type: text/event-stream` 响应（含 fetch 实现的 SSE）仍保留在 pending 中，但不阻塞收敛。应用就绪请使用显式 selector/JS wait。顶层 JSONL batch 不隐式等待 SPA 渲染完成；读取前可插入 `{"method":"POST","path":"/wait","body":{"condition":"selector","value":"#ready","timeout":5000}}`。
-
-`session close` 关闭页面，但在 daemon 内保留 `suspended` 会话身份，直到 daemon 退出。同名会话再次使用时新建页面，不恢复旧 DOM；持久存储遵循 profile/workspace 策略。
-
-Snapshot JSON 的树在 `data.tree_text`，例如 `"[1] button \"Save\""`，使用 `--find` 时也是文本；可用 `--selector-map` 获取可选的结构化 `data.selector_map`。
-
-标注筛选要求 `--annotate`：`--within '#panel' --find 'Save' --limit 20`。复用 compact snapshot 筛选和行数限制（祖先也计数）；省略 limit 使用 snapshot 配置，`0` 表示不限。只标注实际展示的引用，截图范围不变。没有匹配时仍返回图片，`data.annotations` 为空。列表元素为 `{"ref":1,"role":"button","name":"Save","box":[100,80,140,40],"in_viewport":true}`，`box` 是 CSS 像素的 `[x,y,width,height]`，相对视口，`--full-page` 时相对文档；DPR 只缩放图片。CLI JSON 另有 `data.saved`，HTTP 的图片位于 `data.base64`。
-
-本地后端的页面级 JavaScript 求值始终面向当前标签页的主文档。`world="main"` 根据主 frame ID 和唯一执行上下文身份选择该文档的默认世界，不依赖 iframe 事件顺序、名称或重复 URL。`frame focus` 用于 iframe 快照和元素操作，不改变页面级 evaluate 或截图身份。导航销毁所选上下文时返回失败，不重放 JavaScript，也不回落到子 frame；本次未更改 RemoteBridge 求值。
-
-`find` 保留匹配的容器及其后代，并保留祖先上下文，因此容器匹配时可包含名称不匹配的子节点。每项标注另有 `in_viewport`：边框与当前视口有正面积交集时为 true。`--full-page` 下仍指截图时的当前视口，不是整张图片。视口外标注仍保留在列表，可按此字段筛选。
-
-`session close` 后的新页面是 `about:blank`，此时求值访问存储会返回 `storage_origin_error`，包含当前 URL 和导航提示。其他 JavaScript 仍可执行；访问存储前先导航到目标站点。

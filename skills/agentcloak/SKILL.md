@@ -18,7 +18,7 @@ Observe-then-act. Snapshot first because `[N]` refs are only valid for the curre
 1. **Navigate**: `cloak navigate "https://example.com" --snap` -- navigate and get snapshot in one step
 2. **Observe**: `cloak snapshot` -- get a11y tree with `[N]` element refs (or use `--snap` on navigate/action)
 3. **Act**: `cloak click 5` or `cloak fill 3 "query"` (positional `[N]` is shorter than `--index N`)
-4. **Handle feedback**: actions print proactive state inline after the confirmation line — `pending_requests`, `dialog`, `navigation`, `download`, `current_value` — whenever relevant. When `Error: blocked by dialog` shows on stderr, run `cloak dialog accept/dismiss` before retrying.
+4. **Handle feedback**: actions print proactive state inline after the confirmation line — `pending_requests`, `dialog`, `navigation`, `download`, `current_value` — whenever relevant. When `Error [blocked_by_dialog]: …` shows on stderr, run `cloak dialog accept/dismiss` before retrying.
 5. **Re-observe if needed**: when navigation occurred or DOM changed, snapshot again
 6. **Repeat** steps 2-5
 
@@ -73,6 +73,7 @@ Snapshot modes: `compact` (default, interactive + containers only, capped at 80 
 | `cloak navigate URL` | Navigate to URL (add `--snap` to get a11y tree; simple `#id` fragments wait up to 3s and scroll into view) |
 | `cloak snapshot` | Get a11y tree with `[N]` refs (default mode: compact; `--hide CSS` hides overlays once, `--keep-overlays` reveals all) |
 | `cloak snapshot --within main` | Scope tree and refs to a main-document CSS subtree |
+| `cloak snapshot --find "Save"` | Keep only nodes whose accessible name/text matches (case-insensitive substring) plus their ancestors/descendants; refs stay actionable |
 | `cloak snapshot --mode accessible` | Full a11y tree (heavier, all containers) |
 | `cloak snapshot --mode content` | Text extraction |
 | `cloak snapshot --limit 50` | Limit node count (summary of hidden); `--max-nodes` still accepted |
@@ -81,6 +82,9 @@ Snapshot modes: `compact` (default, interactive + containers only, capped at 80 
 | `cloak snapshot --frames` | Include iframe content |
 | `cloak snapshot --diff` | Mark `[+]` added, `[~]` changed vs previous |
 | `cloak screenshot [--output FILE]` | Screenshot to file, stdout = path (`--wait-for CSS` waits first; `--hide CSS` hides overlays once; `--keep-overlays` reveals all) |
+| `cloak screenshot --annotate [--within CSS] [--find TEXT] [--limit N] --json` | Draw fresh `[N]` refs on the image; JSON lists `annotations` with CSS-pixel `box` and `in_viewport` — see Gotchas |
+| `cloak screenshot --expect-url "*/page"` / `navigate URL --expect-path /page` | Fail with `url_mismatch` on silent redirects; screenshot `--json` reports URL, title, viewport, DPR and pixel size |
+| `cloak record start [--format webm\|zip]` / `status` / `stop -o FILE` | Record the current tab (pinned at start) to WebM (needs ffmpeg on the daemon) or a ZIP of JPEG frames; bounded by frames/seconds/64 MiB; unfinished recordings are discarded on session close |
 | `cloak emulate [--color-scheme dark] [--reduced-motion] [--pointer coarse]` / `emulate reset` | Session media overrides on local backends; pointer requires headed mode. No options queries state; reset preserves viewport/DPR/headers |
 | `cloak diff screenshot BASELINE [--current FILE]` | Exact RGBA pixel comparison; omit current for a live PNG, add `--output diff.png` for red highlights |
 | `cloak viewport set WIDTHxHEIGHT [--dpr RATIO]` | Resize without navigation; omitted DPR is preserved. `screenshot --viewport WIDTHxHEIGHT --dpr RATIO` temporarily overrides and restores both |
@@ -92,14 +96,16 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 
 | Command | Purpose |
 |---------|---------|
-| `cloak click N [--force]` | Click element (`--force` is single left-click only; use persistent hide for known overlays; `--x/--y` coordinate fallback) |
+| `cloak click N [--force]` | Click element (`--click-count 2` double-clicks; `--force` is single left-click only; use persistent hide for known overlays; `--x/--y` coordinate fallback) |
+| `cloak click --selector '#save'` / `fill --selector '#email' --text V` / `hover --selector CSS` | Target a known control without a snapshot; the selector must match exactly one main-document element and cannot be mixed with refs or absolute coordinates |
 | `cloak fill N "value"` | Clear and set input value — fast path, but slow under humanize (see Gotchas) |
 | `cloak type N "value"` | Type character by character; pick this when you want the anti-detection typing cadence |
 | `cloak press Enter` | Press key (Enter, Tab, Escape, Backspace, ArrowDown, Space...; `--target N` focuses element [N] first) |
 | `cloak press "Control+a"` | Combo key; key names and Ctrl/Cmd/Opt aliases are case-insensitive; invalid combos fail before input |
 | `cloak scroll down` | Scroll page (`--amount N` pixels, default 300; `--index N` scrolls element into view) |
 | `cloak hover N [--offset dx,dy]` / `hover --at x,y` | Hover at element center plus offset, or absolute viewport coordinates |
-| `cloak drag N M` / `drag --from x,y --to x,y --steps N` | Drag with real pointer input |
+| `cloak drag N M` / `drag --from x,y --to x,y --steps N` | Drag with real pointer input; `--hold MS` / `--duration MS` time the gesture, `--sample JS` records a value after every step (actual elapsed time is reported and may exceed the requested duration) |
+| `cloak do batch --calls-file actions.jsonl` | Run several actions in one request with `$N.path` result references; see `references/data-and-spells.md` |
 | `cloak select N --value "opt"` | Select dropdown option (`--label "text"` to match by visible text) |
 | `cloak keydown/keyup Shift` | Hold/release key |
 | `cloak dialog accept` / `dismiss` | Handle confirm/prompt dialog |
@@ -118,6 +124,7 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak fetch URL` | HTTP GET with browser cookies |
 | `cloak fetch URL --method POST --body '{...}'` | HTTP POST with cookies |
 | `cloak network --since N` | Recent network requests (filter by seq; `--since last_action` includes requests triggered by the most recent action) |
+| `cloak network --pending [--filter '*/api/*']` | In-flight requests on this session's tabs, including long-lived SSE after headers arrived (not a sign of a stuck page); local backends only |
 | `cloak capture start` / `stop` / `export` | Record and export network traffic |
 | `cloak console show [--level error] [--since N]` / `clear` | Logs and uncaught errors accumulate across navigation with page URLs and timestamps; clear explicitly |
 | `cloak storage get [KEY]` / `set KEY VAL` / `delete KEY` / `clear` | localStorage CRUD (`--type session` for sessionStorage; returns `storage_origin_error` on `about:blank` — navigate to a real page first) |
@@ -164,13 +171,14 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | Command | Purpose |
 |---------|---------|
 | `cloak launch --tier cloak\|playwright\|remote_bridge` | Hot-switch the daemon's browser tier (no restart); omit `--profile` to keep the current profile, pass `--no-profile` to explicitly clear it (mutually exclusive with `--profile`) |
-| `cloak profile list` / `create` / `launch` / `delete` | Browser profile management (`create --from-current` snapshots cookies + localStorage; profile mode auto-saves/restores both on launch; profile dir may hold a `config.toml` override) |
+| `cloak profile list` / `create` / `launch` / `delete` | Browser profile management (`create --from-current` seeds the new native profile with cookies + current-origin localStorage once; native Chromium storage is authoritative afterwards and snapshot JSON is never replayed; profile dir may hold a `config.toml` override) |
 | `cloak tab list` / `new` / `close` / `switch` | Tab management |
 | `cloak spell list` / `info` / `run NAME` / `scaffold` | Spells (PUBLIC runs locally; browser strategies use daemon + caller session) |
 | `cloak cookies export [--url URL]` / `restore [--file PATH]` | Export prints cookies and refreshes the active profile snapshot; restore imports that snapshot (or the global fallback) |
 | `cloak cookies import -c '[...]'` | Import Chrome cookies API, CDP, or Playwright JSON; malformed entries are skipped and counted |
 | `cloak cookies set NAME VAL [--domain D]` / `set --curl '<copy-as-curl>'` / `clear` / `delete NAME` | Cookie CRUD; `--curl` seeds cookies from a DevTools Copy-as-cURL string |
-| `cloak hide add CSS` / `remove ID_OR_CSS` / `list` | Hide overlays across snapshot, screenshot, and click hit-testing; `list` tags each entry `[builtin]`/`[profile]`/`[session]` so you know where it came from; profile sessions persist selectors, other sessions are session-only |
+| `cloak hide add CSS` / `remove ID_OR_CSS` / `list` | Hide overlays across snapshot, screenshot, and click hit-testing; `list` tags each entry `[builtin]`/`[profile]`/`[session]` so you know where it came from; profile sessions persist selectors, other sessions are session-only. Only configured selectors are hidden — overlays injected by other CDP tools need an explicit selector |
+| `cloak batch --calls-file calls.jsonl --json` | Sequential mixed daemon requests (`method`, relative `path`, `params`, `body` per JSONL line) over one connection pool; indexed JSONL output, stops at the first failure without rollback, no implicit settle wait (insert a `/wait` record) |
 | `cloak pdf [-o file] [--format A4] [--landscape]` | Export the current page to PDF (headless only) |
 | `cloak serve start DIR [--port P]` / `stop` / `status` | Local http server for previewing local files (`file://` is blocked); navigate to the printed URL |
 | `cloak session list [--all]` / `close [SESSION_ID] [--force]` | Labels, active actions and queues; --all includes workspace paths; --force cancels stuck session work |
@@ -194,11 +202,11 @@ CLI is **text-first**: stdout is the answer (no JSON parsing required), hints/wa
 
 ```text
 $ cloak click 99
-Error: Element [99] not in selector_map (4 entries)
+Error [element_not_found]: Element [99] not in selector_map (4 entries)
   -> run 'snapshot' to refresh the selector_map, or re-snapshot if the page changed
 ```
 
-For `jq` scripting, `--json` (or `AGENTCLOAK_OUTPUT=json`) restores the legacy envelope — shape and MCP rendering notes in `references/troubleshooting.md`.
+For `jq` scripting, `--json` (or `AGENTCLOAK_OUTPUT=json`) switches to the JSON envelope (`error.code` / `error.message` on failure) — shape and MCP rendering notes in `references/troubleshooting.md`.
 
 ## Smart Behaviors
 
@@ -243,6 +251,12 @@ Counter-intuitive behaviors worth knowing before you hit them:
 - **Truncated refs still work**: compact mode caps printed output at 80 nodes, but you can still `cloak click N` on a ref that was truncated from the tree — the daemon keeps the full mapping.
 - **`--js` needs truthy**: a `wait --js` expression that returns `undefined`/`false` never satisfies. Wrap Promises with `.then(() => true)`.
 - **`networkidle` can hang**: on long-polling / streaming pages `cloak wait --load networkidle` may never settle — prefer `--selector` or `--js` there.
+- **Snapshot JSON is text**: `--json` returns the rendered tree as a string in `data.tree_text` (also with `--find`), not a node array; add `--selector-map` for a structured ref map.
+- **Annotation boxes**: `box` is `[x,y,width,height]` in CSS pixels, viewport-relative (document-relative with `--full-page`); DPR only scales the image. `in_viewport` is measured against the capture-time viewport even for full-page shots, and offscreen refs stay listed. Filters (`--within`/`--find`/`--limit`) narrow the labels, never the image; refs belong to that capture's page state.
+- **`js evaluate` targets the main document**: on local backends `frame focus` scopes snapshots and element actions only; main-world selection uses frame identity, not iframe order. If navigation destroys the context the script fails without replay — check page state before retrying side-effecting scripts.
+- **Batch settle waits are bounded**: in `do batch`, only the first snapshot after actions waits (up to `browser.batch_settle_timeout`) for requests those actions started; SSE/EventSource never block it, and read-only batches never wait. Top-level `cloak batch` has no settle wait at all — add a `/wait` record for application readiness.
+- **`session close` keeps the identity**: pages are released and the session shows as `suspended`; the next command creates a fresh `about:blank` (storage access there returns `storage_origin_error` — navigate first), never the old DOM.
+- **One daemon per state directory**: the daemon holds `daemon.lock` for its lifetime, so a duplicate start fails without touching runtime records. For an isolated daemon set `AGENTCLOAK_HOME` *and* a distinct `AGENTCLOAK_PORT`. Clients probe `/health` and never need PID visibility; restart after upgrading to activate the lock.
 
 ## Key Principles
 
@@ -266,31 +280,3 @@ Read these when you need deeper guidance:
 | `references/remote-bridge.md` | operating the user's real Chrome via the extension (token auth, claim, finalize, `bridge doctor`) |
 | `references/troubleshooting.md` | you see a `Error:` on stderr and the inline hint isn't enough, or the daemon won't start; also the `--json` envelope shape |
 | `references/commands-reference.md` | you need an exact daemon parameter / type — full route catalog with CLI / MCP bindings (auto-generated from the OpenAPI spec) |
-
-Double-click with `cloak click N --click-count 2`. `hide` only affects matching configured selectors; third-party CDP overlays need an explicit selector.
-
-Target known controls without a snapshot: `cloak click --selector '#save'`, `cloak fill --selector '#email' --text 'user@example.com'`, `cloak hover --selector '#menu'`. Selectors must match exactly one main-document element and cannot accompany refs or absolute coordinates. `cloak snapshot --find 'Save'` filters accessible names/text before pagination and returns usable refs.
-
-For measured gestures, use `cloak drag --from 20,180 --to 240,180 --hold 120 --duration 300 --steps 10 --sample 'window.measurement'`; samples report actual elapsed time and may extend the requested duration. `cloak network --pending --filter '*/api/*'` lists in-flight local requests, including long-lived SSE after response headers; it does not mean the page is stuck. RemoteBridge pending observation is unsupported.
-
-Use `cloak batch --calls-file calls.jsonl --json` (or stdin) for sequential mixed daemon JSON requests in one process. Each line has `method`, relative `path`, optional `params` and `body`; output is indexed JSONL. It stops at the first failure without rolling back earlier calls and keeps one workspace/session. `cloak do batch` remains the action-only runner with result references.
-
-Record transitions with `cloak record start --format webm`, then `cloak record stop -o transition.webm`; `cloak record status` reports progress. WebM needs ffmpeg on the daemon; `--format zip` exports JPEG frames and timestamps without an encoder. Recording pins the starting tab, has bounded frames/time/bytes, and unfinished recordings are discarded on session close. `cloak screenshot --annotate -o annotated.png --json` draws fresh `[N]` refs and returns CSS boxes scaled to the capture DPR.
-
-### Request lifecycle and JSON shapes
-
-`network --pending` includes live SSE; full document replacement/frame detach retires that document's old requests, while history/hash navigation retains them. Action batches accept `{"kind":"snapshot","find":"Ready"}`. Snapshot steps default to `compact` with the configured node limit; explicit `mode`/`max_nodes` override it. A read-only batch does not wait for network settling. After actions, the next snapshot waits up to `settle_timeout` for requests started since those actions; subsequent snapshots do not repeat that wait. EventSource and responses with `Content-Type: text/event-stream` (including fetch-based SSE) remain visible in pending output but do not block settling. Use an explicit selector/JS wait for application readiness. In top-level JSONL `batch`, insert `{"method":"POST","path":"/wait","body":{"condition":"selector","value":"#ready","timeout":5000}}` before reading asynchronously rendered content. Full JSONL fields and examples are in `references/commands-reference.md`.
-
-Snapshot JSON is text, not a `nodes`/`refs` array: `{"ok":true,"seq":12,"data":{"tree_text":"[1] button \"Save\"","total_nodes":1}}` (other metadata omitted). Use `--selector-map` if a structured ref map is needed.
-
-`cloak screenshot --annotate --within '#panel' --find 'Save' --limit 20 --json` filters annotation refs, not the image area. Limits count snapshot lines (including ancestors); `0` is unlimited and omitted uses the snapshot config. JSON example: `{"ok":true,"seq":13,"data":{"saved":"/tmp/evidence.png","annotated":true,"annotations":[{"ref":1,"role":"button","name":"Save","box":[100,80,140,40],"in_viewport":true}]}}`. `box` is `[x,y,width,height]` in CSS pixels, viewport-relative or document-relative with `--full-page`; DPR scales image pixels. No matches gives an unmarked image and empty `annotations`. Filters require `--annotate`.
-
-`session close` releases browser pages but retains the daemon's session identity as `suspended`; the next command recreates a page. It does not keep closed pages alive or restore their DOM.
-
-**Evaluation target (local backends):** `js evaluate` targets the current tab's main document, even after `frame focus`. Main-world context selection uses frame identity, not iframe event order. If navigation destroys the context, evaluation fails without replay; inspect page state before retrying side-effecting scripts.
-
-`find` retains matching containers, their descendants and ancestor context. Annotation `in_viewport` is true for positive-area intersection with the capture-time viewport, even for full-page screenshots. Offscreen items remain available; filter this field for viewport-only results.
-
-The daemon holds a lifetime lock per state directory; duplicate startup fails without replacing runtime records. Use `AGENTCLOAK_HOME` plus a distinct `AGENTCLOAK_PORT` for an isolated daemon. PID visibility is not required; clients take the active profile from live `/health`. Restart after upgrading to activate the lock.
-
-After `session close`, the next request creates `about:blank`. JavaScript can run there, but accessing localStorage/sessionStorage may return `storage_origin_error` with the current URL; navigate to the target origin first.

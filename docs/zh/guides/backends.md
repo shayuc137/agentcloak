@@ -45,14 +45,14 @@ export AGENTCLOAK_HUMANIZE=true
 
 ### 有头与无头模式
 
-CloakBrowser 默认以有头模式运行，因为反爬系统会检测无头浏览器。在没有显示器的服务器上，agentcloak 自动启动 Xvfb（虚拟帧缓冲区）。
+CloakBrowser 默认无头运行（`browser.headless = true`），全新安装不需要显示器。有头模式能通过更多反爬检查；用 `headless = false`（或 `cloak daemon start --headed`）显式开启。在没有 `$DISPLAY` 的 Linux 主机上，agentcloak 会自动启动 Xvfb（虚拟帧缓冲区），但它必须已安装：
 
 ```bash
 # 在 Debian/Ubuntu 上安装 Xvfb
 sudo apt-get install -y xvfb
 ```
 
-在桌面环境（有显示器的 Linux、macOS、Windows）下，有头模式使用真实显示器。
+在桌面环境（有显示器的 Linux、macOS、Windows）下，有头模式使用真实显示器，不会启动 Xvfb。
 
 ### 二进制管理
 
@@ -175,16 +175,16 @@ cloak navigate "https://example.com"
 | 反爬绕过 | 高 | 低 | 天然通过 |
 | Cloudflare 绕过 | 内置（screenX 补丁） | 不支持 | 天然通过 |
 | 浏览器二进制 | 自动下载 | 手动安装 | 用户的 Chrome |
-| 有头模式 | 默认（Xvfb 自动） | 可选 | 始终 |
+| 有头模式 | 可选（`headless = false`；Linux 自动 Xvfb） | 可选 | 始终 |
 | 拟人支持 | 支持 | 不支持 | 不适用 |
 | Profile 持久化 | 支持 | 支持 | 天然具备 |
 | 代理支持 | 完整（含 SOCKS5 认证） | 有限 | 不适用 |
 | 配置复杂度 | 零 | 一行命令 | 安装扩展 |
-| 网页逆向 | 完整（调试器 / 路由 / 流式 / source map） | 完整 | 完整 |
+| 网页逆向 | 调试器 / 路由 / 流式 / source map | 调试器 / 路由 / 流式 / source map | 已实现；完整对齐尚未验证 |
 
 ## 网页逆向支持
 
-三种后端都支持 Phase 7b 的网页逆向能力——调试器、网络路由拦截、WebSocket/SSE 流式监控、source map、init script 注入、GraphQL。命令在所有后端上完全一致，详见 [CLI 参考](../reference/cli.md#网页逆向)。
+各后端通过公共命令实现调试器、网络路由拦截、WebSocket/SSE 流式监控、source map、init script 注入与 GraphQL。RemoteBridge 的完整对齐尚未验证，详见[验证边界](#工作空间与验证边界)和 [CLI 参考](../reference/cli.md#网页逆向)。
 
 CloakBrowser 和 Playwright 为 manager 事件（调试器暂停、WebSocket 帧）维护 per-tab 持久 CDP 通道。`cdp send` 使用另一条持久通道，成功调用后保留视口覆盖等状态。raw 调用超时或取消仅关闭该通道，恢复后需重新设置其 CDP 状态；关闭 tab/session 会清理所属通道。RemoteBridge 通过现有扩展连接传递 CDP 命令，各域按需启用。
 
@@ -213,4 +213,4 @@ CSS 定位、snapshot find 和定时拖动复用共享交互/快照路径，两�
 
 本地 pending 请求观测跟随文档/frame 生命周期：替换文档和移除 frame 会清理旧请求，同文档 history/hash 更新则保留。仍在运行的 EventSource 流继续可见，但不阻塞动作批处理的 snapshot 等待。
 
-本地后端的页面级 JavaScript 求值始终面向当前标签页的主文档。`world="main"` 根据主 frame ID 和唯一执行上下文身份选择该文档的默认世界，不依赖 iframe 事件顺序、名称或重复 URL。`frame focus` 用于 iframe 快照和元素操作，不改变页面级 evaluate 或截图身份。导航销毁所选上下文时返回失败，不重放 JavaScript，也不回落到子 frame；本次未更改 RemoteBridge 求值。
+本地后端的页面级 JavaScript 求值按 frame 和执行上下文身份固定在当前标签页的主文档上；`frame focus` 不会改变它，导航销毁上下文时直接失败、不重放。RemoteBridge 的求值行为不变。详见 [`js evaluate`](../reference/cli.md#js-evaluate)。

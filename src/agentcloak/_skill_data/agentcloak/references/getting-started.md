@@ -126,7 +126,7 @@ viewport_width = 1280
 viewport_height = 720
 navigation_timeout = 30    # seconds
 action_timeout = 30000     # ms, per-action timeout
-batch_settle_timeout = 5000 # ms, bound the first snapshot wait after actions
+batch_settle_timeout = 2000 # ms, bound the first snapshot wait after batch actions
 humanize = true            # CloakBrowser humanize layer — adds Bezier mouse curves,
                            # 70ms/char typing with 2% mistype simulation, and
                            # scroll smoothing. Anti-detection benefit is real but

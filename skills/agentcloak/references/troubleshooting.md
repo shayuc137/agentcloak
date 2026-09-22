@@ -60,7 +60,7 @@ cloak dialog accept --text "reply"  # answer a prompt dialog
 cloak dialog dismiss                # Cancel
 ```
 
-When any action errors with `blocked_by_dialog`, the stderr line includes the dialog type and message — you already know what it says without calling `dialog status`.
+When an action errors with `blocked_by_dialog`, the CLI line only names the code and the recovery action. Run `cloak dialog status` to read the dialog `type`/`message` (the daemon's raw HTTP envelope also carries them under `dialog`).
 
 ## Daemon Issues
 
@@ -176,22 +176,38 @@ MCP tools return the same human-readable text the CLI prints (rendered locally v
 
 ## Session recovery and diagnostics
 
-`session list --all` shows labels, workspace paths, active actions and queued counts. RemoteBridge force-close returns `force_recovery_unavailable`. On local backends `session close --force` bypasses the queue, cancels that session's requests and terminates frozen page execution before closing its tabs. Other sessions and workspace storage stay alive. Force recovery skips renderer-dependent persistence; normal workspace shutdown still persists storage. Disconnecting an HTTP client cancels its request on the daemon.
+### Stuck or frozen session
 
-Start with `cloak daemon start --log-level info` for request entered/acquired/started/finished timestamps and session IDs. On Unix, `kill -USR1 <daemon-pid>` writes asyncio task stacks to daemon logs without ptrace. `cloak version --json`, `/health` and `daemon.json` expose `build_id`: the source-content fingerprint works for installed wheels; a Git checkout also reports its commit. `--version` prints both release and build identity.
+`session list --all` shows labels, workspace paths, active actions and queued counts for every workspace. On local backends `session close --force` bypasses the queue, cancels that session's requests and terminates frozen page execution before closing its tabs; other sessions and workspace storage stay alive. Force recovery skips renderer-dependent persistence, while normal workspace shutdown still persists storage. Disconnecting an HTTP client cancels its request on the daemon. RemoteBridge returns `force_recovery_unavailable` — use its normal release/reconnect lifecycle.
 
-`cdp endpoint --page` selects the exact calling session's target on local backends. It is not a security boundary: browser-level CDP permissions still allow other targets. `tab close --others` closes only sibling tabs in the current session; `closed` lists their IDs, or is empty when nothing remains to close. Session queues and tab ownership do not isolate shared browser resources: same-origin sibling sessions may stall together when long-lived HTTP/1.x streams exhaust the connection pool, or when a shared renderer stalls. Closing the offending session can release siblings. A responsive curl does not rule out browser pool exhaustion; inspect active streams and NetLog before attributing a stall to CDP. Fix duplicate subscriptions or browser-facing HTTP/2 in the application; do not silently abort its streams. Workspace storage isolation is not a per-session browser-process guarantee. Actions/evaluations report new popups; a slow popup may initially have `pending: true` without a tab ID, so use `tab list` before targeting it.
+Session queues and tab ownership do not isolate shared browser resources. Same-origin sibling sessions may stall together when long-lived HTTP/1.x streams (SSE) exhaust Chromium's per-destination connection pool, or when a shared renderer stalls; closing the offending session can release its siblings. A responsive `curl` does not rule out browser pool exhaustion — inspect the active streams and NetLog before blaming CDP. Fix duplicate subscriptions or serve the stream over browser-facing HTTP/2 in the application; agentcloak does not automatically terminate application streams to relieve connection-pool exhaustion. Workspace storage isolation is not a per-session browser-process guarantee.
+
+### Diagnostics
+
+Start with `cloak daemon start --log-level info` for request entered/acquired/started/finished timestamps and session IDs. On Unix, `kill -USR1 <daemon-pid>` writes asyncio task stacks to the daemon log without ptrace. `cloak version --json`, `/health` and `daemon.json` expose `build_id`: a source-content fingerprint that also works for installed wheels; a Git checkout additionally reports its commit. `--version` prints both release and build identity.
+
+`cdp endpoint --page` returns the exact calling session's page target on local backends. It is not a security boundary: browser-level CDP permissions still reach other targets.
+
+### One daemon per state directory
+
+The daemon holds `daemon.lock` for its lifetime; a duplicate start fails with `daemon_already_running` without replacing runtime records. For an isolated daemon set `AGENTCLOAK_HOME` *and* a distinct `AGENTCLOAK_PORT`. Clients probe `/health` and take the active profile from that live response, so PID visibility is not required. Restart after upgrading to activate the lock.
+
+### Popups and sibling tabs
+
+Actions and evaluations report new popups via `new_tab`; a slow popup may initially show `pending: true` without a tab ID, so run `tab list` before targeting it. `tab close --others` closes only sibling tabs in the current session; `closed` lists their IDs, or is empty when nothing remains to close.
 
 ### Pointer emulation rejected
 
 `unsupported_operation` from `emulate --pointer` means the backend cannot restore pointer state reliably. Use a local headed browser (`browser.headless=false`, with Xvfb on a server). Color scheme, reduced motion and DPR remain available in headless local browsers. RemoteBridge does not support session environment changes.
 
-Profile localStorage is native browser state: navigation does not replay JSON backups. `profile create --from-current` seeds a new native profile once. If a legacy profile contains only a localStorage snapshot, recreate it from a live authenticated session; do not overwrite current storage with an old backup.
+### Profile localStorage looks stale
 
-`network --pending` retains live SSE but retires requests when their document is replaced or frame detached. History/hash navigation keeps them. Action batches accept `{"kind":"snapshot","find":"Ready"}`. Snapshot steps default to `compact` with the configured node limit; explicit `mode`/`max_nodes` override it. A read-only batch does not wait for network settling. After actions, the next snapshot waits up to `settle_timeout` for requests started since those actions; subsequent snapshots do not repeat that wait. EventSource and responses with `Content-Type: text/event-stream` (including fetch-based SSE) remain visible in pending output but do not block settling. Use an explicit selector/JS wait for application readiness. A closed session listed as `suspended` retains only its identity, not live pages; the next request creates a new page.
+Profile localStorage is native browser state: navigation never replays `localStorage-snapshot.json`. `profile create --from-current` seeds a new native profile once. If a legacy profile contains only a snapshot, recreate it from a live authenticated session; do not overwrite current storage with an old backup.
 
-On local backends, `evaluate_failed` during navigation can mean the selected main-document context was destroyed. The script is not replayed, and no child-frame fallback is used. Check the resulting page state before retrying a script with side effects. `frame focus` does not retarget page-level evaluation.
+### Pending requests, batches and closed sessions
 
-The daemon holds a lifetime lock per state directory; duplicate startup fails without replacing runtime records. Use `AGENTCLOAK_HOME` plus a distinct `AGENTCLOAK_PORT` for an isolated daemon. PID visibility is not required; clients take the active profile from live `/health`. Restart after upgrading to activate the lock.
+`network --pending` keeps live SSE/EventSource streams but retires requests when their document is replaced or their frame detaches; history/hash navigation keeps them. In `do batch`, only the first snapshot after actions waits (up to `browser.batch_settle_timeout`) for requests those actions started; read-only batches never wait, and SSE never blocks settling — use an explicit selector/JS wait for application readiness. A session listed as `suspended` retains only its identity: the next request creates a fresh `about:blank`, where storage access returns `storage_origin_error` until you navigate to the target origin.
 
-After `session close`, the next request creates `about:blank`. JavaScript can run there, but accessing localStorage/sessionStorage may return `storage_origin_error` with the current URL; navigate to the target origin first.
+### `evaluate_failed` during navigation
+
+On local backends this can mean the selected main-document context was destroyed. The script is not replayed and no child-frame fallback is used; check the resulting page state before retrying a script with side effects. `frame focus` does not retarget page-level evaluation.

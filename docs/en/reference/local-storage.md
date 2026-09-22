@@ -10,7 +10,9 @@ The main data directory. Created on first run. Typical size: **< 1 MB** (excludi
 |---------------|---------|------|-----------|
 | `config.toml` | User configuration | < 1 KB | Permanent, user-managed |
 | `daemon.pid` | Running daemon process ID | < 1 KB | Created on daemon start, stale file removed on next start |
-| `daemon.json` | Daemon portfile: `pid`, `host`, `port`, `version`, `profile` | ~130 bytes, `0600` perms | Overwritten on daemon start; `DaemonClient` reads it to discover the live port + inherit the daemon's profile for auto-restart |
+| `daemon.json` | Daemon portfile: `pid`, `host`, `port`, `version`, `profile` | ~130 bytes, `0600` perms | Overwritten on daemon start; `DaemonClient` reads only `host`/`port` from it to probe `/health`, and takes the active profile for auto-restart from that live response. Clients never delete it |
+| `daemon.lock` | Ownership lock held for the daemon's lifetime — one daemon per state directory | 0-1 bytes, `0600` perms | Created on daemon start and kept; a second daemon on the same directory fails with `daemon_already_running` |
+| `workspaces/<hash>/storage.json` | Cookies/localStorage/IndexedDB for one workspace + profile pair when `browser.isolation = "workspace"` | Usually < 1 MB | Written on last-session close, idle reclamation or normal shutdown; restored when the workspace reopens |
 | `active-session.json` | Current daemon session info (port, stealth tier, bridge token) | ~130 bytes | Overwritten on daemon start |
 | `resume.json` | Last action summary for session resume | < 1 KB | Overwritten on each action, persists after daemon stop |
 | `cookies-snapshot.json` | Cookie recovery fallback when no profile is active | Usually < 100 KB | Overwritten by `cloak cookies export` without `--output` |
@@ -38,7 +40,7 @@ Alongside the Chromium user-data directory, each profile may hold agentcloak-man
 | `config.toml` | Per-profile `[browser]` / `[security]` overlay — see [config reference](config.md#per-profile-config-overlay) | You (editor or `cloak config` targeted at profile paths) |
 | `hide.json` | Persistent snapshot / screenshot / click hide selectors | `cloak hide add/remove` |
 | `cookies-snapshot.json` | Cookie recovery snapshot | `cloak cookies export` (no `--output`), `cloak profile create --from-current` |
-| `localStorage-snapshot.json` | Per-origin `localStorage` recovery snapshot; dumped on navigate-away / daemon close and replayed on next matching-origin navigation | Automatic in profile mode; also seeded by `cloak profile create --from-current` |
+| `localStorage-snapshot.json` | Per-origin `localStorage` backup dumped from the open tabs when the profile browser closes. Native Chromium storage is authoritative: the snapshot is never replayed on navigation | Automatic in profile mode; `cloak profile create --from-current` writes it alongside seeding the native profile |
 
 ### Logs
 

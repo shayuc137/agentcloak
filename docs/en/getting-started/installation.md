@@ -166,9 +166,9 @@ ln -s "$PWD/skills/agentcloak" ~/.claude/skills/  # live-edit symlink
 
 ## Optional extras
 
-| Extra       | What it adds                                                        | When you need it                           |
-| ----------- | ------------------------------------------------------------------- | ------------------------------------------ |
-| `discovery` | [zeroconf](https://github.com/python-zeroconf/python-zeroconf) mDNS | Auto-discovering daemon from remote bridge |
+| Extra       | What it adds                                                        | When you need it                                                                                                  |
+| ----------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `discovery` | [zeroconf](https://github.com/python-zeroconf/python-zeroconf) mDNS | Advertise a LAN-reachable daemon as `_agentcloak._tcp.local` for mDNS-capable clients; the bundled extension probes ports instead (see [mDNS advertisement](../guides/remote-bridge.md#mdns-advertisement-optional)) |
 
 ```bash
 pip install agentcloak[discovery]

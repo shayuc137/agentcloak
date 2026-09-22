@@ -122,6 +122,8 @@ domain_whitelist = ["*.target.com"]
 | `AGENTCLOAK_DEFAULT_TIER` | `browser.default_tier` | `auto` | 浏览器后端。`auto` 解析为 `cloak` |
 | `AGENTCLOAK_TIER` | （别名） | -- | `DEFAULT_TIER` 的简写 |
 | `AGENTCLOAK_DEFAULT_PROFILE` | `browser.default_profile` | `""` | 启动时使用的命名 profile |
+| `AGENTCLOAK_ISOLATION` | `browser.isolation` | `shared` | `shared`（单一 context，共享登录）或 `workspace`（按工作空间独立存储）；见[工作空间隔离](#工作空间隔离) |
+| -- | `browser.workspace_roots` | `[]` | 客户端用来判定工作空间的目录根列表（只能放在全局配置） |
 | `AGENTCLOAK_PROFILE` | （别名） | -- | `DEFAULT_PROFILE` 的简写 |
 | `AGENTCLOAK_VIEWPORT_WIDTH` | `browser.viewport_width` | `1280` | 浏览器视口宽度（像素） |
 | `AGENTCLOAK_VIEWPORT_HEIGHT` | `browser.viewport_height` | `720` | 浏览器视口高度（像素） |
@@ -131,8 +133,8 @@ domain_whitelist = ["*.target.com"]
 | `AGENTCLOAK_STOP_ON_EXIT` | `browser.stop_on_exit` | `false` | CLI 进程退出时停止 daemon |
 | `AGENTCLOAK_HEADLESS` | `browser.headless` | `true` | 浏览器无窗口运行 |
 | `AGENTCLOAK_HUMANIZE` | `browser.humanize` | `true` | 启用 CloakBrowser 拟人行为（鼠标曲线、打字节奏） |
-| `AGENTCLOAK_ACTION_TIMEOUT` | `browser.action_timeout` | `30000` | 操作超时（毫秒） |
-| `AGENTCLOAK_BATCH_SETTLE_TIMEOUT` | `browser.batch_settle_timeout` | `2000` | 批量操作间等待页面稳定的时间（毫秒） |
+| `AGENTCLOAK_ACTION_TIMEOUT` | `browser.action_timeout` | `30000` | 操作超时（毫秒）；同时约束 session 队列等待和 snapshot/截图执行（见[恢复](../guides/recovery.md)） |
+| `AGENTCLOAK_BATCH_SETTLE_TIMEOUT` | `browser.batch_settle_timeout` | `2000` | 批处理动作之后第一份 snapshot 等待这些动作发起的请求的上限（毫秒） |
 | `AGENTCLOAK_MAX_RETURN_SIZE` | `browser.max_return_size` | `50000` | `/evaluate` 返回值的最大字节数（超出截断，避免 MCP token 爆掉） |
 | `AGENTCLOAK_SCREENSHOT_FORMAT` | `browser.screenshot_format` | `jpeg` | 截图默认编码：`jpeg` 或无损 `png` |
 | `AGENTCLOAK_SCREENSHOT_QUALITY` | `browser.screenshot_quality` | `80` | CLI 截图默认 JPEG 质量（0-100） |
@@ -187,9 +189,13 @@ cloak daemon start --host 0.0.0.0 --port 18765 --headed --profile my-session
 |------|------|
 | `--host` | 监听地址（覆盖配置） |
 | `--port` | 监听端口（覆盖配置） |
-| `--headed` | 以有头模式运行浏览器（可见窗口） |
+| `--headed` / `--headless` | 为本次 daemon 覆盖 `browser.headless`（有头 = 可见窗口） |
 | `--profile NAME` | 使用命名的浏览器 profile |
-| `--idle-timeout MINUTES` | 空闲一段时间后自动关闭 |
+| `--log-level LEVEL` | 为本进程覆盖 `daemon.log_level`（`info` 会记录每个请求进入/获得队列/开始/结束的时间及 session ID） |
+| `--background` / `-b` | 脱离终端在后台运行 |
+| `--humanize` / `--no-humanize` | 强制开启或关闭 CloakBrowser humanize 层 |
+
+安装可选 `discovery` 后，可从局域网访问的监听地址会在 HTTP 就绪后广播；仅回环地址不广播，发现失败不阻止 HTTP。详见 [mDNS 服务广播](../guides/remote-bridge.md#mdns-服务广播可选)。
 
 ## 文件系统路径
 
@@ -305,7 +311,3 @@ cloak daemon start
 工作空间在最后一个 session 关闭、空闲回收或 daemon 正常退出时，将状态保存到 `~/.agentcloak/workspaces/<工作空间与-profile-哈希>/storage.json`，再次打开时恢复；POSIX 文件权限为 0600。默认 cookie 导出/恢复快照也放在这个目录，仍可显式指定文件。浏览器崩溃可能丢失上次保存后的变更；sessionStorage、页面 DOM、历史、缓存和 service worker 不会恢复。这是存储和页面隔离，不能防范原始 CDP 或文件系统访问。浏览器进程、启动参数和代理仍共享；存在其他活跃 session 时拒绝切换 tier/profile。RemoteBridge 使用用户现有浏览器存储，因此明确拒绝 workspace 模式。
 
 workspace 模式在没有命名 profile 时也会持久化。`profile create --from-current` 会按显式请求导出 profile 种子；在 workspace 模式启动这个 profile，不会把其中的 cookie/localStorage 灌入每个空间。需要迁移 cookie 时，显式指定导出/恢复文件。
-
-`daemon start --log-level LEVEL` 可为单个进程覆盖 `daemon.log_level`；`browser.action_timeout` 同时约束会话等锁、截图和快照执行，见[恢复说明](../guides/recovery.md)。
-
-安装可选 `discovery` 后，可从局域网访问的监听地址会在 HTTP 就绪后广播；仅回环地址不广播，发现失败不阻止 HTTP。详见 [mDNS 服务广播](../guides/remote-bridge.md#mdns-服务广播可选)。

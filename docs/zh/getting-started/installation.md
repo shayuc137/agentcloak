@@ -159,9 +159,9 @@ ln -s "$PWD/skills/agentcloak" ~/.claude/skills/  # 可实时编辑的软链接
 
 ## 可选扩展
 
-| 扩展        | 功能                                                                | 使用场景                    |
-| ----------- | ------------------------------------------------------------------- | --------------------------- |
-| `discovery` | [zeroconf](https://github.com/python-zeroconf/python-zeroconf) mDNS | 远程 bridge 自动发现 daemon |
+| 扩展        | 功能                                                                | 使用场景                                                                                                              |
+| ----------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `discovery` | [zeroconf](https://github.com/python-zeroconf/python-zeroconf) mDNS | 把可从局域网访问的 daemon 以 `_agentcloak._tcp.local` 广播给支持 mDNS 的客户端；自带扩展仍靠端口探测（见 [mDNS 广播](../guides/remote-bridge.md#mdns-服务广播可选)） |
 
 ```bash
 pip install agentcloak[discovery]

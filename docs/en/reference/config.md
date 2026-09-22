@@ -131,6 +131,8 @@ All environment variables use the `AGENTCLOAK_` prefix.
 | `AGENTCLOAK_TIER` | (alias) | -- | Shorthand for `DEFAULT_TIER` |
 | `AGENTCLOAK_DEFAULT_PROFILE` | `browser.default_profile` | `""` | Named profile to use on launch |
 | `AGENTCLOAK_PROFILE` | (alias) | -- | Shorthand for `DEFAULT_PROFILE` |
+| `AGENTCLOAK_ISOLATION` | `browser.isolation` | `shared` | `shared` (one context, shared login) or `workspace` (per-workspace storage); see [Workspace isolation](#workspace-isolation) |
+| -- | `browser.workspace_roots` | `[]` | Directory roots that define workspaces for clients (global config only) |
 | `AGENTCLOAK_VIEWPORT_WIDTH` | `browser.viewport_width` | `1280` | Browser viewport width in pixels |
 | `AGENTCLOAK_VIEWPORT_HEIGHT` | `browser.viewport_height` | `720` | Browser viewport height in pixels |
 | `AGENTCLOAK_NAVIGATION_TIMEOUT` | `browser.navigation_timeout` | `30` | Page load timeout in seconds |
@@ -139,8 +141,8 @@ All environment variables use the `AGENTCLOAK_` prefix.
 | `AGENTCLOAK_STOP_ON_EXIT` | `browser.stop_on_exit` | `false` | Stop daemon when CLI process exits |
 | `AGENTCLOAK_HEADLESS` | `browser.headless` | `true` | Run browser without a visible window |
 | `AGENTCLOAK_HUMANIZE` | `browser.humanize` | `true` | Enable CloakBrowser human-like behavior (mouse curves, typing cadence) |
-| `AGENTCLOAK_ACTION_TIMEOUT` | `browser.action_timeout` | `30000` | Action timeout in milliseconds |
-| `AGENTCLOAK_BATCH_SETTLE_TIMEOUT` | `browser.batch_settle_timeout` | `2000` | Time to wait between batch actions for page to settle (ms) |
+| `AGENTCLOAK_ACTION_TIMEOUT` | `browser.action_timeout` | `30000` | Action timeout in milliseconds; also bounds session queue waits and snapshot/screenshot execution ([recovery](../guides/recovery.md)) |
+| `AGENTCLOAK_BATCH_SETTLE_TIMEOUT` | `browser.batch_settle_timeout` | `2000` | Upper bound (ms) for the first snapshot after batch actions to wait for requests those actions started |
 | `AGENTCLOAK_MAX_RETURN_SIZE` | `browser.max_return_size` | `50000` | Max bytes returned from `/evaluate` before truncation (prevents MCP token blow-up) |
 | `AGENTCLOAK_SCREENSHOT_FORMAT` | `browser.screenshot_format` | `jpeg` | Default screenshot encoding: `jpeg` or lossless `png` |
 | `AGENTCLOAK_SCREENSHOT_QUALITY` | `browser.screenshot_quality` | `80` | Default JPEG quality for CLI screenshots (0-100) |
@@ -195,9 +197,13 @@ cloak daemon start --host 0.0.0.0 --port 18765 --headed --profile my-session
 |------|-------------|
 | `--host` | Listen address (overrides config) |
 | `--port` | Listen port (overrides config) |
-| `--headed` | Run browser in headed mode (visible window) |
+| `--headed` / `--headless` | Override `browser.headless` for this daemon (headed = visible window) |
 | `--profile NAME` | Use a named browser profile |
-| `--idle-timeout MINUTES` | Auto-shutdown after idle period |
+| `--log-level LEVEL` | Override `daemon.log_level` for this process (`info` logs request entered/acquired/started/finished with session IDs) |
+| `--background` / `-b` | Detach and run in the background |
+| `--humanize` / `--no-humanize` | Force the CloakBrowser humanize layer on or off |
+
+With the optional `discovery` extra, LAN-accessible listeners are advertised after HTTP readiness. Loopback-only hosts are not advertised, and discovery failures do not block HTTP. See [mDNS advertisement](../guides/remote-bridge.md#mdns-advertisement-optional).
 
 ## Filesystem paths
 
@@ -315,7 +321,3 @@ In both modes, `(workspace_id, session_id)` identifies a page session. `session 
 Workspace state is stored under `~/.agentcloak/workspaces/<workspace-and-profile-hash>/storage.json` on last-session close, idle reclamation or normal daemon shutdown, and restored when reopened. POSIX files use mode 0600. The default cookie export/restore snapshot is beside this file; explicit file overrides remain supported. Browser crashes can lose changes since the last saved state; sessionStorage, page DOM, history, cache and service workers are not restored. This is storage/page isolation, not a security boundary against raw CDP or filesystem access. Browser process, launch flags and proxy are still shared; changing tier/profile with active siblings is rejected. RemoteBridge rejects workspace mode because it uses the user's existing browser storage.
 
 Workspace mode persists even without a named profile. `profile create --from-current` explicitly exports a profile seed; launching that profile in workspace mode does not seed every workspace with its cookies/localStorage. Use an explicit cookie export/restore file when transferring cookies between these stores.
-
-`daemon start --log-level LEVEL` overrides `daemon.log_level` for one process. `browser.action_timeout` also bounds session queue waits and screenshot/snapshot execution; [recovery details](../guides/recovery.md).
-
-With the optional `discovery` extra, LAN-accessible listeners are advertised after HTTP readiness. Loopback-only hosts are not advertised, and discovery failures do not block HTTP. See [mDNS advertisement](../guides/remote-bridge.md#mdns-advertisement-optional).

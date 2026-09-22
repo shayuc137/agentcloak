@@ -10,7 +10,9 @@ agentcloak 在本机使用两个目录存储数据。本文档说明每个文件
 |----------|------|------|---------|
 | `config.toml` | 用户配置 | < 1 KB | 永久保留，用户管理 |
 | `daemon.pid` | 运行中的 daemon 进程 ID | < 1 KB | daemon 启动时创建，下次启动时清理残留 |
-| `daemon.json` | Daemon portfile：`pid`、`host`、`port`、`version`、`profile` | ~130 字节，`0600` 权限 | daemon 启动时覆盖；`DaemonClient` 用它发现活动端口并继承 daemon 的 profile 用于 auto-restart |
+| `daemon.json` | Daemon portfile：`pid`、`host`、`port`、`version`、`profile` | ~130 字节，`0600` 权限 | daemon 启动时覆盖；`DaemonClient` 只读取其中的 `host`/`port` 去探测 `/health`，auto-restart 沿用的活动 profile 取自该实时响应。客户端从不删除它 |
+| `daemon.lock` | daemon 生命周期内持有的所有权锁——每个状态目录只允许一个 daemon | 0-1 字节，`0600` 权限 | daemon 启动时创建并保留；同一目录再启动一个 daemon 会以 `daemon_already_running` 失败 |
+| `workspaces/<hash>/storage.json` | `browser.isolation = "workspace"` 时每个工作空间 + profile 组合的 cookies/localStorage/IndexedDB | 通常 < 1 MB | 最后一个 session 关闭、空闲回收或正常关停时写入；工作空间再次打开时恢复 |
 | `active-session.json` | 当前 daemon session 信息（端口、隐身层级、bridge token） | ~130 字节 | daemon 启动时覆盖 |
 | `resume.json` | 上次操作摘要，用于 session 恢复 | < 1 KB | 每次操作覆盖，daemon 停止后保留 |
 | `cookies-snapshot.json` | 无活动 profile 时的 cookie 恢复 fallback | 通常 < 100 KB | `cloak cookies export` 不带 `--output` 时覆盖 |
@@ -31,7 +33,7 @@ cloak profile delete NAME   # 删除指定 profile
 
 Profile 没有自动过期或空间限制。
 
-Profile 目录里除了 Chromium user data，daemon 还会自动维护三份辅助文件：`hide.json`（overlay 选择器）、`cookies-snapshot.json`（cookie 快照）和 `localStorage-snapshot.json`（按 origin 分组的 localStorage 快照，版本化 JSON）。以 profile 模式运行时，每次 navigate 会先 dump 当前 origin 的 localStorage、再按目标 origin 恢复，token 刷新和 SPA 登录态因此能跨 daemon 重启保留下来。`cloak profile create --from-current` 也会把 cookies + 当前 origin 的 localStorage 一并写入这两份快照。可选的 `config.toml` overlay 见[配置参考](config.md#profile-级-config-overlay)。
+Profile 目录里除了 Chromium user data，daemon 还会自动维护三份辅助文件：`hide.json`（overlay 选择器）、`cookies-snapshot.json`（cookie 快照）和 `localStorage-snapshot.json`（按 origin 分组的 localStorage 快照，版本化 JSON）。以 profile 模式运行时，profile 浏览器关闭时会把各打开标签页的 localStorage dump 为备份；Chromium 原生存储才是权威数据，快照不会在导航时回放，所以刷新后的 token、偏好和已删除的键都保持当前状态。`cloak profile create --from-current` 会把 cookies + 当前 origin 的 localStorage 一次性导入新建 profile 的原生存储，并同时写入这两份快照。可选的 `config.toml` overlay 见[配置参考](config.md#profile-级-config-overlay)。
 
 ### 日志
 

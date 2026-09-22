@@ -29,7 +29,7 @@ Then verify against bot detection benchmarks (see [Verification](#verification) 
 
 | Tier | Backend | Stealth | Use case |
 |------|---------|---------|---------|
-| 1 (default) | **CloakBrowser** | 57 C++ patches, headed-by-default capable, optional humanise | Most sites with anti-bot |
+| 1 (default) | **CloakBrowser** | 57 C++ patches, headless by default with optional headed mode and humanise | Most sites with anti-bot |
 | 2 (fallback) | **PlaywrightContext** | None | Sites with no detection, debugging |
 | 3 (real) | **RemoteBridge** | Inherent (real Chrome) | Sites that profile long-term user history |
 

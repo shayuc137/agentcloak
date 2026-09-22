@@ -19,15 +19,15 @@ You need a browser. Your agents do too.
 
 ## Highlights
 
-- **Visual evidence and fast runners** -- session WebM/frame recordings, annotated screenshots, unique CSS targets, timed drag samples, pending requests, and streaming JSONL batches
-- **Visual emulation** -- DPR-aware screenshots, session color scheme and reduced motion, plus headed-browser touch/pointer emulation with reset
-- **Recoverable sessions and verifiable captures** -- force-close stuck sessions, inspect queues, assert page URLs, capture page/viewport metadata, and attach CDP clients to the exact session page
-- **Pages as structured text** -- every page becomes an accessibility tree with `[N]` indexed elements; agents interact by refs or explicit unique CSS targets
+- **Pages as structured text** -- every page becomes an accessibility tree with `[N]` indexed elements; agents act on refs or a unique CSS selector for known controls
 - **CLI + Skill on-demand loading** -- agents call `cloak` via Bash; the Skill lazy-loads at ~300 tokens (vs ~6,000 for MCP tool definitions)
 - **CloakBrowser built-in stealth** -- 57 C++ patches on Chromium for realistic browser fingerprinting; agents browse without being misidentified as bots
 - **Session reuse** -- save/restore login profiles (cookies + localStorage auto-persisted across launches, so SPAs that stash auth tokens client-side stay logged in) + RemoteBridge to operate your real Chrome browser
 - **Network config** -- proxy (SOCKS5/HTTP), DNS-over-HTTPS control, and custom Chromium args via `cloak config set`
-- **Workspace-aware sessions** -- isolated pages for Git worktrees or ordinary directories; shared login by default, opt-in per-workspace storage, live viewport changes, drag, and request hold/release
+- **Workspace-aware sessions** -- one daemon serves every Git worktree or plain directory with its own pages, queue and refs; login stays shared by default, with opt-in per-workspace storage
+- **Evidence you can trust** -- screenshots report URL, title, viewport, DPR and pixel size; `--expect-url` / `--expect-path` reject silent redirects; `--annotate` labels `[N]` refs on the image; `record` captures WebM or frame archives
+- **Realistic input and emulation** -- timed drag with per-step samples, coordinate hover, key aliases, live viewport/DPR changes, color-scheme and reduced-motion emulation (touch/pointer needs a headed browser)
+- **Recoverable by design** -- bounded per-session queues, `session close --force` for frozen pages, request hold/release, pending-request observation, and one locked daemon per state directory
 - **Spells + API capture** -- wrap common site operations as one-liners; capture traffic, analyze patterns, generate spells automatically
 - **Web reverse engineering** -- CDP-native debugger, network route interception, WebSocket/SSE capture, init-script hooks, and source-map decode -- one tool covers 90%+ of browser RE
 - **MCP server with 43 tools** -- full compatibility with MCP-native clients (Claude Code, Codex, Cursor, etc.)
@@ -109,7 +109,7 @@ cloak screenshot
 Errors go to stderr with a recovery hint and a non-zero exit code:
 
 ```text
-Error: Element [99] not in selector_map (1 entries)
+Error [element_not_found]: Element [99] not in selector_map (1 entries)
   -> run 'snapshot' to refresh the selector_map, or re-snapshot if the page changed
 ```
 

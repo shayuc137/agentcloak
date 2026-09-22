@@ -110,11 +110,14 @@ The MCP server exposes 43 tools. See the [MCP reference](../reference/mcp.md) fo
 | Upload | `agentcloak_upload` |
 | Frame | `agentcloak_frame` |
 | Management | `agentcloak_status`, `agentcloak_launch`, `agentcloak_tab`, `agentcloak_profile`, `agentcloak_doctor`, `agentcloak_resume` |
+| Viewport, emulation & raw CDP | `agentcloak_viewport`, `agentcloak_emulate`, `agentcloak_cdp_send` |
+| Recording | `agentcloak_record` |
 | Cookies | `agentcloak_cookies` |
 | Page hiding | `agentcloak_hide` |
 | Spells | `agentcloak_spell_run`, `agentcloak_spell_list` |
 | Bridge | `agentcloak_bridge` |
-| Reverse engineering | `agentcloak_script`, `agentcloak_route`, `agentcloak_headers`, `agentcloak_graphql`, `agentcloak_streaming`, `agentcloak_debugger`, `agentcloak_sourcemap` |
+| Console, downloads & storage | `agentcloak_console`, `agentcloak_download`, `agentcloak_storage`, `agentcloak_clipboard`, `agentcloak_pdf`, `agentcloak_serve` |
+| Reverse engineering | `agentcloak_script`, `agentcloak_route`, `agentcloak_headers`, `agentcloak_graphql`, `agentcloak_streaming`, `agentcloak_debugger`, `agentcloak_sourcemap`, `agentcloak_profiler`, `agentcloak_performance` |
 
 ## Verifying MCP setup
 

@@ -2,38 +2,50 @@
 
 ## Unreleased
 
-- Read large CDP parameter objects from UTF-8 files or stdin with `cdp send --params-file`, avoiding command-line argument-size limits.
-- Run optional mDNS advertisement asynchronously after HTTP readiness, advertise the actual bound port, isolate instance names, and close discovery resources on failure or shutdown.
-- Gate publication on matching tag/version/changelog and successful CI for the exact release commit; add installed-release upgrade coverage for configuration, profile storage, restart and skill updates.
+Workspace-aware sessions on one shared daemon, browser evidence you can verify, richer pointer/keyboard input, screen recording, and hardened daemon ownership and release gates.
 
-- Lock daemon state for its lifetime, support isolated `AGENTCLOAK_HOME` roots, and discover active profiles from live health rather than stale records.
-- Make batch snapshot reads compact by default, honor current node limits, and settle only once after actions while excluding fetch-based SSE.
-- Add viewport-intersection metadata to screenshot annotations and actionable origin errors for JavaScript storage access.
+### Features
 
-- Pin local main-world evaluation to the active tab's main document using frame and unique context identities; iframe contexts cannot redirect evaluation, and context loss never replays scripts.
+- **Workspace-aware sessions** — every command resolves a workspace (`--workspace PATH` > `AGENTCLOAK_WORKSPACE` > `browser.workspace_roots` > Git repository, shared by its worktrees > plain working directory; Git is not required) and a session (`--session ID` > `AGENTCLOAK_SESSION` > worktree/root path hash). Each session owns its tabs, `[N]` refs, viewport, routes, scripts and console buffer, and sessions with the same ID in different workspaces never collide. `session list` shows readable labels, active actions and queue depth; `--all` spans workspaces
+- **Configurable storage isolation** — `browser.isolation` defaults to `shared`, so sessions keep sharing the profile's login state. Set `workspace` (restart required) to give each workspace its own cookies/localStorage/IndexedDB, persisted under `~/.agentcloak/workspaces/` on close, idle reclamation or normal shutdown. This is storage isolation, not a separate browser process; RemoteBridge requires `shared`
+- **Session recovery** — per-session request queues are bounded by `browser.action_timeout` (`session_busy` names the occupying route); a disconnected client cancels its request; `session close --force` cancels queued work, terminates a frozen page and closes only that session (RemoteBridge returns `force_recovery_unavailable`). Page or browser loss is reported as `page_recreated` / `page_lost` instead of silently continuing on a blank page
+- **Verifiable captures** — screenshot JSON carries `url`, `title`, `viewport`, `dpr` and decoded `pixel_width`/`pixel_height`; `navigate --expect-path` and `screenshot --expect-url` fail with `url_mismatch` on silent redirects; `cdp endpoint --page` returns the session's exact page target for external CDP clients
+- **Viewport and emulation** — `viewport set WxH [--dpr R]` resizes without navigating; `screenshot --viewport WxH --dpr R` applies temporary overrides restored after capture; `emulate` sets session color scheme and reduced motion (headed or headless), pointer `coarse`/`fine` on headed local browsers only, and `emulate reset` clears them. Local screenshots go through CDP to preserve device metrics
+- **Screen recording** — `record start [--format webm|zip]`, `status`, `stop -o FILE` capture the tab active at start with bounded frames, seconds and bytes; WebM needs `ffmpeg` on the daemon host, ZIP ships JPEG frames plus a timestamped manifest. Local backends only
+- **Annotated screenshots** — `screenshot --annotate` draws fresh `[N]` refs on the image and returns `annotations` with CSS-pixel `box` and `in_viewport`; `--within`, `--find` and `--limit` narrow the labels without cropping
+- **Richer input** — `drag` between refs or coordinates with `--hold`, `--duration`, `--steps` and per-step `--sample JS`; `hover --at x,y` / `--offset dx,dy`; `--selector CSS` on `click`/`fill`/`hover` for known controls; `snapshot --find TEXT` keeps only matching subtrees with actionable refs; key names and `Ctrl`/`Cmd`/`Opt` aliases are case-insensitive; refs accept `12` or `[12]`
+- **Network observation and control** — `network --pending [--filter GLOB]` lists in-flight requests including long-lived SSE; `route add --hold` pauses matching requests for loading-state evidence and `route release` resumes them; `route list` reports hit counts and warns on zero hits; `script list` shows whether each init script has been injected; console output accumulates across navigations with page URL and timestamp, cleared explicitly with `console clear`
+- **Streaming JSONL batch** — `cloak batch` runs mixed daemon requests from a file or stdin through one process and connection pool, emitting one indexed envelope per record and stopping at the first failure. `do batch` remains the action-only runner with result references
+- **Raw CDP** — `cdp send --timeout MS` bounds each call and exits nonzero on protocol errors; `--params-file PATH` (or `-` for stdin) reads large parameter objects without shell argument limits
+- **Daemon ownership** — `AGENTCLOAK_HOME` relocates the whole state directory; the daemon holds `daemon.lock` for its lifetime so a duplicate start fails cleanly; clients discover the daemon through `/health` and never depend on PID visibility or a writable state directory. `daemon start --log-level` and `SIGUSR1` task dumps aid diagnosis; `cloak version --json`, `/health` and `daemon.json` expose a `build_id`
+- **MCP** — four new tools (`agentcloak_viewport`, `agentcloak_emulate`, `agentcloak_cdp_send`, `agentcloak_record`, 39 → 43) and new parameters on `navigate`, `snapshot`, `screenshot`, `action`, `network`, `status`, `tab` and `route` matching the CLI additions above
 
-- Retire pending requests with their documents, exclude EventSource from bounded batch settling, and connect batch snapshot reads across execution paths.
-- Add screenshot annotation scope, text and node limits; document JSONL batches, response payloads and suspended session identities.
+### Bug Fixes
 
-- Add bounded, session-owned screen recording with WebM or timestamped frame archives, and DPR-aware screenshot annotations using native geometry and actionable refs.
+- **Structured CLI failures** — every failure exits nonzero; `--json` returns `ok:false` with `error.code` / `error.message`, and the stderr line is `Error [code]: message`. `js evaluate` throws and rejected promises now fail instead of printing an error string
+- **Interception and hooks take effect** — `route add` and `script add` activate their CDP mechanisms on registration and expose hit/application status for verification
+- **Console capture across navigation** — CloakBrowser suppresses live Runtime console events; capture now uses the native Console domain plus `error`/`unhandledrejection` listeners, so logs survive navigation
+- **Snapshot coverage** — focusable custom elements (including `tabindex="-1"`) and exposed `button`/`menuitem` roles receive refs in both `compact` and `accessible` modes
+- **Main-world evaluation bound to the owning document** — `js evaluate --world main` selects the active tab's main document by frame and unique execution-context identity; iframes can no longer redirect it and a context destroyed by navigation fails without replaying the script
+- **localStorage preserved across navigation** — profile mode no longer replays a stale `localStorage-snapshot.json` over live values; `profile create --from-current` imports cookies and localStorage into the native profile once at creation
+- **Pending requests follow their document** — replacing a document or detaching its frame retires its in-flight requests; history/hash updates keep them; EventSource and fetch-based SSE stay observable but never block batch settling. Only the next snapshot after new actions waits for finite requests; consecutive snapshots do not repeat the wait
+- **Browser and tab lifecycle** — a closed page or disconnected local browser is rebuilt on the next request; `tab close --others` reports the closed IDs consistently across CLI, HTTP and MCP; popups are surfaced via `new_tab` with a `pending` marker while still loading
+- **Keyboard cleanup** — invalid key combinations are rejected before input, and failed or cancelled presses release the modifiers they pressed
+- **Network evidence** — `network --since last_action` includes the most recent action's own requests; route patterns treat `?` literally so `*/items?*` and `*/items/?*` differ
+- **Storage on `about:blank`** — JavaScript storage access after `session close` returns an actionable `storage_origin_error` with the current URL instead of a raw `SecurityError`
+- **mDNS advertisement** — registration runs asynchronously after HTTP readiness, announces the actual bound port (including port fallback), skips loopback-only listeners, and closes its resources on failure or shutdown without blocking startup
+- **Validation errors stay serializable** even when validator context contains exceptions or non-finite values
 
-- Add streaming JSONL request batches with a shared HTTP connection pool, fixed workspace/session identity and fail-fast indexed results.
+### Documentation
 
-- Add unique CSS interaction targets, accessible snapshot text search, timed drag with per-step samples, and session-scoped pending network observations with URL glob filters across CLI, HTTP and MCP.
+- Configuration precedence now matches runtime behavior: environment variables override the global config file (`CLI args > profile config > env vars > global config > defaults`)
+- New [recovery and evidence guide](docs/en/guides/recovery.md); backend capability matrix with explicit verified/unverified boundaries for RemoteBridge; workspace isolation reference; corrected headless-by-default and `discovery` extra descriptions
 
-- Preserve live localStorage values and deletions across navigation; import profile storage once at creation instead of replaying stale snapshots.
+### Engineering
 
-- Add `--dpr` to viewport and screenshot controls, preserving the existing ratio on resize and restoring temporary dimensions and DPR after capture, failure or cancellation.
-- Add session color-scheme/reduced-motion emulation and reset across CLI, HTTP and MCP. Headed local browsers also support coarse/fine pointer emulation; unsupported modes fail before changing the page.
-- Capture local screenshots through CDP to preserve device metrics and report actual image pixels. Keep validation failures serializable when validator contexts contain exceptions or non-finite inputs.
-
-- Correct multi-tab close results across CLI/API/MCP and document shared connection-pool limits, with dual-backend streaming recovery coverage.
-
-- Add workspace-aware sessions with shared login by default and configurable isolated, persistent workspace storage.
-- Expand browser controls with live viewport changes, drag, keyboard aliases, request hold/release, and bounded raw CDP calls.
-- Add bounded session queues, client-disconnect cancellation, force recovery, readable session diagnostics, popup feedback and source build identification.
-- Add screenshot page identity and pixel dimensions, URL/path assertions, and exact current-page CDP endpoints.
-- Correct keyboard cleanup, recent-action network capture, error hints and lost-page reporting; expand dual-backend browser regression coverage.
+- **Browser regression in CI** — dual-backend control suites, workspace persistence, multi-session and CLI recovery tests, plus a real Chromium MV3 extension smoke test for RemoteBridge (local machine only; cross-machine deployment remains unverified)
+- **Release gates** — PyPI publication requires a matching tag, project/lockfile version and dated CHANGELOG entry, and a successful main-branch CI run for the exact release commit; `scripts/check_upgrade.py` upgrades from the published `0.3.4` package and verifies configuration, profile cookies/localStorage, restart persistence and skill refresh
+- Refresh locked dependencies: Playwright 1.63.0, uvicorn 0.53.0, Ruff 0.16.8, pyright 1.1.414, PyJWT 2.14.0, greenlet 3.5.6, idna 3.20
 
 ## 0.3.5 (2026-09-09)
 

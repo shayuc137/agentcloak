@@ -29,7 +29,7 @@ dns_over_https = false   # 默认值；尊重系统 DNS / split-horizon 代理
 
 | 层 | 后端 | 隐身 | 适用场景 |
 |----|------|------|---------|
-| 1（默认） | **CloakBrowser** | 57 C++ 补丁，可带头默认，可选 humanize | 大多数带反爬的站点 |
+| 1（默认） | **CloakBrowser** | 57 C++ 补丁，默认无头，可选有头模式与 humanize | 大多数带反爬的站点 |
 | 2（fallback） | **PlaywrightContext** | 无 | 无检测的站点、调试 |
 | 3（real） | **RemoteBridge** | 天然（真实 Chrome） | 用长期用户历史画像的站点 |
 

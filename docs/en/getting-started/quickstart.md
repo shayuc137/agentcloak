@@ -209,7 +209,7 @@ $ cloak navigate https://example.com
 https://example.com/ | Example Domain
 
 $ cloak click 99
-Error: Element [99] not in selector_map (1 entries)
+Error [element_not_found]: Element [99] not in selector_map (1 entries)
   -> run 'snapshot' to refresh the selector_map, or re-snapshot if the page changed
 ```
 

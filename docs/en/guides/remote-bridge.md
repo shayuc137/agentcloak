@@ -127,11 +127,13 @@ The extension connects directly to the daemon's `/ext` WebSocket. That endpoint 
 
 Rotate with `cloak bridge token --reset` (hot-applies to a running daemon), or by restarting the daemon.
 
-## mDNS auto-discovery (optional)
+## mDNS advertisement (optional)
 
-If you install the optional `zeroconf` extra (`pip install agentcloak[mdns]`), the daemon advertises itself on the local network as `_agentcloak._tcp.local`. The extension can list available daemons and pick one without manual IP entry.
+Install `agentcloak[discovery]` to advertise LAN-accessible daemon listeners as `_agentcloak._tcp.local`. Registration runs asynchronously after HTTP is ready and announces the actual bound port, including port fallback. Instance names distinguish hosts and ports; name conflicts are resolved by zeroconf. Loopback-only listeners are not advertised to the LAN; configure a reachable `daemon.host` for remote clients.
 
-The auth token is **never** broadcast over mDNS — clients still need to obtain it from the session file.
+Missing zeroconf, unavailable multicast or registration failure does not prevent HTTP startup. Failed or cancelled registration and normal shutdown close the discovery resources; normal shutdown withdraws the service. Startup registration and shutdown cleanup have separate five-second budgets. Failures are logged as `mdns_register_failed` / `mdns_close_failed`.
+
+The bundled extension probes ports on its configured or previously connected host; it does not provide a LAN mDNS browser UI. mDNS records are available to discovery-capable clients. The auth token is never broadcast; obtain it through the private session file or the bridge setup flow.
 
 ## Cookie export
 

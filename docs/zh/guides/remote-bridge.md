@@ -124,11 +124,13 @@ cloak bridge finalize --mode deliverable   # 重命名分组为 "agentcloak resu
 
 重启 daemon 即轮换——每次启动会生成新 token。
 
-## mDNS 自动发现（可选）
+## mDNS 服务广播（可选）
 
-装上可选的 `zeroconf` 依赖（`pip install agentcloak[mdns]`），daemon 会在局域网上广播自己为 `_agentcloak._tcp.local`。扩展可以列出可用 daemon，无需手输 IP。
+安装 `agentcloak[discovery]` 后，可从局域网访问的 daemon 会广播 `_agentcloak._tcp.local` 服务。注册在 HTTP 就绪后异步运行，使用实际监听端口，包括端口被占用后的回退端口。实例名区分主机与端口，重名由 zeroconf 处理。仅监听回环地址时不向局域网广播；远程访问需配置可达的 `daemon.host`。
 
-认证 token **绝不**走 mDNS 广播——客户端仍需从 session 文件取。
+未安装 zeroconf、多播不可用或注册失败都不阻止 HTTP 启动。注册失败、取消和正常退出会关闭发现资源，正常退出会撤销服务公告；注册和退出清理分别有五秒预算。失败日志为 `mdns_register_failed` / `mdns_close_failed`。
+
+内置扩展会探测已配置或曾连接主机的端口，目前没有局域网 mDNS 列表界面。支持 mDNS 的客户端可读取这些公告。认证 token 不广播；通过私有 session 文件或 bridge 配置流程获取。
 
 ## Cookie 导出
 

@@ -566,10 +566,6 @@ async def _start_owned(
         persistent=True,
     )
 
-    from agentcloak.core.discovery import register_daemon
-
-    register_daemon(actual_port, token=bridge_token)
-
     from agentcloak.core.resume import ResumeWriter
 
     resume_writer = ResumeWriter(paths)
@@ -739,13 +735,23 @@ async def _start_owned(
             )
         )
 
+    async def _advertise_when_ready() -> None:
+        from agentcloak.core.discovery import advertise_daemon
+
+        while not server.started:
+            if server.should_exit:
+                return
+            await asyncio.sleep(0.01)
+        await advertise_daemon(actual_host, actual_port)
+
+    background_tasks.append(asyncio.create_task(_advertise_when_ready()))
     try:
         await server.serve()
     finally:
         logger.info("shutting_down")
-        from agentcloak.core.discovery import unregister_daemon
-
-        unregister_daemon()
+        for task in background_tasks:
+            task.cancel()
+        await asyncio.gather(*background_tasks, return_exceptions=True)
         # Workspace storage must be saved while the owning browser is still live.
         with contextlib.suppress(Exception):
             await session_manager.close_all()

@@ -12,19 +12,20 @@ zeroconf object.
 
 from __future__ import annotations
 
+import asyncio
+import ipaddress
 import socket
 from typing import Any
 
 import structlog
 
-__all__ = ["discover_daemon", "register_daemon", "unregister_daemon"]
+__all__ = ["advertise_daemon", "discover_daemon"]
 
 logger = structlog.get_logger()
 
 SERVICE_TYPE = "_agentcloak._tcp.local."
-SERVICE_NAME = "agentcloak-daemon._agentcloak._tcp.local."
-
-_registration: Any = None
+_REGISTRATION_TIMEOUT = 5.0
+_CLOSE_TIMEOUT = 5.0
 
 
 def _has_zeroconf() -> bool:
@@ -36,57 +37,56 @@ def _has_zeroconf() -> bool:
         return False
 
 
-def register_daemon(port: int, token: str | None = None) -> bool:
-    global _registration
+async def advertise_daemon(host: str, port: int) -> None:
+    """Advertise a ready listener until cancelled; discovery never owns readiness."""
     if not _has_zeroconf():
         logger.debug("zeroconf_not_available")
-        return False
-
+        return
+    zc: Any = None
     try:
-        from zeroconf import ServiceInfo, Zeroconf  # pyright: ignore[reportMissingImports]  # noqa: I001
+        from zeroconf import ServiceInfo  # pyright: ignore[reportMissingImports]
+        from zeroconf.asyncio import (
+            AsyncZeroconf,  # pyright: ignore[reportMissingImports]
+        )
 
+        addresses = await asyncio.get_running_loop().getaddrinfo(
+            host or "0.0.0.0", port, type=socket.SOCK_STREAM
+        )
+        address = ipaddress.ip_address(addresses[0][4][0])
+        if address.is_unspecified:
+            address = ipaddress.ip_address(
+                _get_local_ip(
+                    socket.AF_INET6 if address.version == 6 else socket.AF_INET
+                )
+            )
+        if address.is_loopback:
+            logger.debug("mdns_not_advertised", reason="loopback_only_listener")
+            return
         hostname = socket.gethostname()
-        local_ip = _get_local_ip()
-
-        properties: dict[str, str] = {"hostname": hostname}
-        # Token is NOT broadcast over mDNS — must be obtained via session file
-
+        name = f"agentcloak-{hostname[:32]}-{port}.{SERVICE_TYPE}"
         info = ServiceInfo(
             SERVICE_TYPE,
-            SERVICE_NAME,
-            addresses=[socket.inet_aton(local_ip)],
+            name,
+            addresses=[address.packed],
             port=port,
-            properties=properties,
+            properties={"hostname": hostname},
         )
-
-        zc = Zeroconf()
-        zc.register_service(info)
-        _registration = (zc, info)
-
-        logger.info(
-            "mdns_registered",
-            service=SERVICE_NAME,
-            ip=local_ip,
-            port=port,
-        )
-        return True
+        zc = AsyncZeroconf()
+        # The second await covers the announcement task returned by zeroconf.
+        async with asyncio.timeout(_REGISTRATION_TIMEOUT):
+            await (await zc.async_register_service(info, allow_name_change=True))
+        logger.info("mdns_registered", service=info.name, ip=str(address), port=port)
+        await asyncio.Event().wait()
     except Exception as exc:
-        logger.debug("mdns_register_failed", error=str(exc))
-        return False
-
-
-def unregister_daemon() -> None:
-    global _registration
-    if _registration is None:
-        return
-    try:
-        zc, info = _registration
-        zc.unregister_service(info)
-        zc.close()
-        _registration = None
-        logger.info("mdns_unregistered")
-    except Exception:
-        _registration = None
+        logger.warning("mdns_register_failed", error=str(exc))
+    finally:
+        if zc is not None:
+            try:
+                async with asyncio.timeout(_CLOSE_TIMEOUT):
+                    await zc.async_close()
+                logger.info("mdns_unregistered")
+            except Exception as exc:
+                logger.warning("mdns_close_failed", error=str(exc))
 
 
 def discover_daemon(timeout: float = 3.0) -> str | None:
@@ -138,7 +138,8 @@ def discover_daemon(timeout: float = 3.0) -> str | None:
 
         if found:
             d = found[0]
-            url = f"ws://{d['ip']}:{d['port']}/ext"
+            host = f"[{d['ip']}]" if ":" in d["ip"] else d["ip"]
+            url = f"ws://{host}:{d['port']}/ext"
             logger.info("mdns_discovered", url=url)
             return url
 
@@ -148,12 +149,11 @@ def discover_daemon(timeout: float = 3.0) -> str | None:
         return None
 
 
-def _get_local_ip() -> str:
+def _get_local_ip(family: int = socket.AF_INET) -> str:
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return str(ip)
+        with socket.socket(family, socket.SOCK_DGRAM) as sock:
+            target = "2001:4860:4860::8888" if family == socket.AF_INET6 else "8.8.8.8"
+            sock.connect((target, 80))
+            return str(sock.getsockname()[0])
     except Exception:
-        return "127.0.0.1"
+        return "::1" if family == socket.AF_INET6 else "127.0.0.1"

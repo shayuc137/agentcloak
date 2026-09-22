@@ -307,3 +307,5 @@ cloak daemon start
 workspace 模式在没有命名 profile 时也会持久化。`profile create --from-current` 会按显式请求导出 profile 种子；在 workspace 模式启动这个 profile，不会把其中的 cookie/localStorage 灌入每个空间。需要迁移 cookie 时，显式指定导出/恢复文件。
 
 `daemon start --log-level LEVEL` 可为单个进程覆盖 `daemon.log_level`；`browser.action_timeout` 同时约束会话等锁、截图和快照执行，见[恢复说明](../guides/recovery.md)。
+
+安装可选 `discovery` 后，可从局域网访问的监听地址会在 HTTP 就绪后广播；仅回环地址不广播，发现失败不阻止 HTTP。详见 [mDNS 服务广播](../guides/remote-bridge.md#mdns-服务广播可选)。

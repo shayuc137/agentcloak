@@ -14,7 +14,7 @@ from unittest.mock import patch
 from typer.testing import CliRunner
 
 from agentcloak.cli.app import app
-from agentcloak.core.discovery import _has_zeroconf, discover_daemon, register_daemon
+from agentcloak.core.discovery import _has_zeroconf, advertise_daemon, discover_daemon
 
 runner = CliRunner()
 
@@ -39,9 +39,9 @@ class TestMDNS:
         with patch("agentcloak.core.discovery._has_zeroconf", return_value=False):
             assert discover_daemon() is None
 
-    def test_register_daemon_without_zeroconf(self) -> None:
+    async def test_register_daemon_without_zeroconf(self) -> None:
         with patch("agentcloak.core.discovery._has_zeroconf", return_value=False):
-            assert register_daemon(9222) is False
+            assert await advertise_daemon("0.0.0.0", 9222) is None
 
 
 class TestRemoteBridgeContextPublicAPI:

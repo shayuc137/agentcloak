@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Run optional mDNS advertisement asynchronously after HTTP readiness, advertise the actual bound port, isolate instance names, and close discovery resources on failure or shutdown.
+- Gate publication on matching tag/version/changelog and successful CI for the exact release commit; add installed-release upgrade coverage for configuration, profile storage, restart and skill updates.
+
 - Lock daemon state for its lifetime, support isolated `AGENTCLOAK_HOME` roots, and discover active profiles from live health rather than stale records.
 - Make batch snapshot reads compact by default, honor current node limits, and settle only once after actions while excluding fetch-based SSE.
 - Add viewport-intersection metadata to screenshot annotations and actionable origin errors for JavaScript storage access.

@@ -317,3 +317,5 @@ Workspace state is stored under `~/.agentcloak/workspaces/<workspace-and-profile
 Workspace mode persists even without a named profile. `profile create --from-current` explicitly exports a profile seed; launching that profile in workspace mode does not seed every workspace with its cookies/localStorage. Use an explicit cookie export/restore file when transferring cookies between these stores.
 
 `daemon start --log-level LEVEL` overrides `daemon.log_level` for one process. `browser.action_timeout` also bounds session queue waits and screenshot/snapshot execution; [recovery details](../guides/recovery.md).
+
+With the optional `discovery` extra, LAN-accessible listeners are advertised after HTTP readiness. Loopback-only hosts are not advertised, and discovery failures do not block HTTP. See [mDNS advertisement](../guides/remote-bridge.md#mdns-advertisement-optional).

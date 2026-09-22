@@ -63,7 +63,7 @@ jobs:
       - uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
-      - run: uv sync --locked --extra dev
+      - run: uv sync --locked --extra dev --extra discovery
       - name: Install Chromium headless shell and system libraries
         run: uv run --locked playwright install --with-deps --only-shell chromium
       # The shared fixture also launches CloakBrowser, which downloads its
@@ -77,13 +77,14 @@ jobs:
           -v --tb=short --timeout=60
       - name: Browser controls, workspace isolation, and CLI recovery
         run: >-
-          uv run --locked pytest
+          uv run --locked --extra dev --extra discovery pytest
           tests/integration/test_page_emulation.py
           tests/integration/test_storage_lifecycle.py
           tests/integration/test_visual_evidence.py
           tests/integration/test_network_lifecycle.py
           tests/integration/test_evaluate_context.py
           tests/integration/test_daemon_ownership.py
+          tests/integration/test_discovery.py
           tests/integration/test_interaction_observation.py
           tests/integration/test_input_actions.py
           tests/integration/test_network_controls.py
@@ -106,6 +107,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.0.1
       - uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
@@ -114,6 +116,11 @@ jobs:
         run: python -m build
       - name: Verify install from wheel
         run: pip install dist/*.whl && agentcloak --help
+
+      - name: Install browser for release upgrade regression
+        run: uv run --locked playwright install --with-deps chromium
+      - name: Preserve configuration, profile state and skills across upgrade
+        run: python scripts/check_upgrade.py --wheel dist/agentcloak-*.whl
 
   security:
     name: Dependency Audit

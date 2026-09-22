@@ -126,3 +126,7 @@ cloak cookies import -c '[{"name":"token","value":"abc","domain":".example.com",
 ```
 
 RemoteBridge requires `browser.isolation=shared`. Launch from the intended workspace/session, claim the tab by ID or URL pattern, then operate it. Other workspaces/sessions cannot claim or relaunch over that owner; close from the owning session before handover. Local MV3 smoke does not prove Windows/network or complete route/script parity.
+
+## Optional LAN discovery
+
+`agentcloak[discovery]` adds asynchronous mDNS advertisement after HTTP readiness, using the actual listener port. Loopback-only listeners are not advertised. Discovery failure does not block the daemon; shutdown withdraws the advertisement and closes resources. The extension probes configured-host ports, not a LAN mDNS list. Tokens are never broadcast. Check `mdns_register_failed` / `mdns_close_failed` logs when diagnosing discovery.

@@ -13,12 +13,7 @@ import pytest
 @pytest.fixture
 def launcher(tmp_path):
     runner = tmp_path / "run_cli.py"
-    # Optional discovery has its own lifecycle tests; no multicast on test hosts.
-    runner.write_text(
-        "import agentcloak.core.discovery as d\n"
-        "d.register_daemon = lambda *a, **k: False\n"
-        "from agentcloak.cli.app import main\nmain()\n"
-    )
+    runner.write_text("from agentcloak.cli.app import main\nmain()\n")
     return runner
 
 

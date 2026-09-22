@@ -5,14 +5,41 @@ on:
     types: [published]
 
 jobs:
+  verify:
+    name: Verify release identity and CI
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      commit: ${{ steps.gate.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Require matching version and successful CI
+        id: gate
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/check_release.py
+
   publish:
     name: Build & Publish
+    needs: verify
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
+      contents: read
       id-token: write
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.verify.outputs.commit }}
       - uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"

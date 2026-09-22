@@ -156,6 +156,21 @@ Commit `pyproject.toml` and `uv.lock` together if dependency requirements change
 
 MCP remains on the supported 1.x line (`<2.0.0`) until the server API migration is implemented. The explicit cryptography minimum prevents existing environments from keeping the vulnerable version addressed by CVE-2026-69247.
 
+## Release preparation
+
+Run `uv run python scripts/preflight.py`, refresh and audit dependencies as described above, and build both distributions with `uv build`. The upgrade regression starts from the published `0.3.4` package in a temporary environment, installs the candidate wheel, and verifies configuration, profile cookies/localStorage, restart persistence and skill refresh:
+
+```bash
+uv run playwright install chromium
+python scripts/check_upgrade.py --wheel dist/agentcloak-<version>-py3-none-any.whl
+```
+
+It constrains third-party packages to the current lockfile so both stages use the installed browser revision. Only baseline state paths and the skill destination are redirected for isolation; it runs real CLI processes and a real browser. The candidate resolves `AGENTCLOAK_HOME` itself. The fresh-install security job covers independent dependency resolution. Optional discovery has a real multicast regression in the browser job with `--extra discovery`.
+
+Before publishing, update the project and lockfile version and add a dated CHANGELOG entry. Push the release commit to `main` and wait for its CI run to pass, then tag that exact commit as `v<version>` and publish its GitHub Release. A tag push alone does not trigger PyPI publication.
+
+The publication workflow verifies the tag, checkout and release-event commit, package/lockfile version and CHANGELOG entry. It requires the latest `ci.yml` main-branch push run for that exact commit to have completed successfully; missing, failed, cancelled or pending CI blocks upload. The publish job checks out the verified immutable commit. Metadata mismatch and API failures fail closed; PR-only CI is insufficient.
+
 ## Questions?
 
 Open a [discussion](https://github.com/shayuc137/agentcloak/discussions) or file an [issue](https://github.com/shayuc137/agentcloak/issues).

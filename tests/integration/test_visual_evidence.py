@@ -69,6 +69,36 @@ async def wait_frames(client, minimum=2):
             await asyncio.sleep(0.03)
 
 
+async def test_annotation_filters_share_snapshot_refs(private_api, local_server):
+    client, _ = private_api
+    await navigate(client, local_server, page="visual-evidence.html")
+    for params in (
+        {"within": "#control"},
+        {"find": "Save example"},
+        {"within": "body", "find": "Save example", "limit": 0},
+    ):
+        response = await client.get("/screenshot", params={"annotate": True, **params})
+        assert response.is_success, response.text
+        annotations = response.json()["data"]["annotations"]
+        assert any(item["name"] == "Save example" for item in annotations)
+        assert not any(item["name"] == "Lower control" for item in annotations)
+    limited = await client.get("/screenshot", params={"annotate": True, "limit": 1})
+    assert limited.is_success, limited.text
+    assert len(limited.json()["data"]["annotations"]) <= 1
+    missing = await client.get(
+        "/screenshot", params={"annotate": True, "find": "missing-control"}
+    )
+    assert missing.json()["data"]["annotations"] == []
+    for params in (
+        {"within": "body"},
+        {"limit": 0},
+        {"find": "Save"},
+        {"annotate": True, "limit": -1},
+    ):
+        response = await client.get("/screenshot", params=params)
+        assert response.is_error, response.text
+
+
 @pytest.mark.parametrize("format", ["webm", "zip"])
 async def test_recording_export_and_session_ownership(
     private_api, local_server, tmp_path, format

@@ -107,6 +107,17 @@ async def handle_screenshot(
     annotate: bool = Query(
         False, description="Draw fresh snapshot refs and return CSS boxes."
     ),
+    within: str = Query(
+        "", description="Limit annotations to a CSS subtree; requires annotate."
+    ),
+    limit: int | None = Query(
+        None,
+        ge=0,
+        description="Annotation node limit; 0 is unlimited; requires annotate.",
+    ),
+    find: str = Query(
+        "", description="Filter annotation snapshot by text; requires annotate."
+    ),
     expect_url: str = Query(
         "", description="Require the captured URL to match this glob."
     ),
@@ -185,6 +196,9 @@ async def handle_screenshot(
             format=resolved_format,
             quality=quality,
             **({"annotate": True} if annotate else {}),
+            **({"within": within} if within else {}),
+            **({"limit": limit} if limit is not None else {}),
+            **({"find": find} if find else {}),
             **({"expect_url": expect_url} if expect_url else {}),
             **({"viewport": viewport} if viewport is not None else {}),
             **({"dpr": dpr} if dpr is not None else {}),

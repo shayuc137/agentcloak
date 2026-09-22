@@ -104,7 +104,14 @@ class ScreenshotResponse(BaseModel):
     pixel_width: int = 0
     pixel_height: int = 0
     annotated: bool = False
-    annotations: list[dict[str, Any]] = Field(default_factory=list[dict[str, Any]])
+    annotations: list[dict[str, Any]] = Field(
+        default_factory=list[dict[str, Any]],
+        description=(
+            "Each item has ref (integer), role, name, and box [x, y, width, height] "
+            "in CSS pixels. Coordinates are viewport-relative, or "
+            "document-relative for full_page; DPR only scales the image."
+        ),
+    )
 
 
 # --- Snapshot ---
@@ -118,7 +125,12 @@ class SnapshotResponse(BaseModel):
     url: str
     title: str
     mode: str
-    tree_text: str
+    tree_text: str = Field(
+        description=(
+            "Rendered accessibility tree text with [N] refs, "
+            "including when find is used; not a node array."
+        )
+    )
     tree_size: int
     truncated: bool
     total_nodes: int
@@ -241,7 +253,7 @@ class BatchActionRequest(BaseModel):
     settle_timeout: int | None = Field(
         None,
         description=(
-            "Max ms to wait for navigation/network to settle per action; "
+            "Max ms to wait for finite network requests before a batch snapshot; "
             "unset uses browser.batch_settle_timeout."
         ),
     )

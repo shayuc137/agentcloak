@@ -209,6 +209,9 @@ class TestHide:
             wait_timeout=None,
             hide=".toolbar,#dev",
             annotate=False,
+            within="",
+            limit=None,
+            find="",
             keep_overlays=True,
             dpr=None,
         )

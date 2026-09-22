@@ -211,3 +211,5 @@ Local Playwright and CloakBrowser backends support forced session recovery and e
 CSS targeting, snapshot find and timed drag use the shared action/snapshot paths; both local backends have real-browser coverage, while full Bridge input parity remains unverified. Pending-request observation is currently local-only and explicitly rejected by RemoteBridge.
 
 Local screen recording uses page-pinned CDP screencast with bounded frames; WebM export requires ffmpeg, while ZIP is dependency-free. Annotated screenshots draw native DOM boxes in image pixels. Both have local dual-backend regression coverage; Bridge recording is unsupported and Bridge annotation remains unverified.
+
+Local pending-request observation follows document/frame lifetimes: document replacement and frame detach retire old requests, while same-document history/hash updates retain them. Live EventSource streams remain observable but do not block action-batch snapshot settling.

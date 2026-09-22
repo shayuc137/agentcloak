@@ -1088,6 +1088,9 @@ class DaemonClient:
         dpr: float | None = None,
         expect_url: str = "",
         annotate: bool = False,
+        within: str = "",
+        limit: int | None = None,
+        find: str = "",
     ) -> dict[str, Any]:
         return self._send_sync(
             "GET",
@@ -1108,6 +1111,9 @@ class DaemonClient:
                 dpr=dpr,
                 expect_url=expect_url,
                 annotate=annotate,
+                within=within,
+                limit=limit,
+                find=find,
             ),
         )
 
@@ -1246,6 +1252,9 @@ class DaemonClient:
         dpr: float | None = None,
         expect_url: str = "",
         annotate: bool = False,
+        within: str = "",
+        limit: int | None = None,
+        find: str = "",
     ) -> dict[str, Any]:
         # MCP defaults to ``mcp_screenshot_quality`` (lower than CLI's 80) so
         # base64 output stays under typical MCP token budgets.
@@ -1266,6 +1275,9 @@ class DaemonClient:
                 dpr=dpr,
                 expect_url=expect_url,
                 annotate=annotate,
+                within=within,
+                limit=limit,
+                find=find,
             ),
         )
 
@@ -2142,6 +2154,9 @@ def _build_screenshot_params(
     dpr: float | None = None,
     expect_url: str = "",
     annotate: bool = False,
+    within: str = "",
+    limit: int | None = None,
+    find: str = "",
 ) -> dict[str, str]:
     params: dict[str, str] = {"quality": str(quality)}
     if format is not None:
@@ -2158,6 +2173,12 @@ def _build_screenshot_params(
         params["keep_overlays"] = "true"
     if annotate:
         params["annotate"] = "true"
+    if within:
+        params["within"] = within
+    if limit is not None:
+        params["limit"] = str(limit)
+    if find:
+        params["find"] = find
     if expect_url:
         params["expect_url"] = expect_url
     if viewport is not None:

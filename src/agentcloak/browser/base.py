@@ -1276,10 +1276,20 @@ class BrowserContextBase(ABC):
         extra = await self._network_entries(since_seq=since_seq)
         return [*base, *extra] if extra else base
 
-    async def _annotation_boxes(self, *, full_page: bool) -> list[dict[str, Any]]:
+    async def _annotation_boxes(
+        self, *, full_page: bool, within: str, limit: int | None, find: str
+    ) -> list[dict[str, Any]]:
+        node_limit = self._browser_config.snapshot_max_nodes if limit is None else limit
         await self.snapshot(
-            mode="compact", max_nodes=self._browser_config.snapshot_max_nodes
+            mode="compact",
+            max_nodes=node_limit,
+            selector=within,
+            find=find,
         )
+        visible_lines = (
+            self._cached_lines[:node_limit] if node_limit else self._cached_lines
+        )
+        visible_refs = {ref for _, _, ref in visible_lines if ref is not None}
         metrics = await self._cdp_send("Page.getLayoutMetrics", {})
         viewport = metrics.get("cssLayoutViewport", {})
         dx, dy = (
@@ -1289,6 +1299,8 @@ class BrowserContextBase(ABC):
         )
         boxes: list[dict[str, Any]] = []
         for index, backend_id in self._backend_node_map.items():
+            if index not in visible_refs:
+                continue
             try:
                 # Native geometry avoids JS bounding-rect fingerprint noise.
                 model = await self._cdp_send(
@@ -1333,6 +1345,9 @@ class BrowserContextBase(ABC):
         dpr: float | None = None,
         expect_url: str = "",
         annotate: bool = False,
+        within: str = "",
+        limit: int | None = None,
+        find: str = "",
     ) -> bytes:
         # ``output_path`` writes the capture to disk in addition to returning
         # the bytes. Writing lives here rather than in ``_screenshot_impl`` so
@@ -1343,6 +1358,14 @@ class BrowserContextBase(ABC):
         self._check_debugger_paused()
         self._check_browser_alive()
         self._check_page_valid()
+        if (within or limit is not None or find) and not annotate:
+            from agentcloak.core.input import invalid_input
+
+            raise invalid_input("Screenshot within/limit/find require annotate=true")
+        if limit is not None and limit < 0:
+            from agentcloak.core.input import invalid_input
+
+            raise invalid_input("Screenshot limit must be non-negative")
         if quality is None:
             quality = self._browser_config.screenshot_quality
         from agentcloak.core.input import parse_viewport, validate_dpr
@@ -1377,7 +1400,11 @@ class BrowserContextBase(ABC):
                     action="navigate to the intended page before capturing",
                 )
             annotations = (
-                await self._annotation_boxes(full_page=full_page) if annotate else []
+                await self._annotation_boxes(
+                    full_page=full_page, within=within, limit=limit, find=find
+                )
+                if annotate
+                else []
             )
             data = await self._screenshot_impl(
                 full_page=full_page, fmt=format, quality=quality
@@ -2878,15 +2905,9 @@ class BrowserContextBase(ABC):
                 results.append(result)
                 continue
 
-            # Read-after-write settle: if previous action left pending requests
-            # and this is a snapshot, wait until the count drops.
-            if (
-                i > 0
-                and kind == "snapshot"
-                and results
-                and results[-1].get("pending_requests", 0) > 0
-            ):
-                await self._settle_pending_requests(settle_timeout)
+            if kind == "snapshot":
+                results.append(await batch_snapshot(self, extra, settle_timeout))
+                continue
 
             try:
                 result = await self.action(str(kind), str(target), **extra)
@@ -2926,13 +2947,36 @@ class BrowserContextBase(ABC):
 
         return {"results": results, "completed": total, "total": total}
 
+    def _settling_request_count(self) -> int:
+        return self._pending_request_count
+
     async def _settle_pending_requests(self, timeout_ms: int) -> None:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout_ms / 1000
-        while self._pending_request_count > 0:
+        while self._settling_request_count() > 0:
             if loop.time() >= deadline:
                 break
             await asyncio.sleep(0.1)
+
+
+async def batch_snapshot(
+    ctx: Any, params: dict[str, Any], settle_timeout: int | None
+) -> dict[str, Any]:
+    """Keep read-after-write semantics identical across batch execution paths."""
+    if settle_timeout is None:
+        settle_timeout = ctx._browser_config.batch_settle_timeout
+    await ctx._settle_pending_requests(settle_timeout)
+    snap: PageSnapshot = await ctx.snapshot(**params)
+    return {
+        "ok": True,
+        "seq": snap.seq,
+        "url": snap.url,
+        "title": snap.title,
+        "mode": snap.mode,
+        "tree_text": snap.tree_text,
+        "total_nodes": snap.total_nodes,
+        "security_warnings": snap.security_warnings,
+    }
 
 
 def screenshot_to_base64(data: bytes) -> str:

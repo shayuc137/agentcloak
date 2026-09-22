@@ -187,3 +187,5 @@ Start with `cloak daemon start --log-level info` for request entered/acquired/st
 `unsupported_operation` from `emulate --pointer` means the backend cannot restore pointer state reliably. Use a local headed browser (`browser.headless=false`, with Xvfb on a server). Color scheme, reduced motion and DPR remain available in headless local browsers. RemoteBridge does not support session environment changes.
 
 Profile localStorage is native browser state: navigation does not replay JSON backups. `profile create --from-current` seeds a new native profile once. If a legacy profile contains only a localStorage snapshot, recreate it from a live authenticated session; do not overwrite current storage with an old backup.
+
+`network --pending` retains live SSE but retires requests when their document is replaced or frame detached. History/hash navigation keeps them. Action-batch snapshot settling excludes EventSource; use explicit selector/JS waits for application readiness. A closed session listed as `suspended` retains only its identity, not live pages; the next request creates a new page.

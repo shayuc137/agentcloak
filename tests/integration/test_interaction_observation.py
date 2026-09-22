@@ -197,6 +197,12 @@ async def test_cli_and_mcp_targeting(private_api, local_server, tmp_path):
     annotated = await cli(
         "screenshot",
         "--annotate",
+        "--within",
+        "body",
+        "--find",
+        "Editor",
+        "--limit",
+        "0",
         "--format",
         "png",
         "-o",
@@ -323,9 +329,18 @@ async def test_cli_and_mcp_targeting(private_api, local_server, tmp_path):
     )
     assert (tmp_path / "mcp.zip").is_file()
     annotated = await mcp.call_tool(
-        "agentcloak_screenshot", {"annotate": True, "format": "png"}
+        "agentcloak_screenshot",
+        {
+            "annotate": True,
+            "format": "png",
+            "within": "body",
+            "find": "Editor",
+            "limit": 0,
+        },
     )
     assert "image" in str(annotated).lower()
+    assert "Editor" in str(annotated)
+    assert "Drag source" not in str(annotated)
     result = await mcp.call_tool("agentcloak_snapshot", {"find": "Editor"})
     assert "Editor" in str(result)
     await mcp.call_tool("agentcloak_network", {"pending": True, "filter": "*/missing"})

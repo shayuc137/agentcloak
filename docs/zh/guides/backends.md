@@ -210,3 +210,5 @@ CI 浏览器任务包含本地操作回归、工作空间持久化、CLI 恢复�
 CSS 定位、snapshot find 和定时拖动复用共享交互/快照路径，两个本地后端有真实浏览器回归；Bridge 完整输入对齐仍未验证。在途请求观测目前仅支持本地后端，RemoteBridge 明确拒绝。
 
 本地录屏使用固定页面的 CDP screencast 并限制帧缓存；WebM 导出需要 ffmpeg，ZIP 无额外依赖。标注截图将原生 DOM 框绘制到图像像素中。两者都有本地双后端回归；Bridge 不支持录屏，Bridge 标注尚未实测。
+
+本地 pending 请求观测跟随文档/frame 生命周期：替换文档和移除 frame 会清理旧请求，同文档 history/hash 更新则保留。仍在运行的 EventSource 流继续可见，但不阻塞动作批处理的 snapshot 等待。

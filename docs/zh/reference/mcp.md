@@ -502,3 +502,5 @@ JS 代码覆盖率、CPU 性能分析和堆内存快照——找出哪些代码�
 start 固定当前 session 的活动标签页。status 返回采集状态和限制；stop 在 MCP 客户端机器写入文件（默认临时路径），返回路径、帧数和时长。WebM 要求 daemon 安装 ffmpeg，ZIP 不需要。关闭 session 会丢弃未导出的录屏。限制与归属见[录屏说明](cli.md#record)。
 
 `agentcloak_screenshot(annotate=true)` 返回标注图片及引用/框元数据。`agentcloak_snapshot(find="文本")` 在分页前搜索可访问名称/值。`agentcloak_action` 的 click/fill/hover 支持 `selector`，drag 支持 `hold`、`duration`、`sample`；`agentcloak_network` 支持 `pending` 和 URL `filter`。
+
+`agentcloak_screenshot(annotate=true, within="#panel", find="Save", limit=20)` 筛选标注引用，不裁剪图片；`limit=0` 不限。标注元数据为 CSS 像素的 `annotations: [{ref, role, name, box: [x,y,width,height]}]`；snapshot 的 HTTP/CLI JSON 使用 `data.tree_text`，MCP snapshot 工具则渲染为文本。

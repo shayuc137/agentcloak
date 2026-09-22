@@ -158,6 +158,7 @@ class PlaywrightContext(BrowserContextBase):
         self._proxy_url = proxy_url
         self._pending_captures: set[asyncio.Task[None]] = set()
         self._pending_requests: dict[Any, dict[str, Any]] = {}
+        self._document_responses: dict[Any, Any] = {}
         self._cdp_port: int | None = cdp_port
         # Playwright Dialog object retained so dialog_handle can accept/dismiss.
         self._dialog_object: Any = None
@@ -309,6 +310,7 @@ class PlaywrightContext(BrowserContextBase):
         target.on("close", lambda: self._clear_page_requests(target))
         target.on("dialog", self._on_dialog)
         target.on("framenavigated", self._on_frame_navigated)
+        target.on("framedetached", self._clear_frame_requests)
         target.on("download", self._on_download)
         # Console capture (7a R1): wire listeners eagerly so messages emitted
         # before the first ``console`` query (e.g. during navigate) are not
@@ -334,6 +336,17 @@ class PlaywrightContext(BrowserContextBase):
 
     def _on_request_end(self, request: Any) -> None:
         self._pending_requests.pop(request, None)
+        with contextlib.suppress(Exception):
+            if self._document_responses.get(request.frame) == request:
+                self._document_responses.pop(request.frame, None)
+        self._pending_request_count = len(self._pending_requests)
+
+    def _clear_frame_requests(self, frame: Any) -> None:
+        for request in list(self._pending_requests):
+            with contextlib.suppress(Exception):
+                if request.frame == frame:
+                    self._pending_requests.pop(request, None)
+        self._document_responses.pop(frame, None)
         self._pending_request_count = len(self._pending_requests)
 
     def _clear_page_requests(self, page: Any) -> None:
@@ -342,6 +355,15 @@ class PlaywrightContext(BrowserContextBase):
                 if request.frame.page == page:
                     self._pending_requests.pop(request, None)
         self._pending_request_count = len(self._pending_requests)
+        for frame in list(self._document_responses):
+            if frame.page == page:
+                self._document_responses.pop(frame, None)
+
+    def _settling_request_count(self) -> int:
+        return sum(
+            entry["resource_type"] != "eventsource"
+            for entry in self._pending_requests.values()
+        )
 
     async def _pending_network_entries(self, *, since_seq: int) -> list[dict[str, Any]]:
         return [
@@ -384,6 +406,15 @@ class PlaywrightContext(BrowserContextBase):
             self._dialog_object = None
 
     def _on_frame_navigated(self, frame: Any) -> None:
+        # Playwright also emits this for history/hash changes. Only a document
+        # response followed by a commit retires the old document's requests;
+        # streams may never emit requestfinished/requestfailed on unload.
+        if self._document_responses.pop(frame, None) is not None:
+            for request in list(self._pending_requests):
+                with contextlib.suppress(Exception):
+                    if request.frame == frame and not request.is_navigation_request():
+                        self._pending_requests.pop(request, None)
+            self._pending_request_count = len(self._pending_requests)
         try:
             if frame == self._page.main_frame:
                 self._navigation_generation += 1
@@ -464,6 +495,8 @@ class PlaywrightContext(BrowserContextBase):
             request = response.request
             if request in self._pending_requests:
                 self._pending_requests[request]["status"] = response.status
+            if request.is_navigation_request() and not 300 <= response.status < 400:
+                self._document_responses[request.frame] = request
             self._ring_buffer.append(
                 SeqEvent(
                     seq=self._seq_counter.value,

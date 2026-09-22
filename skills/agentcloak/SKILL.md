@@ -275,3 +275,13 @@ For measured gestures, use `cloak drag --from 20,180 --to 240,180 --hold 120 --d
 Use `cloak batch --calls-file calls.jsonl --json` (or stdin) for sequential mixed daemon JSON requests in one process. Each line has `method`, relative `path`, optional `params` and `body`; output is indexed JSONL. It stops at the first failure without rolling back earlier calls and keeps one workspace/session. `cloak do batch` remains the action-only runner with result references.
 
 Record transitions with `cloak record start --format webm`, then `cloak record stop -o transition.webm`; `cloak record status` reports progress. WebM needs ffmpeg on the daemon; `--format zip` exports JPEG frames and timestamps without an encoder. Recording pins the starting tab, has bounded frames/time/bytes, and unfinished recordings are discarded on session close. `cloak screenshot --annotate -o annotated.png --json` draws fresh `[N]` refs and returns CSS boxes scaled to the capture DPR.
+
+### Request lifecycle and JSON shapes
+
+`network --pending` includes live SSE; full document replacement/frame detach retires that document's old requests, while history/hash navigation retains them. `do batch` accepts `{"kind":"snapshot","find":"Ready"}` and waits for finite requests up to `settle_timeout`; SSE does not block this wait. This is not a universal SPA readiness check. In top-level JSONL `batch`, insert `{"method":"POST","path":"/wait","body":{"condition":"selector","value":"#ready","timeout":5000}}` before reading asynchronously rendered content. Full JSONL fields and examples are in `references/commands-reference.md`.
+
+Snapshot JSON is text, not a `nodes`/`refs` array: `{"ok":true,"seq":12,"data":{"tree_text":"[1] button \"Save\"","total_nodes":1}}` (other metadata omitted). Use `--selector-map` if a structured ref map is needed.
+
+`cloak screenshot --annotate --within '#panel' --find 'Save' --limit 20 --json` filters annotation refs, not the image area. Limits count snapshot lines (including ancestors); `0` is unlimited and omitted uses the snapshot config. JSON example: `{"ok":true,"seq":13,"data":{"saved":"/tmp/evidence.png","annotated":true,"annotations":[{"ref":1,"role":"button","name":"Save","box":[100,80,140,40]}]}}`. `box` is `[x,y,width,height]` in CSS pixels, viewport-relative or document-relative with `--full-page`; DPR scales image pixels. No matches gives an unmarked image and empty `annotations`. Filters require `--annotate`.
+
+`session close` releases browser pages but retains the daemon's session identity as `suspended`; the next command recreates a page. It does not keep closed pages alive or restore their DOM.

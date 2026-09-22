@@ -20,6 +20,8 @@ import logging
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
+from agentcloak.browser.base import batch_snapshot
+
 if TYPE_CHECKING:
     from agentcloak.browser.base import BrowserContextBase
     from agentcloak.browser.state import PageSnapshot
@@ -176,7 +178,9 @@ class SecureBrowserContext:
         sleep: float = 0.0,
         settle_timeout: int | None = None,
     ) -> dict[str, Any]:
-        if not self._content_scan or not self._patterns:
+        if (not self._content_scan or not self._patterns) and not any(
+            act.get("kind", act.get("action")) == "snapshot" for act in actions
+        ):
             return await self._inner.action_batch(
                 actions, sleep=sleep, settle_timeout=settle_timeout
             )
@@ -190,6 +194,22 @@ class SecureBrowserContext:
             kind = act.get("kind", act.get("action", ""))
             index = act.get("index")
             target = str(index) if index is not None else act.get("target", "")
+
+            if kind == "wait":
+                step = await self._inner.action_batch(
+                    [act], settle_timeout=settle_timeout
+                )
+                results.extend(step["results"])
+                continue
+
+            if kind == "snapshot":
+                params = {
+                    k: v
+                    for k, v in act.items()
+                    if k not in ("kind", "action", "index", "target")
+                }
+                results.append(await batch_snapshot(self, params, settle_timeout))
+                continue
 
             try:
                 if act.get("selector"):

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Retire pending requests with their documents, exclude EventSource from bounded batch settling, and connect batch snapshot reads across execution paths.
+- Add screenshot annotation scope, text and node limits; document JSONL batches, response payloads and suspended session identities.
+
 - Add bounded, session-owned screen recording with WebM or timestamped frame archives, and DPR-aware screenshot annotations using native geometry and actionable refs.
 
 - Add streaming JSONL request batches with a shared HTTP connection pool, fixed workspace/session identity and fail-fast indexed results.

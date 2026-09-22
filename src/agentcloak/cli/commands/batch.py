@@ -21,10 +21,19 @@ app = typer.Typer(invoke_without_command=True)
 class BatchCall(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
-    path: str = Field(pattern=r"^/[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*$")
-    params: dict[str, str | int | float | bool] | None = None
-    body: dict[str, Any] | None = None
+    method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"] = Field(
+        description="HTTP method."
+    )
+    path: str = Field(
+        pattern=r"^/[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*$",
+        description="Relative daemon route, e.g. /snapshot; no host or query string.",
+    )
+    params: dict[str, str | int | float | bool] | None = Field(
+        None, description="Query fields for the route."
+    )
+    body: dict[str, Any] | None = Field(
+        None, description="JSON request body for the route."
+    )
 
 
 @app.callback(invoke_without_command=True)

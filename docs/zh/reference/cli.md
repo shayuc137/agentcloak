@@ -802,3 +802,13 @@ cloak screenshot --annotate --dpr 2 -o annotated.png --json
 WebM 导出要求 daemon 所在机器安装含 VP9 编码器的 `ffmpeg`。ZIP 包含 JPEG 帧和 `manifest.json`，记录逐帧 URL、经过时间和 CDP 元数据。screencast 记录合成器更新，并非固定 FPS；WebM 保留时间间隔。帧尺寸上限 1920×1080，视口变化时按首帧尺寸等比缩放并补边。默认最多 600 帧/120 秒，可配置到 3000 帧/600 秒，帧数据另有固定 64 MiB 上限。达到限制或录制页关闭后停止采集、保留帧直到 `record stop`；关闭 session 则丢弃未导出的录屏。未导出的录屏会阻止再次 start。stop 将文件写到 CLI/MCP 客户端机器，HTTP 返回 base64。
 
 `--annotate` 生成新的 snapshot 引用，在图片上绘制元素框及 `[N]`，不向页面添加覆盖层。JSON 增加 `annotated` 和 `annotations`（`ref`、`role`、`name`、`box`）。box 单位为 CSS 像素，视口截图相对视口，全页截图相对文档，绘图按实际 DPR 缩放。几何信息来自原生 CDP，避免 JavaScript 指纹扰动。已移除或未渲染的节点没有框。返回引用对应此次截图的页面状态，之后 DOM 变化需重新 snapshot；临时视口和 DPR 仍会恢复。
+
+### 生命周期与响应结构
+
+`network --pending` 保留仍在运行的 EventSource 流。替换文档或移除 frame 时清理旧请求；history/hash 更新保留当前请求。动作批处理支持 `{"kind":"snapshot","find":"Ready"}`，`settle_timeout` 只等待有限请求，不等待 EventSource。顶层 JSONL batch 不隐式等待 SPA 渲染完成；读取前可插入 `{"method":"POST","path":"/wait","body":{"condition":"selector","value":"#ready","timeout":5000}}`。
+
+`session close` 关闭页面，但在 daemon 内保留 `suspended` 会话身份，直到 daemon 退出。同名会话再次使用时新建页面，不恢复旧 DOM；持久存储遵循 profile/workspace 策略。
+
+Snapshot JSON 的树在 `data.tree_text`，例如 `"[1] button \"Save\""`，使用 `--find` 时也是文本；可用 `--selector-map` 获取可选的结构化 `data.selector_map`。
+
+标注筛选要求 `--annotate`：`--within '#panel' --find 'Save' --limit 20`。复用 compact snapshot 筛选和行数限制（祖先也计数）；省略 limit 使用 snapshot 配置，`0` 表示不限。只标注实际展示的引用，截图范围不变。没有匹配时仍返回图片，`data.annotations` 为空。列表元素为 `{"ref":1,"role":"button","name":"Save","box":[100,80,140,40]}`，`box` 是 CSS 像素的 `[x,y,width,height]`，相对视口，`--full-page` 时相对文档；DPR 只缩放图片。CLI JSON 另有 `data.saved`，HTTP 的图片位于 `data.base64`。

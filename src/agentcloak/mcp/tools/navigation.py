@@ -166,6 +166,9 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     async def agentcloak_screenshot(
         annotate: bool = False,
+        within: str = "",
+        limit: int | None = None,
+        find: str = "",
         full_page: bool = False,
         format: str | None = None,
         quality: int = cfg.browser.mcp_screenshot_quality,
@@ -191,6 +194,9 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             dpr: Temporary device pixel ratio, restored after capture
             viewport: Temporary WIDTHxHEIGHT, restored after capture
             annotate: Draw fresh [N] refs on the captured image.
+            within: CSS subtree for annotations; requires annotate.
+            limit: Snapshot node limit (0 unlimited); requires annotate.
+            find: Text filter for annotations; requires annotate.
             full_page: Capture the full scrollable page instead of viewport
             format: Optional image format override: 'jpeg' or 'png'
             quality: JPEG quality 0-100 (defaults to
@@ -224,10 +230,16 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                 or dpr is not None
                 or expect_url
                 or annotate
+                or within
+                or limit is not None
+                or find
             ):
                 envelope = await client.screenshot(
                     full_page=full_page,
                     annotate=annotate,
+                    within=within,
+                    limit=limit,
+                    find=find,
                     format=format,
                     quality=quality,
                     wait_selector=wait_selector,

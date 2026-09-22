@@ -532,6 +532,23 @@ def render_route(spec: dict[str, Any], path: str, verb: str, op: dict[str, Any])
             lines.append("- Query:")
             lines.extend(f"  {row}" for row in params)
 
+    if path in {"/snapshot", "/screenshot"}:
+        response = op["responses"]["200"]["content"]["application/json"]["schema"]
+        envelope = _resolve_schema(spec, response)
+        data = _resolve_schema(spec, envelope["properties"]["data"])
+        lines.append(
+            "- Success payload under `data` (`ok` and `seq` are envelope fields):"
+        )
+        for name, prop in data.get("properties", {}).items():
+            lines.append(
+                f"  - `{name}` ({_format_type(prop)})"
+                + (f" — {prop['description']}" if prop.get("description") else "")
+            )
+        if path == "/screenshot":
+            lines.append(
+                "- CLI writes the image locally and replaces `base64`/`path` with `saved`; annotation metadata stays under `data`. MCP returns image content plus metadata text."
+            )
+
     lines.append("")
     return "\n".join(lines)
 
@@ -585,6 +602,40 @@ def render_document(spec: dict[str, Any]) -> str:
         "the quick-reference tables in `SKILL.md` are usually enough."
     )
     parts.append("")
+
+    from agentcloak.cli.commands.batch import BatchCall
+
+    parts.extend(
+        [
+            "## CLI-only JSONL batch",
+            "",
+            "`cloak batch --calls-file calls.jsonl --json` (omit the file or use `-` for stdin). Each nonblank line is one object; fields come from the CLI BatchCall schema:",
+            "",
+            *_params_from_request_body(
+                {},
+                {
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": BatchCall.model_json_schema()
+                            }
+                        }
+                    }
+                },
+            ),
+            "",
+            "Calls share one workspace/session and HTTP connection pool. Output is one envelope per line with zero-based `index` and one-based source `line`. The first failure stops with exit 1; prior calls are not rolled back. Unknown fields are rejected. This is distinct from `cloak do batch` (`POST /action/batch`).",
+            "",
+            "Navigation completion is not SPA readiness. Insert an explicit `/wait` for a selector or JS condition before reading rendered state:",
+            "",
+            "```jsonl",
+            '{"method":"POST","path":"/navigate","body":{"url":"https://example.com"}}',
+            '{"method":"POST","path":"/wait","body":{"condition":"selector","value":"#ready","timeout":5000}}',
+            '{"method":"GET","path":"/snapshot","params":{"find":"Save"}}',
+            "```",
+            "",
+        ]
+    )
 
     current_group: str | None = None
     for group_name, path, verb, op in ordered:

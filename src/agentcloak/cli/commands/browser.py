@@ -98,6 +98,18 @@ def browser_screenshot(
     full_page: bool = typer.Option(
         False, "--full-page", help="Capture full scrollable page."
     ),
+    within: str = typer.Option(
+        "", "--within", help="Annotation CSS subtree; requires --annotate."
+    ),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        min=0,
+        help="Annotation snapshot node limit; 0 is unlimited; requires --annotate.",
+    ),
+    find: str = typer.Option(
+        "", "--find", help="Annotation text filter; requires --annotate."
+    ),
     format: str | None = typer.Option(
         None,
         "--format",
@@ -175,6 +187,9 @@ def browser_screenshot(
             or dpr is not None
             or expect_url
             or annotate
+            or within
+            or limit is not None
+            or find
         ):
             result = client.screenshot_sync(
                 full_page=full_page,
@@ -185,6 +200,9 @@ def browser_screenshot(
                 hide=hide,
                 **({"expect_url": expect_url} if expect_url else {}),
                 annotate=annotate,
+                within=within,
+                limit=limit,
+                find=find,
                 keep_overlays=keep_overlays,
                 **({"viewport": viewport} if viewport is not None else {}),
                 dpr=dpr,

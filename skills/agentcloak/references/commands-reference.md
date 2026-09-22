@@ -7,6 +7,25 @@ Complete catalog of every daemon route, with its CLI and MCP bindings. Generated
 
 Read this file when you need full parameter detail. For the common path, the quick-reference tables in `SKILL.md` are usually enough.
 
+## CLI-only JSONL batch
+
+`cloak batch --calls-file calls.jsonl --json` (omit the file or use `-` for stdin). Each nonblank line is one object; fields come from the CLI BatchCall schema:
+
+- `method` (enum("GET" | "POST" | "PUT" | "PATCH" | "DELETE"), default: *required*) — HTTP method.
+- `path` (string, default: *required*) — Relative daemon route, e.g. /snapshot; no host or query string.
+- `params` (object | null, default: null) — Query fields for the route.
+- `body` (object | null, default: null) — JSON request body for the route.
+
+Calls share one workspace/session and HTTP connection pool. Output is one envelope per line with zero-based `index` and one-based source `line`. The first failure stops with exit 1; prior calls are not rolled back. Unknown fields are rejected. This is distinct from `cloak do batch` (`POST /action/batch`).
+
+Navigation completion is not SPA readiness. Insert an explicit `/wait` for a selector or JS condition before reading rendered state:
+
+```jsonl
+{"method":"POST","path":"/navigate","body":{"url":"https://example.com"}}
+{"method":"POST","path":"/wait","body":{"condition":"selector","value":"#ready","timeout":5000}}
+{"method":"GET","path":"/snapshot","params":{"find":"Save"}}
+```
+
 ## Health & Lifecycle
 
 ### `GET /health`
@@ -54,6 +73,19 @@ Read this file when you need full parameter detail. For the common path, the qui
   - `diff` (boolean, default: false) — Mark [+] added / [~] changed nodes versus the previous snapshot.
   - `hide` (string | null, default: —) — Comma-separated CSS selectors to hide for this snapshot.
   - `keep_overlays` (boolean, default: false) — Disable all persistent and builtin hiding for this snapshot.
+- Success payload under `data` (`ok` and `seq` are envelope fields):
+  - `url` (string)
+  - `title` (string)
+  - `mode` (string)
+  - `tree_text` (string) — Rendered accessibility tree text with [N] refs, including when find is used; not a node array.
+  - `tree_size` (integer)
+  - `truncated` (boolean)
+  - `total_nodes` (integer)
+  - `total_interactive` (integer)
+  - `truncated_at` (integer | null)
+  - `diff` (boolean | null)
+  - `selector_map` (object | null)
+  - `security_warnings` (array<object> | null)
 
 ### `GET /screenshot`
 
@@ -61,6 +93,9 @@ Read this file when you need full parameter detail. For the common path, the qui
 - MCP: `agentcloak_screenshot`
 - Query:
   - `annotate` (boolean, default: false) — Draw fresh snapshot refs and return CSS boxes.
+  - `within` (string, default: "") — Limit annotations to a CSS subtree; requires annotate.
+  - `limit` (integer | null, default: —) — Annotation node limit; 0 is unlimited; requires annotate.
+  - `find` (string, default: "") — Filter annotation snapshot by text; requires annotate.
   - `expect_url` (string, default: "") — Require the captured URL to match this glob.
   - `dpr` (number | null, default: —) — Temporary device pixel ratio; restored after capture.
   - `viewport` (string | null, default: —) — Temporary WIDTHxHEIGHT; restored after capture.
@@ -72,6 +107,20 @@ Read this file when you need full parameter detail. For the common path, the qui
   - `wait_timeout` (integer | null, default: —) — Selector wait timeout in ms; unset uses browser.action_timeout.
   - `hide` (string | null, default: —) — Comma-separated CSS selectors to hide for this capture.
   - `keep_overlays` (boolean, default: false) — Disable all persistent and builtin hiding for this capture.
+- Success payload under `data` (`ok` and `seq` are envelope fields):
+  - `base64` (string)
+  - `size` (integer)
+  - `format` (string)
+  - `path` (string | null)
+  - `url` (string)
+  - `title` (string)
+  - `viewport` (object)
+  - `dpr` (number)
+  - `pixel_width` (integer)
+  - `pixel_height` (integer)
+  - `annotated` (boolean)
+  - `annotations` (array<object>) — Each item has ref (integer), role, name, and box [x, y, width, height] in CSS pixels. Coordinates are viewport-relative, or document-relative for full_page; DPR only scales the image.
+- CLI writes the image locally and replaces `base64`/`path` with `saved`; annotation metadata stays under `data`. MCP returns image content plus metadata text.
 
 ### `GET /network`
 
@@ -112,7 +161,7 @@ Read this file when you need full parameter detail. For the common path, the qui
 - Body:
   - `actions` (array<object>, default: —) — Ordered action objects; may reference prior results via $N.path.
   - `sleep` (number, default: 0.0) — Seconds to pause between actions to let the page settle.
-  - `settle_timeout` (integer | null, default: —) — Max ms to wait for navigation/network to settle per action; unset uses browser.batch_settle_timeout.
+  - `settle_timeout` (integer | null, default: —) — Max ms to wait for finite network requests before a batch snapshot; unset uses browser.batch_settle_timeout.
 
 ## Screen recording
 

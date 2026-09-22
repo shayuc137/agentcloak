@@ -14,6 +14,7 @@ from typing import Any
 
 import structlog
 
+from agentcloak.browser.base import batch_snapshot
 from agentcloak.core.errors import DialogBlockedError, ElementNotFoundError
 from agentcloak.core.input import parse_ref
 
@@ -218,6 +219,10 @@ class ActionService:
                 except Exception as exc:
                     result = {"ok": False, "error": str(exc), "action": "wait"}
                 results.append(result)
+                continue
+
+            if kind == "snapshot":
+                results.append(await batch_snapshot(ctx, extra, settle_timeout))
                 continue
 
             try:

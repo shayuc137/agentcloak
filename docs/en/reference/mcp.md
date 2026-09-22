@@ -504,3 +504,5 @@ Page runtime performance metrics (DOM node count, JS heap size, layout count, et
 Start pins this session's current tab. Status reports capture state and limits; stop writes the artifact on the MCP host (temporary path by default) and returns its path/frame count/duration. WebM requires ffmpeg on the daemon; ZIP does not. Session close discards unfinished recordings. See [recording](cli.md#record) for limits and ownership.
 
 `agentcloak_screenshot(annotate=true)` returns the labeled image plus ref/box metadata. `agentcloak_snapshot(find="text")` searches accessible names/values before pagination. `agentcloak_action` accepts `selector` for click/fill/hover and `hold`, `duration`, `sample` for drag; `agentcloak_network` accepts `pending` and URL `filter`.
+
+`agentcloak_screenshot(annotate=true, within="#panel", find="Save", limit=20)` filters annotation refs without cropping. `limit=0` is unlimited. Annotation metadata uses `annotations: [{ref, role, name, box: [x,y,width,height]}]` in CSS pixels; snapshot HTTP/CLI JSON uses `data.tree_text`, while the MCP snapshot tool renders text.

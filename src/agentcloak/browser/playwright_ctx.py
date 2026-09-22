@@ -599,8 +599,13 @@ class PlaywrightContext(BrowserContextBase):
                 if self._route_mgr and self._route_mgr.has_holds
                 else "domcontentloaded",
             )
+        except asyncio.CancelledError:
+            self._page_valid = False
+            await self._stop_navigation()
+            raise
         except Exception as exc:
             if "timeout" in str(exc).lower():
+                await self._stop_navigation()
                 raise BrowserTimeoutError(
                     error="navigation_timeout",
                     hint=f"Page did not load within {timeout}s",
@@ -624,6 +629,14 @@ class PlaywrightContext(BrowserContextBase):
             "title": await self._page.title(),
             "status": status,
         }
+
+    async def _stop_navigation(self) -> None:
+        # Cancelling Playwright's waiter leaves Chromium's navigation running.
+        try:
+            async with asyncio.timeout(0.5):
+                await self._cdp_send_impl("Page.stopLoading", {})
+        except Exception as exc:
+            logger.warning("navigation_cleanup_failed", error=str(exc))
 
     @staticmethod
     async def _detach_cdp(cdp: Any) -> None:

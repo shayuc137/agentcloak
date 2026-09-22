@@ -371,18 +371,23 @@ async def test_popup_feedback_and_recreated_page(
     ] == "/input-actions.html"
 
 
-async def test_force_close_releases_shared_origin_stream_connections(private_api):
+@pytest.mark.parametrize("timeout_kind", ["action", "navigation"])
+async def test_force_close_releases_shared_origin_stream_connections(
+    private_api, timeout_kind
+):
     from starlette.applications import Starlette
     from starlette.responses import HTMLResponse, StreamingResponse
     from starlette.routing import Route
 
     client, config = private_api
-    config.browser.action_timeout = 1000
+    config.browser.action_timeout = 1000 if timeout_kind == "action" else 3000
     config.browser.navigation_timeout = 1
     active_streams = 0
     pool_full = asyncio.Event()
+    visited = []
 
     async def page(request):
+        visited.append(request.url.path)
         return HTMLResponse("<title>Stream test</title><button>Ready</button>")
 
     async def events(request):
@@ -400,7 +405,9 @@ async def test_force_close_releases_shared_origin_stream_connections(private_api
 
         return StreamingResponse(chunks(), media_type="text/event-stream")
 
-    app = Starlette(routes=[Route("/", page), Route("/events", events)])
+    app = Starlette(
+        routes=[Route("/", page), Route("/abandoned", page), Route("/events", events)]
+    )
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
@@ -437,8 +444,11 @@ async def test_force_close_releases_shared_origin_stream_connections(private_api
                 headers=sibling,
             )
         ).json()["data"]["count"] == 0
-        response = await client.post("/navigate", json={"url": url}, headers=sibling)
-        assert response.json()["error"] == "action_timeout", response.text
+        payload = {"url": url + "abandoned"}
+        if timeout_kind == "navigation":
+            payload["timeout"] = 1
+        response = await client.post("/navigate", json=payload, headers=sibling)
+        assert response.json()["error"] == f"{timeout_kind}_timeout", response.text
         assert (await client.get("/health", timeout=0.5)).is_success
         start = time.monotonic()
         closed = await client.post("/session/close", json={"force": True})
@@ -450,6 +460,7 @@ async def test_force_close_releases_shared_origin_stream_connections(private_api
         restored = await client.post("/navigate", json={"url": url}, headers=sibling)
         assert restored.is_success, restored.text
         assert restored.json()["data"]["title"] == "Stream test"
+        assert "/abandoned" not in visited
     finally:
         await client.post("/session/close", json={"force": True})
         await client.post("/session/close", json={"force": True}, headers=sibling)

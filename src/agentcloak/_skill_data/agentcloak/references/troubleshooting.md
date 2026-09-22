@@ -23,7 +23,7 @@ Error [element_not_found]: Element [99] not in selector_map (4 entries)
 | `daemon_invalid_response` / `daemon_request_failed` | Invalid body or failed daemon request | Check daemon logs and the selected endpoint |
 | `element_not_found` / `[N] not in selector_map` | `[N]` ref is stale (page changed) | Auto-retried once; if still fails, re-snapshot and use the new ref |
 | `element_covered` / visible ref does not react | Overlay intercepted coordinate click | Hide the overlay with `cloak hide add CSS`, then re-snapshot; use `--force` only as a one-off single-left-click fallback |
-| `navigation_timeout` | Page took too long to load | Retry with `--timeout 60`, or check the URL is correct |
+| `navigation_timeout` | Page took too long to load; local backends stop the abandoned navigation | Retry with `--timeout 60`, or check the URL is correct |
 | `session_busy` | Session queue wait exceeded `browser.action_timeout` | Inspect `session list --all` for active actions/queue; `session close --force` cancels work and closes only the selected session |
 | `action_timeout` | Page operation exceeded its execution budget | Navigate again; if the renderer is frozen, close the session with `--force` first |
 | `page_recreated` / `page_lost` | Page or browser disappeared | Navigate to the intended URL before collecting evidence; blank replacement pages are not valid evidence |

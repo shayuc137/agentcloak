@@ -2,6 +2,8 @@
 
 每个会话的请求队列都有上限。等锁沿用 `browser.action_timeout`（毫秒），超时返回 `session_busy` 并指出占用路由。执行也默认受 action timeout 约束，包含快照与截图。显式 navigation/fetch 超时按秒、wait/CDP 按毫秒，可以延长执行预算；清理阶段可能增加短暂且有界的延迟。
 
+本地后端在导航取消或超时后，会先执行有界的浏览器侧停止加载清理，再释放会话队列，避免已放弃的导航稍后恢复并打断下一条命令。如果浏览器无法确认清理，请先强制关闭会话再重试。
+
 ```bash
 cloak session list --all
 cloak session close --force

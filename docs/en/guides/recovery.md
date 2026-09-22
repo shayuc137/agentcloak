@@ -2,6 +2,8 @@
 
 Each session has a bounded request queue. Queue waits use `browser.action_timeout` (milliseconds); expiry returns `session_busy` with the occupying route. Execution also has a default action-timeout budget, including snapshot and screenshot. Explicit navigation/fetch budgets use seconds and wait/CDP budgets use milliseconds; these can extend execution beyond the default. Cleanup may add a short bounded delay.
 
+On local backends, cancelled or timed-out navigation triggers bounded browser-side stop-loading cleanup before releasing the session queue. This prevents an abandoned navigation from resuming later and interrupting the next command. If the browser cannot acknowledge cleanup, force-close the session before retrying.
+
 ```bash
 cloak session list --all
 cloak session close --force

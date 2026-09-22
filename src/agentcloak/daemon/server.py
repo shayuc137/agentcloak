@@ -365,7 +365,7 @@ async def _start_owned(
     log_level: str | None,
 ) -> None:
     # Profile config overlay must run before CLI overrides so the priority
-    # chain is: CLI args > profile config > global config > env > defaults.
+    # chain is: CLI args > profile config > env > global config > defaults.
     if profile:
         profile_dir_early = paths.profiles_dir / profile
         profile_dir_early.mkdir(parents=True, exist_ok=True)

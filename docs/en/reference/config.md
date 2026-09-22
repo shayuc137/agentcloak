@@ -10,8 +10,8 @@ Settings are resolved in this order (highest wins):
 
 1. **CLI arguments** (per-command flags like `--headed`, `--port`)
 2. **Per-profile config** (`~/.agentcloak/profiles/<name>/config.toml`, only when a profile is active — merges `[browser]` and `[security]` on top of the layers below; see [Per-profile config overlay](#per-profile-config-overlay))
-3. **Global config file** (`~/.agentcloak/config.toml`)
-4. **Environment variables** (`AGENTCLOAK_*`)
+3. **Environment variables** (`AGENTCLOAK_*`)
+4. **Global config file** (`~/.agentcloak/config.toml`)
 5. **Built-in defaults**
 
 ## Config file
@@ -97,7 +97,7 @@ domain_whitelist = ["*.mycompany.com", "auth.oktapreview.com"]
 ```
 
 Effective precedence for `[browser]` / `[security]` keys: **CLI args > profile
-config > global config > env vars > defaults**. Keys outside those two
+config > env vars > global config > defaults**. Keys outside those two
 sections fall back to the global precedence in [Precedence](#precedence).
 
 ## Related state files

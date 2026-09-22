@@ -8,9 +8,11 @@ agentcloak 开箱即用，无需任何配置。所有设置都有合理的默认
 
 设置按以下顺序解析（高优先级优先）：
 
-1. **环境变量**（`AGENTCLOAK_*`）
-2. **配置文件**（`~/.agentcloak/config.toml`）
-3. **内置默认值**
+1. **CLI 参数**（启动时显式提供的覆盖值）
+2. **当前 profile 配置**（仅覆盖 `[browser]` / `[security]`，工作空间根目录仍使用全局配置）
+3. **环境变量**（`AGENTCLOAK_*`）
+4. **全局配置文件**（`~/.agentcloak/config.toml`）
+5. **内置默认值**
 
 ## 配置文件
 
@@ -91,6 +93,8 @@ proxy = "socks5://scraper-egress:1080"
 [security]
 domain_whitelist = ["*.target.com"]
 ```
+
+`[browser]` / `[security]` 的有效优先级为：**CLI 参数 > profile 配置 > 环境变量 > 全局配置 > 默认值**。其他段按全局优先级解析。
 
 ## 环境变量
 

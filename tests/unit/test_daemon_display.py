@@ -36,7 +36,7 @@ async def test_start_selects_display(
     # browser, HTTP server, virtual display or proxy started by this test.
     with (
         patch.object(server, "load_config", return_value=(Paths(tmp_path), cfg)),
-        patch.object(server, "_check_stale_pid", return_value=False),
+        patch.object(server, "_has_live_daemon", return_value=False),
         patch.object(server, "ensure_bridge_token", return_value="test-token"),
         patch.object(server, "write_example_config"),
         patch.object(server, "_diagnose_launch_failure"),

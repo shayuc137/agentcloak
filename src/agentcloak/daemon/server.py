@@ -22,9 +22,11 @@ import logging
 import os
 import signal
 import sys
+import tempfile
 import time
 from typing import TYPE_CHECKING, Any
 
+import httpx
 import orjson
 import structlog
 import uvicorn
@@ -33,6 +35,7 @@ from agentcloak.browser import create_context
 from agentcloak.browser.cloak_ctx import TURNSTILE_PATCH_DIR
 from agentcloak.browser.xvfb import XvfbManager
 from agentcloak.core.config import (
+    AgentcloakConfig,
     Paths,
     apply_profile_config,
     ensure_bridge_token,
@@ -42,6 +45,7 @@ from agentcloak.core.config import (
 from agentcloak.core.types import StealthTier
 from agentcloak.daemon.app import configure_app_state, create_app
 from agentcloak.daemon.context_manager import ContextManager
+from agentcloak.daemon.ownership import daemon_ownership
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -144,9 +148,14 @@ def _write_daemon_file(
         "profile": profile or "",
     }
     paths.ensure_dirs()
-    paths.daemon_file.write_bytes(orjson.dumps(data))
-    with contextlib.suppress(OSError):
-        os.chmod(str(paths.daemon_file), 0o600)
+    with tempfile.NamedTemporaryFile(dir=paths.root, delete=False) as handle:
+        temporary = paths.root / handle.name
+        try:
+            handle.write(orjson.dumps(data))
+            handle.close()
+            temporary.replace(paths.daemon_file)
+        finally:
+            temporary.unlink(missing_ok=True)
 
 
 def _clear_daemon_file(paths: Paths) -> None:
@@ -154,48 +163,35 @@ def _clear_daemon_file(paths: Paths) -> None:
         paths.daemon_file.unlink(missing_ok=True)
 
 
-def _pid_alive(pid: int) -> bool:
-    from agentcloak.core.process import pid_alive
-
-    return pid_alive(pid)
-
-
-def _check_stale_pid(paths: Paths) -> bool:
-    pf = _pid_file(paths)
-    if not pf.exists():
+def _has_live_daemon(paths: Paths) -> bool:
+    """Probe legacy records without trusting namespace-local PIDs or deleting state."""
+    records = (paths.daemon_file, paths.active_session_file, _pid_file(paths))
+    if not any(record.exists() for record in records):
         return False
-    try:
-        pid = int(pf.read_text().strip())
-    except (ValueError, OSError):
-        _clear_pid(paths)
-        _clear_session(paths)
-        _clear_daemon_file(paths)
-        return False
-    if not _pid_alive(pid):
-        _clear_pid(paths)
-        _clear_session(paths)
-        _clear_daemon_file(paths)
-        return False
-
-    # Process exists — verify it's actually an agentcloak daemon via /health.
-    import json
-    import urllib.request
-
-    _, _stale_cfg = load_config()
-    try:
-        session_data = json.loads(paths.active_session_file.read_text())
-        host = session_data.get("host", _stale_cfg.daemon.host)
-        port = session_data.get("port", _stale_cfg.daemon.port)
-        url = f"http://{host}:{port}/health"
-        with urllib.request.urlopen(url, timeout=1) as resp:
-            data = json.loads(resp.read())
-            if data.get("ok"):
-                return True  # genuinely running
-    except Exception:
-        pass
-    _clear_pid(paths)
-    _clear_session(paths)
-    _clear_daemon_file(paths)
+    _, cfg = load_config()
+    endpoints = {(cfg.daemon.host, cfg.daemon.port)}
+    for record in records[:2]:
+        try:
+            data = orjson.loads(record.read_bytes())
+            host = data.get("host", cfg.daemon.host)
+            port = data.get("port")
+            if isinstance(host, str) and isinstance(port, int):
+                endpoints.add((host, port))
+        except (OSError, ValueError, AttributeError):
+            continue
+    for host, port in endpoints:
+        if host in {"0.0.0.0", "::", ""}:
+            host = "127.0.0.1"
+        try:
+            response = httpx.get(
+                f"http://{host}:{port}/health", timeout=1, trust_env=False
+            )
+            response.raise_for_status()
+            data = response.json()
+            if data.get("ok") is True and data.get("service") == "agentcloak-daemon":
+                return True
+        except (httpx.HTTPError, ValueError, AttributeError):
+            continue
     return False
 
 
@@ -331,7 +327,43 @@ async def start(
 ) -> None:
     """Start the daemon server (blocking)."""
     paths, cfg = load_config()
+    with daemon_ownership(paths):
+        if _has_live_daemon(paths):
+            from agentcloak.core.errors import AgentBrowserError
 
+            raise AgentBrowserError(
+                error="daemon_already_running",
+                hint="A healthy daemon is already using this state directory",
+                action="use the running daemon or set a separate AGENTCLOAK_HOME",
+            )
+        try:
+            await _start_owned(
+                paths,
+                cfg,
+                host=host,
+                port=port,
+                headless=headless,
+                profile=profile,
+                humanize=humanize,
+                log_level=log_level,
+            )
+        finally:
+            _clear_pid(paths)
+            _clear_session(paths)
+            _clear_daemon_file(paths)
+
+
+async def _start_owned(
+    paths: Paths,
+    cfg: AgentcloakConfig,
+    *,
+    host: str | None,
+    port: int | None,
+    headless: bool | None,
+    profile: str | None,
+    humanize: bool | None,
+    log_level: str | None,
+) -> None:
     # Profile config overlay must run before CLI overrides so the priority
     # chain is: CLI args > profile config > global config > env > defaults.
     if profile:
@@ -343,10 +375,6 @@ async def start(
         cfg.daemon.log_level = log_level
     actual_host = host or cfg.daemon.host
     actual_port = port or cfg.daemon.port
-
-    if _check_stale_pid(paths):
-        logger.error("daemon_already_running", pid_file=str(_pid_file(paths)))
-        sys.exit(1)
 
     from agentcloak.core.config import resolve_tier
 
@@ -511,9 +539,6 @@ async def start(
                     local_proxy.close()  # pyright: ignore[reportUnknownMemberType]
             if xvfb_mgr is not None:
                 xvfb_mgr.cleanup()
-            _clear_pid(paths)
-            _clear_session(paths)
-            _clear_daemon_file(paths)
             raise
     else:
         logger.info(
@@ -643,9 +668,6 @@ async def start(
             await session_manager.close_all()
         with contextlib.suppress(Exception):
             await context_manager.shutdown()
-        _clear_pid(paths)
-        _clear_session(paths)
-        _clear_daemon_file(paths)
         raise
 
     actual_port = bound_port
@@ -741,9 +763,6 @@ async def start(
         if xvfb_mgr is not None:
             xvfb_mgr.cleanup()
         resume_writer.clear()
-        _clear_pid(paths)
-        _clear_session(paths)
-        _clear_daemon_file(paths)
 
 
 async def _idle_watchdog(

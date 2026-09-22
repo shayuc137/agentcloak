@@ -208,7 +208,9 @@ class SecureBrowserContext:
                     for k, v in act.items()
                     if k not in ("kind", "action", "index", "target")
                 }
-                results.append(await batch_snapshot(self, params, settle_timeout))
+                results.append(
+                    await batch_snapshot(self, params, settle_timeout, results)
+                )
                 continue
 
             try:

@@ -39,6 +39,9 @@ async def test_annotation_pixels_and_refs(private_api, local_server):
         name = "Lower control" if full else "Save example"
         box = next(item for item in data["annotations"] if item["name"] == name)
         assert box["box"][:2] == [100, 900 if full else 80]
+        assert box["in_viewport"] is True
+        outside = next(item for item in data["annotations"] if item["name"] != name)
+        assert outside["in_viewport"] is False
         with Image.open(BytesIO(base64.b64decode(data["base64"]))) as picture:
             assert picture.size == (data["pixel_width"], data["pixel_height"])
             x, y, _, height = box["box"]

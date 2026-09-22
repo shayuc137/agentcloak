@@ -113,17 +113,24 @@ def test_portfile_without_pid_still_returns_host_port(tmp_path: Path) -> None:
     assert port == 9
 
 
-def test_portfile_profile_round_trips(tmp_path: Path) -> None:
-    """Profile recorded in the portfile is returned on read."""
+def test_portfile_profile_uses_live_health(tmp_path: Path, healthy: MagicMock) -> None:
+    """A switched profile must override the startup record."""
+    healthy.return_value = httpx.Response(
+        200,
+        json={"ok": True, "active_profile": "current"},
+        request=httpx.Request("GET", "http://localhost/health"),
+    )
     _write_portfile(
-        tmp_path, pid=os.getpid(), host="127.0.0.1", port=18765, profile="dos"
+        tmp_path, pid=os.getpid(), host="127.0.0.1", port=18765, profile="previous"
     )
     _host, _port, profile = _read_daemon_file(_paths_for(tmp_path))
-    assert profile == "dos"
+    assert profile == "current"
 
 
 def test_portfile_empty_profile_returns_none(tmp_path: Path) -> None:
     """An empty profile string in the portfile is normalized to None."""
-    _write_portfile(tmp_path, pid=os.getpid(), host="127.0.0.1", port=18765, profile="")
+    _write_portfile(
+        tmp_path, pid=os.getpid(), host="127.0.0.1", port=18765, profile="previous"
+    )
     _host, _port, profile = _read_daemon_file(_paths_for(tmp_path))
     assert profile is None

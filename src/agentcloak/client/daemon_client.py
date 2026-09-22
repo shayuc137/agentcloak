@@ -130,7 +130,7 @@ def _read_daemon_file(paths: Any) -> tuple[str | None, int | None, str | None]:
         response.raise_for_status()
         if response.json().get("ok") is not True:
             return None, None, None
-        return host, port, data.get("profile") or None
+        return host, port, response.json().get("active_profile") or None
     except (OSError, ValueError, AttributeError, httpx.HTTPError):
         return None, None, None
 

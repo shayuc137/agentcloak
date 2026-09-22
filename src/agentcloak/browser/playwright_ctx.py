@@ -359,16 +359,18 @@ class PlaywrightContext(BrowserContextBase):
             if frame.page == page:
                 self._document_responses.pop(frame, None)
 
-    def _settling_request_count(self) -> int:
+    def _settling_request_count(self, since_seq: int = 0) -> int:
         return sum(
-            entry["resource_type"] != "eventsource"
+            entry["seq"] >= since_seq
+            and entry["resource_type"] != "eventsource"
+            and not entry.get("stream", False)
             for entry in self._pending_requests.values()
         )
 
     async def _pending_network_entries(self, *, since_seq: int) -> list[dict[str, Any]]:
         return [
             {
-                **{k: v for k, v in entry.items() if k != "started"},
+                **{k: v for k, v in entry.items() if k not in {"started", "stream"}},
                 "pending": True,
                 "elapsed_ms": round((time.monotonic() - entry["started"]) * 1000, 2),
             }
@@ -495,6 +497,13 @@ class PlaywrightContext(BrowserContextBase):
             request = response.request
             if request in self._pending_requests:
                 self._pending_requests[request]["status"] = response.status
+                self._pending_requests[request]["stream"] = (
+                    response.headers.get("content-type", "")
+                    .split(";", 1)[0]
+                    .strip()
+                    .lower()
+                    == "text/event-stream"
+                )
             if request.is_navigation_request() and not 300 <= response.status < 400:
                 self._document_responses[request.frame] = request
             self._ring_buffer.append(

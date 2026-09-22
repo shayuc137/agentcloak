@@ -119,7 +119,7 @@ Navigation completion is not SPA readiness. Insert an explicit `/wait` for a sel
   - `pixel_width` (integer)
   - `pixel_height` (integer)
   - `annotated` (boolean)
-  - `annotations` (array<object>) — Each item has ref (integer), role, name, and box [x, y, width, height] in CSS pixels. Coordinates are viewport-relative, or document-relative for full_page; DPR only scales the image.
+  - `annotations` (array<object>) — Each item has ref (integer), role, name, and box [x, y, width, height] in CSS pixels. Coordinates are viewport-relative, or document-relative for full_page; DPR only scales the image. in_viewport reports a positive-area intersection with the current viewport, including in full_page captures.
 - CLI writes the image locally and replaces `base64`/`path` with `saved`; annotation metadata stays under `data`. MCP returns image content plus metadata text.
 
 ### `GET /network`

@@ -805,12 +805,16 @@ WebM 导出要求 daemon 所在机器安装含 VP9 编码器的 `ffmpeg`。ZIP �
 
 ### 生命周期与响应结构
 
-`network --pending` 保留仍在运行的 EventSource 流。替换文档或移除 frame 时清理旧请求；history/hash 更新保留当前请求。动作批处理支持 `{"kind":"snapshot","find":"Ready"}`，`settle_timeout` 只等待有限请求，不等待 EventSource。顶层 JSONL batch 不隐式等待 SPA 渲染完成；读取前可插入 `{"method":"POST","path":"/wait","body":{"condition":"selector","value":"#ready","timeout":5000}}`。
+`network --pending` 保留仍在运行的 EventSource 流。替换文档或移除 frame 时清理旧请求；history/hash 更新保留当前请求。动作批处理支持 `{"kind":"snapshot","find":"Ready"}`。snapshot 默认 `compact` 和配置的节点上限，可用 `mode`/`max_nodes` 显式覆盖。纯读取批处理不等待网络收敛；动作后的第一份 snapshot 最多等待 `settle_timeout`，只等待这些动作之后发起的请求，后续连续 snapshot 不重复等待。EventSource 和 `Content-Type: text/event-stream` 响应（含 fetch 实现的 SSE）仍保留在 pending 中，但不阻塞收敛。应用就绪请使用显式 selector/JS wait。顶层 JSONL batch 不隐式等待 SPA 渲染完成；读取前可插入 `{"method":"POST","path":"/wait","body":{"condition":"selector","value":"#ready","timeout":5000}}`。
 
 `session close` 关闭页面，但在 daemon 内保留 `suspended` 会话身份，直到 daemon 退出。同名会话再次使用时新建页面，不恢复旧 DOM；持久存储遵循 profile/workspace 策略。
 
 Snapshot JSON 的树在 `data.tree_text`，例如 `"[1] button \"Save\""`，使用 `--find` 时也是文本；可用 `--selector-map` 获取可选的结构化 `data.selector_map`。
 
-标注筛选要求 `--annotate`：`--within '#panel' --find 'Save' --limit 20`。复用 compact snapshot 筛选和行数限制（祖先也计数）；省略 limit 使用 snapshot 配置，`0` 表示不限。只标注实际展示的引用，截图范围不变。没有匹配时仍返回图片，`data.annotations` 为空。列表元素为 `{"ref":1,"role":"button","name":"Save","box":[100,80,140,40]}`，`box` 是 CSS 像素的 `[x,y,width,height]`，相对视口，`--full-page` 时相对文档；DPR 只缩放图片。CLI JSON 另有 `data.saved`，HTTP 的图片位于 `data.base64`。
+标注筛选要求 `--annotate`：`--within '#panel' --find 'Save' --limit 20`。复用 compact snapshot 筛选和行数限制（祖先也计数）；省略 limit 使用 snapshot 配置，`0` 表示不限。只标注实际展示的引用，截图范围不变。没有匹配时仍返回图片，`data.annotations` 为空。列表元素为 `{"ref":1,"role":"button","name":"Save","box":[100,80,140,40],"in_viewport":true}`，`box` 是 CSS 像素的 `[x,y,width,height]`，相对视口，`--full-page` 时相对文档；DPR 只缩放图片。CLI JSON 另有 `data.saved`，HTTP 的图片位于 `data.base64`。
 
 本地后端的页面级 JavaScript 求值始终面向当前标签页的主文档。`world="main"` 根据主 frame ID 和唯一执行上下文身份选择该文档的默认世界，不依赖 iframe 事件顺序、名称或重复 URL。`frame focus` 用于 iframe 快照和元素操作，不改变页面级 evaluate 或截图身份。导航销毁所选上下文时返回失败，不重放 JavaScript，也不回落到子 frame；本次未更改 RemoteBridge 求值。
+
+`find` 保留匹配的容器及其后代，并保留祖先上下文，因此容器匹配时可包含名称不匹配的子节点。每项标注另有 `in_viewport`：边框与当前视口有正面积交集时为 true。`--full-page` 下仍指截图时的当前视口，不是整张图片。视口外标注仍保留在列表，可按此字段筛选。
+
+`session close` 后的新页面是 `about:blank`，此时求值访问存储会返回 `storage_origin_error`，包含当前 URL 和导航提示。其他 JavaScript 仍可执行；访问存储前先导航到目标站点。

@@ -215,6 +215,8 @@ claude mcp add agentcloak -- agentcloak-mcp
 
 ## 配置
 
+设置 `AGENTCLOAK_HOME` 可隔离整个状态目录（配置、profile 和运行记录）。每个目录仅有一个 daemon；并行实例需使用不同的 `AGENTCLOAK_PORT`。详见[配置参考](docs/zh/reference/config.md)。
+
 ```bash
 cloak config list                                       # 全部配置及来源
 cloak config set browser.proxy "socks5://host:1080"     # 设置值

@@ -5,6 +5,8 @@ import json
 import os
 import sys
 
+import pytest
+
 from .test_recovery_evidence import evaluate, navigate
 from .test_recovery_evidence import private_api as private_api
 
@@ -142,3 +144,24 @@ async def test_cli_and_mcp_evaluate_their_own_page(private_api, local_server, tm
     result = await mcp.call_tool("agentcloak_evaluate", {"js": "owner"})
     assert "child" in str(result)
     assert (await cli("js", "evaluate", "owner"))["result"] == "root"
+
+
+@pytest.mark.parametrize("world", ["main", "isolated"])
+async def test_blank_session_storage_error_keeps_page_identity(
+    private_api, local_server, world
+):
+    client, _ = private_api
+    await navigate(client, local_server)
+    assert (await client.post("/session/close", json={"force": True})).is_success
+    for js in ("typeof localStorage", "sessionStorage.length"):
+        response = await client.post("/evaluate", json={"js": js, "world": world})
+        assert response.is_error, response.text
+        error = response.json()
+        assert error["error"] == "storage_origin_error", error
+        assert "about:blank" in error["hint"]
+        assert "navigate" in error["action"]
+    assert (await evaluate(client, "1+1"))["result"] == 2
+    response = await client.post("/evaluate", json={"js": "missingVariable"})
+    assert response.json()["error"] == "evaluate_failed"
+    await navigate(client, local_server)
+    assert (await evaluate(client, "typeof localStorage"))["result"] == "object"

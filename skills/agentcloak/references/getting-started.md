@@ -126,7 +126,7 @@ viewport_width = 1280
 viewport_height = 720
 navigation_timeout = 30    # seconds
 action_timeout = 30000     # ms, per-action timeout
-batch_settle_timeout = 5000 # ms, settle between batch actions
+batch_settle_timeout = 5000 # ms, bound the first snapshot wait after actions
 humanize = true            # CloakBrowser humanize layer — adds Bezier mouse curves,
                            # 70ms/char typing with 2% mistype simulation, and
                            # scroll smoothing. Anti-detection benefit is real but
@@ -164,6 +164,7 @@ All settings can be overridden with `AGENTCLOAK_` prefix:
 
 | Variable | Example |
 |----------|---------|
+| `AGENTCLOAK_HOME` | `/tmp/browser-state` (entire state root; pair with a distinct port for another daemon) |
 | `AGENTCLOAK_HOST` | `0.0.0.0` |
 | `AGENTCLOAK_PORT` | `9000` |
 | `AGENTCLOAK_DEFAULT_TIER` | `playwright` |

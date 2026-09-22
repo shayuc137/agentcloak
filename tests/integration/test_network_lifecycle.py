@@ -22,6 +22,8 @@ async def streaming_site():
             '<button id="noop">Noop</button>'
             '<button id="load" onclick="'
             "fetch('/slow').then(()=>this.textContent='Ready')\">Load</button>"
+            '<button id="stream" onclick="void fetch(\'/events\')">Stream</button>'
+            '<button id="long" onclick="void fetch(\'/long\')">Long</button>'
             '<script>window.source=new EventSource("/events");</script>'
         )
 
@@ -31,14 +33,26 @@ async def streaming_site():
                 yield b": heartbeat\n\n"
                 await asyncio.sleep(0.05)
 
-        return StreamingResponse(chunks(), media_type="text/event-stream")
+        return StreamingResponse(
+            chunks(),
+            media_type=(
+                "application/octet-stream"
+                if request.url.path == "/long"
+                else "text/event-stream"
+            ),
+        )
 
     async def slow(request):
         await asyncio.sleep(0.6)
         return Response("done")
 
     app = Starlette(
-        routes=[Route("/", page), Route("/events", events), Route("/slow", slow)]
+        routes=[
+            Route("/", page),
+            Route("/events", events),
+            Route("/long", events),
+            Route("/slow", slow),
+        ]
     )
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -164,5 +178,79 @@ async def test_batch_settles_fetch_but_not_eventsource(
                 assert elapsed >= 0.5
                 assert "Ready" in str(data["results"][-1]), data
             assert len(await wait_streams(client, 1)) == 1
+    finally:
+        await client.post("/session/close", json={"force": True})
+
+
+@pytest.mark.parametrize("batch_mode", ["plain", "refs", "secure"])
+async def test_read_batches_and_fetch_streams_do_not_spend_settle_budget(
+    private_api, streaming_site, batch_mode
+):
+    client, config = private_api
+    config.browser.action_timeout = 6000
+    config.browser.snapshot_max_nodes = 1
+    if batch_mode == "secure":
+        config.security.content_scan = True
+        config.security.content_scan_patterns = ["UnsafeMarker"]
+    try:
+        await client.post("/navigate", json={"url": streaming_site})
+        await wait_streams(client, 1)
+        # An existing finite request does not turn a read into a wait.
+        await evaluate(client, "void fetch('/long')")
+        actions = [{"kind": "snapshot"} for _ in range(3)]
+        if batch_mode == "refs":
+            actions[1]["mode"] = "$0.mode"
+        start = time.monotonic()
+        response = await client.post(
+            "/action/batch", json={"actions": actions, "settle_timeout": 2500}
+        )
+        assert response.is_success, response.text
+        assert time.monotonic() - start < 1.5, response.text
+        for item in response.json()["data"]["results"]:
+            assert item["mode"] == "compact"
+            assert "--offset=1" in item["tree_text"]
+        config.browser.snapshot_max_nodes = 2
+        variants = [
+            {"kind": "snapshot"},
+            {"kind": "snapshot", "max_nodes": 0},
+            {"kind": "snapshot", "mode": "accessible"},
+        ]
+        if batch_mode == "refs":
+            variants[1]["mode"] = "$0.mode"
+        response = await client.post("/action/batch", json={"actions": variants})
+        assert response.is_success, response.text
+        first, unlimited, accessible = response.json()["data"]["results"]
+        assert "--offset=2" in first["tree_text"]
+        assert "not shown" not in unlimited["tree_text"]
+        assert accessible["mode"] == "accessible"
+        assert "not shown" not in accessible["tree_text"]
+        actions = [{"kind": "click", "selector": "#stream"}, {"kind": "snapshot"}]
+        if batch_mode == "refs":
+            actions[1]["selector"] = "$0.selector"
+        start = time.monotonic()
+        response = await client.post(
+            "/action/batch", json={"actions": actions, "settle_timeout": 2500}
+        )
+        assert response.is_success, response.text
+        assert time.monotonic() - start < 2, response.text
+        entries = await pending(client)
+        assert any(
+            item["resource_type"] == "fetch"
+            and item["status"] == 200
+            and item["url"].endswith("/events")
+            for item in entries
+        )
+        # One action grants one settle budget, not one budget per later read.
+        actions = [{"kind": "click", "selector": "#long"}] + [
+            {"kind": "snapshot"} for _ in range(3)
+        ]
+        if batch_mode == "refs":
+            actions[1]["selector"] = "$0.selector"
+        start = time.monotonic()
+        response = await client.post(
+            "/action/batch", json={"actions": actions, "settle_timeout": 700}
+        )
+        assert response.is_success, response.text
+        assert 0.7 <= time.monotonic() - start < 1.8
     finally:
         await client.post("/session/close", json={"force": True})

@@ -2,6 +2,8 @@
 
 agentcloak 开箱即用，无需任何配置。所有设置都有合理的默认值，可通过配置文件或环境变量覆盖。
 
+`AGENTCLOAK_HOME` 指定整个状态目录（默认 `~/.agentcloak`），包括配置、profile、工作空间存储、日志与运行记录。daemon 整个生命周期持有 `daemon.lock`：每个状态目录只允许一个 daemon，不依赖 PID 命名空间；不同状态目录可并行运行。隔离测试请同时设置临时 `AGENTCLOAK_HOME` **和不同的 `AGENTCLOAK_PORT`**，状态目录不隔离网络端点。客户端以实时 `/health` 获取当前 profile。升级后重启 daemon 才会启用生命周期锁。
+
 ## 优先级
 
 设置按以下顺序解析（高优先级优先）：

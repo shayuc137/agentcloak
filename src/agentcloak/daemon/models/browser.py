@@ -109,7 +109,9 @@ class ScreenshotResponse(BaseModel):
         description=(
             "Each item has ref (integer), role, name, and box [x, y, width, height] "
             "in CSS pixels. Coordinates are viewport-relative, or "
-            "document-relative for full_page; DPR only scales the image."
+            "document-relative for full_page; DPR only scales the image. "
+            "in_viewport reports a positive-area intersection with the current "
+            "viewport, including in full_page captures."
         ),
     )
 

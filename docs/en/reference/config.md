@@ -2,6 +2,8 @@
 
 agentcloak works with zero configuration out of the box. All settings have sensible defaults and can be overridden via config file or environment variables.
 
+`AGENTCLOAK_HOME` selects the entire state directory (default `~/.agentcloak`), including config, profiles, workspace stores, logs and runtime records. The daemon holds `daemon.lock` for its lifetime: one daemon per state directory, independent of PID namespaces. Separate state directories can run concurrently. For isolated tests, use a temporary `AGENTCLOAK_HOME` **and a distinct `AGENTCLOAK_PORT`**; a state directory does not isolate the network endpoint. Clients use live `/health` data for the active profile. Restart the daemon after upgrading to enable lifetime locking.
+
 ## Precedence
 
 Settings are resolved in this order (highest wins):

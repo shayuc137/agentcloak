@@ -458,7 +458,11 @@ async def handle_action_batch(
         else config.browser.batch_settle_timeout
     )
     result = await ActionService().execute_batch(
-        ctx, body.actions, sleep_s=body.sleep, settle_timeout=settle_timeout
+        ctx,
+        body.actions,
+        sleep_s=body.sleep,
+        settle_timeout=settle_timeout,
+        snapshot_max_nodes=config.browser.snapshot_max_nodes,
     )
     return _ok(result, seq=ctx.seq)
 

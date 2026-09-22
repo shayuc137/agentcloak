@@ -1221,6 +1221,22 @@ class BrowserContextBase(ABC):
             result = await self._evaluate_impl(js, world=world)
         except Exception as exc:
             self._translate_browser_closed(exc)
+            detail = str(getattr(exc, "hint", exc))
+            if "securityerror" in detail.lower() and any(
+                storage in detail.lower()
+                for storage in ("localstorage", "sessionstorage")
+            ):
+                from agentcloak.core.errors import StorageOriginError
+
+                url, _ = await self._get_page_info()
+                raise StorageOriginError(
+                    error="storage_origin_error",
+                    hint=f"Storage unavailable on current page ({url}): {detail}",
+                    action=(
+                        "navigate to the target website first, "
+                        "then check its storage policy"
+                    ),
+                ) from exc
             raise
 
         self._ring_buffer.append(
@@ -1317,6 +1333,12 @@ class BrowserContextBase(ABC):
                             "box": [min(xs) + dx, min(ys) + dy, width, height],
                             "role": ref.role,
                             "name": ref.text,
+                            "in_viewport": (
+                                max(xs) > 0
+                                and max(ys) > 0
+                                and min(xs) < viewport.get("clientWidth", 0)
+                                and min(ys) < viewport.get("clientHeight", 0)
+                            ),
                         }
                     )
             except Exception as exc:
@@ -2906,7 +2928,9 @@ class BrowserContextBase(ABC):
                 continue
 
             if kind == "snapshot":
-                results.append(await batch_snapshot(self, extra, settle_timeout))
+                results.append(
+                    await batch_snapshot(self, extra, settle_timeout, results)
+                )
                 continue
 
             try:
@@ -2947,29 +2971,47 @@ class BrowserContextBase(ABC):
 
         return {"results": results, "completed": total, "total": total}
 
-    def _settling_request_count(self) -> int:
+    def _settling_request_count(self, since_seq: int = 0) -> int:
         return self._pending_request_count
 
-    async def _settle_pending_requests(self, timeout_ms: int) -> None:
+    async def _settle_pending_requests(
+        self, timeout_ms: int, *, since_seq: int = 0
+    ) -> None:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout_ms / 1000
-        while self._settling_request_count() > 0:
+        while self._settling_request_count(since_seq) > 0:
             if loop.time() >= deadline:
                 break
             await asyncio.sleep(0.1)
 
 
 async def batch_snapshot(
-    ctx: Any, params: dict[str, Any], settle_timeout: int | None
+    ctx: Any,
+    params: dict[str, Any],
+    settle_timeout: int | None,
+    results: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Keep read-after-write semantics identical across batch execution paths."""
     if settle_timeout is None:
         settle_timeout = ctx._browser_config.batch_settle_timeout
-    await ctx._settle_pending_requests(settle_timeout)
-    snap: PageSnapshot = await ctx.snapshot(**params)
+    action_seqs: list[int] = []
+    for previous in reversed(results):
+        if previous.get("action") == "snapshot":
+            break
+        if previous.get("action") and isinstance(previous.get("seq"), int):
+            action_seqs.append(previous["seq"])
+    if action_seqs:
+        await ctx._settle_pending_requests(settle_timeout, since_seq=min(action_seqs))
+    options = {"mode": "compact", **params}
+    options.setdefault(
+        "max_nodes",
+        ctx._browser_config.snapshot_max_nodes if options["mode"] == "compact" else 0,
+    )
+    snap: PageSnapshot = await ctx.snapshot(**options)
     return {
         "ok": True,
         "seq": snap.seq,
+        "action": "snapshot",
         "url": snap.url,
         "title": snap.title,
         "mode": snap.mode,

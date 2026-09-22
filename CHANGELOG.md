@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Lock daemon state for its lifetime, support isolated `AGENTCLOAK_HOME` roots, and discover active profiles from live health rather than stale records.
+- Make batch snapshot reads compact by default, honor current node limits, and settle only once after actions while excluding fetch-based SSE.
+- Add viewport-intersection metadata to screenshot annotations and actionable origin errors for JavaScript storage access.
+
 - Pin local main-world evaluation to the active tab's main document using frame and unique context identities; iframe contexts cannot redirect evaluation, and context loss never replays scripts.
 
 - Retire pending requests with their documents, exclude EventSource from bounded batch settling, and connect batch snapshot reads across execution paths.

@@ -219,6 +219,8 @@ See the [backends guide](docs/en/guides/backends.md) for configuration details a
 
 ## Configuration
 
+Set `AGENTCLOAK_HOME` to isolate the full state directory (config, profiles and runtime records). Each directory has one daemon owner; use a distinct `AGENTCLOAK_PORT` for a parallel instance. See the [configuration reference](docs/en/reference/config.md).
+
 ```bash
 cloak config list                                       # all settings with sources
 cloak config set browser.proxy "socks5://host:1080"     # set a value

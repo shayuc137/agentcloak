@@ -91,6 +91,7 @@ class ActionService:
         *,
         sleep_s: float = 0.0,
         settle_timeout: int | None = None,
+        snapshot_max_nodes: int | None = None,
     ) -> dict[str, Any]:
         """Execute a batch of actions with optional ``$N.path`` references.
 
@@ -107,14 +108,27 @@ class ActionService:
             settle_timeout = cfg.browser.batch_settle_timeout
         if not self.has_refs(actions):
             return await ctx.action_batch(
-                actions, sleep=sleep_s, settle_timeout=settle_timeout
+                [self._snapshot_defaults(act, snapshot_max_nodes) for act in actions],
+                sleep=sleep_s,
+                settle_timeout=settle_timeout,
             )
         return await self._run_with_refs(
             ctx,
             actions,
             sleep_s=sleep_s,
             settle_timeout=settle_timeout,
+            snapshot_max_nodes=snapshot_max_nodes,
         )
+
+    @staticmethod
+    def _snapshot_defaults(act: dict[str, Any], limit: int | None) -> dict[str, Any]:
+        if (
+            limit is not None
+            and act.get("kind", act.get("action")) == "snapshot"
+            and act.get("mode", "compact") == "compact"
+        ):
+            return {"max_nodes": limit, **act}
+        return act
 
     # ------------------------------------------------------------------
     # $N reference resolution — public static so callers (and tests) can use
@@ -165,6 +179,7 @@ class ActionService:
         *,
         sleep_s: float,
         settle_timeout: int,
+        snapshot_max_nodes: int | None = None,
     ) -> dict[str, Any]:
         from agentcloak.core.config import load_config
 
@@ -178,7 +193,9 @@ class ActionService:
 
         for i, act in enumerate(actions):
             try:
-                resolved_act = self.resolve_refs(act, results)
+                resolved_act = self._snapshot_defaults(
+                    self.resolve_refs(act, results), snapshot_max_nodes
+                )
             except (KeyError, IndexError, TypeError) as exc:
                 results.append(
                     {
@@ -222,7 +239,9 @@ class ActionService:
                 continue
 
             if kind == "snapshot":
-                results.append(await batch_snapshot(ctx, extra, settle_timeout))
+                results.append(
+                    await batch_snapshot(ctx, extra, settle_timeout, results)
+                )
                 continue
 
             try:

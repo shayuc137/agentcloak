@@ -79,7 +79,11 @@ class Paths:
 
 
 def _default_root() -> Path:
-    return Path.home() / ".agentcloak"
+    return (
+        Path(os.environ.get("AGENTCLOAK_HOME") or Path.home() / ".agentcloak")
+        .expanduser()
+        .resolve()
+    )
 
 
 @dataclass

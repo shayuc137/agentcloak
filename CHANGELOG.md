@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-09-22)
 
 Workspace-aware sessions on one shared daemon, browser evidence you can verify, richer pointer/keyboard input, screen recording, and hardened daemon ownership and release gates.
 
@@ -45,7 +45,7 @@ Workspace-aware sessions on one shared daemon, browser evidence you can verify, 
 
 - **Browser regression in CI** — dual-backend control suites, workspace persistence, multi-session and CLI recovery tests, plus a real Chromium MV3 extension smoke test for RemoteBridge (local machine only; cross-machine deployment remains unverified)
 - **Release gates** — PyPI publication requires a matching tag, project/lockfile version and dated CHANGELOG entry, and a successful main-branch CI run for the exact release commit; `scripts/check_upgrade.py` upgrades from the published `0.3.4` package and verifies configuration, profile cookies/localStorage, restart persistence and skill refresh
-- Refresh locked dependencies: Playwright 1.63.0, uvicorn 0.53.0, Ruff 0.16.8, pyright 1.1.414, PyJWT 2.14.0, greenlet 3.5.6, idna 3.20
+- Refresh locked dependencies: Playwright 1.63.0, uvicorn 0.53.0, Ruff 0.16.8, pyright 1.1.414, PyJWT 2.14.0, greenlet 3.5.6, idna 3.20, watchfiles 1.3.0
 
 ## 0.3.5 (2026-09-09)
 

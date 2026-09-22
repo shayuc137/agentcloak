@@ -614,6 +614,7 @@ Navigation completion is not SPA readiness. Insert an explicit `/wait` for a sel
 
 - CLI: `cloak cdp send`
 - MCP: `agentcloak_cdp_send`
+- CLI parameter input: `--params JSON` or `--params-file PATH` (mutually exclusive); use `--params-file -` for stdin. File/stdin must contain one UTF-8 JSON object with the CDP parameters only, not the outer request body. Omit both for `{}`. File/stdin avoids command-line argument-size limits.
 - Body:
   - `method` (string, default: *required*)
   - `params` (object, default: —)

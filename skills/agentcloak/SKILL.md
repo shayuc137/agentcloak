@@ -137,6 +137,7 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak route remove [PATTERN]` / `list` | Remove rules / list rule ids, hit counts and pending requests; zero hits warn |
 | `cloak route add --hold PATTERN` / `route release ID` | Pause requests for loading-state snapshot/screenshot; release a pending request or rule id |
 | `cloak cdp send METHOD --params JSON --timeout MS` | Session-bound CDP request; protocol errors/timeouts fail nonzero |
+| `cloak cdp send METHOD --params-file params.json` | Large UTF-8 JSON parameter object; use `-` for stdin; mutually exclusive with `--params` |
 | `cloak emulation headers -H 'Name: value'` | Inject extra HTTP headers on every request (custom auth/tokens); no `-H` clears them |
 | `cloak graphql introspect URL` | Run the standard `__schema` introspection query (via the session's cookies) |
 | `cloak graphql query URL QUERY [--variables '{...}']` | Send an arbitrary GraphQL operation |

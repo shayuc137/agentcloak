@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
+import os
 import socket
+import sys
 import time
 from io import BytesIO
 from types import SimpleNamespace
@@ -78,6 +81,76 @@ async def evaluate(client, js):
     response = await client.post("/evaluate", json={"js": js})
     assert response.is_success, response.text
     return response.json()["data"]
+
+
+@pytest.mark.parametrize("source", ["file", "stdin"])
+async def test_cdp_large_parameters_through_cli(
+    private_api, local_server, tmp_path, source
+):
+    client, _ = private_api
+    (tmp_path / "config.toml").write_text(
+        f"[daemon]\nhost='127.0.0.1'\nport={client.base_url.port}\n"
+    )
+    env = {k: v for k, v in os.environ.items() if not k.startswith("AGENTCLOAK_")}
+    env.update(
+        AGENTCLOAK_HOME=str(tmp_path),
+        AGENTCLOAK_SESSION="primary",
+        AGENTCLOAK_SKIP_FIRST_RUN_BANNER="1",
+    )
+    content = 'body::after { content: "你好\\world"; }\n' * 12000
+    payload = json.dumps(
+        {
+            "expression": "window.largePayload="
+            + json.dumps(content, ensure_ascii=False)
+            + ";true",
+            "returnByValue": True,
+        },
+        ensure_ascii=False,
+    ).encode()
+    assert len(payload) > 350_000
+    path = tmp_path / "parameters.json"
+    path.write_bytes(payload)
+
+    async def cli(*args, stdin=None):
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-m",
+            "agentcloak",
+            *args,
+            "--json",
+            env=env,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(process.communicate(stdin), 30)
+        finally:
+            if process.returncode is None:
+                process.kill()
+                await process.communicate()
+        assert process.returncode == 0, stderr.decode()
+        response = json.loads(stdout)
+        assert response["ok"] is True
+        return response["data"]
+
+    await cli("navigate", f"{local_server}/input-actions.html")
+    await cli(
+        "cdp",
+        "send",
+        "Runtime.evaluate",
+        "--params-file",
+        str(path) if source == "file" else "-",
+        stdin=payload if source == "stdin" else None,
+    )
+    digest = await cli(
+        "js",
+        "evaluate",
+        "crypto.subtle.digest('SHA-256',new TextEncoder().encode(window.largePayload))"
+        ".then(b=>Array.from(new Uint8Array(b),"
+        "v=>v.toString(16).padStart(2,'0')).join(''))",
+    )
+    assert digest["result"] == hashlib.sha256(content.encode()).hexdigest()
 
 
 async def test_key_failure_does_not_pollute_click(private_api, local_server):

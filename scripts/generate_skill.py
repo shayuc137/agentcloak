@@ -520,6 +520,14 @@ def render_route(spec: dict[str, Any], path: str, verb: str, op: dict[str, Any])
     mcp = ROUTE_TO_MCP.get(path, "_(no MCP binding)_")
     lines.append(f"- CLI: `{cli}`")
     lines.append(f"- MCP: `{mcp}`")
+    if path == "/cdp/send":
+        lines.append(
+            "- CLI parameter input: `--params JSON` or `--params-file PATH` "
+            "(mutually exclusive); use `--params-file -` for stdin. File/stdin "
+            "must contain one UTF-8 JSON object with the CDP parameters only, "
+            "not the outer request body. Omit both for `{}`. File/stdin avoids "
+            "command-line argument-size limits."
+        )
 
     if verb == "POST":
         params = _params_from_request_body(spec, op)

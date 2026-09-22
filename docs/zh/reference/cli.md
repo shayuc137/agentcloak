@@ -498,7 +498,11 @@ cloak route release RULE_OR_REQUEST_ID
 
 ```bash
 cloak cdp send Runtime.evaluate --params '{"expression":"document.title","returnByValue":true}' --timeout 1000
+cloak cdp send Runtime.evaluate --params-file params.json
+cloak cdp send Runtime.evaluate --params-file - < params.json
 ```
+
+大载荷可用 `--params-file PATH` 绕过命令行参数大小限制，或用 `-` 读取 stdin。输入必须是一个 UTF-8 JSON 对象，只包含 CDP 方法参数（例如 `{"expression":"document.title","returnByValue":true}`），不包含外层 HTTP 请求封装。该选项与 `--params` 互斥；两者均省略时发送 `{}`。文件不可读、JSON 无效或值不是对象时，会在连接 daemon 前报错。
 
 命令作用于当前 session 的页面，超时按每次请求计，单位毫秒。协议错误与超时均非零退出，JSON 模式返回结构化错误。本地 raw CDP 使用独立的 per-tab 持久通道；超时或取消会重置该通道，之后需重新设置其 CDP 状态，manager 订阅保持有效。
 

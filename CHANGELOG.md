@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Read large CDP parameter objects from UTF-8 files or stdin with `cdp send --params-file`, avoiding command-line argument-size limits.
 - Run optional mDNS advertisement asynchronously after HTTP readiness, advertise the actual bound port, isolate instance names, and close discovery resources on failure or shutdown.
 - Gate publication on matching tag/version/changelog and successful CI for the exact release commit; add installed-release upgrade coverage for configuration, profile storage, restart and skill updates.
 

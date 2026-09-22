@@ -504,7 +504,11 @@ Release resumes pending requests; the rule remains installed for future requests
 
 ```bash
 cloak cdp send Runtime.evaluate --params '{"expression":"document.title","returnByValue":true}' --timeout 1000
+cloak cdp send Runtime.evaluate --params-file params.json
+cloak cdp send Runtime.evaluate --params-file - < params.json
 ```
+
+Use `--params-file PATH` for large payloads without shell argument-size limits, or `-` to read stdin. The input must be one UTF-8 JSON object containing only the CDP method's parameters (for example, `{"expression":"document.title","returnByValue":true}`), not the outer HTTP request envelope. It is mutually exclusive with `--params`; omitting both sends `{}`. Unreadable files, invalid JSON and non-object values fail before contacting the daemon.
 
 Commands target the current session's page. The timeout is per request in milliseconds; protocol errors and timeouts exit nonzero with structured errors in JSON mode. Local raw CDP calls share a dedicated per-tab channel. Timeout/cancellation resets that channel, so reapply any CDP state it held; manager subscriptions remain active.
 

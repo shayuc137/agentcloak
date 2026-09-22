@@ -38,15 +38,45 @@ def _reset_cli_mode() -> Any:
     cli_output.set_pretty(enabled=False)
 
 
+@pytest.fixture(autouse=True)
+def _isolated_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
+    monkeypatch.setenv("AGENTCLOAK_HOME", str(tmp_path / "state"))
+    # Fix-mode unit tests must not download a browser or contact a host daemon.
+    with (
+        patch("cloakbrowser.ensure_binary", side_effect=RuntimeError("offline")),
+        patch(
+            "agentcloak.cli.commands.doctor._probe_daemon_runtime",
+            return_value=(
+                {"name": "daemon", "ok": True, "detail": "stopped", "hint": ""},
+                {"daemon_ok": False},
+            ),
+        ),
+    ):
+        yield
+
+
 class TestDoctorCommand:
     # CLI defaults to text output; tests assert against the legacy JSON
     # envelope via ``--json`` (still the contract for scripts and MCP).
-    def test_outputs_valid_json(self) -> None:
-        result = runner.invoke(app, ["--json", "doctor"])
+    @pytest.mark.parametrize("healthy", [True, False])
+    def test_outputs_valid_json(self, healthy: bool) -> None:
+        report = {
+            "healthy": healthy,
+            "checks": [
+                {"name": "browser", "ok": healthy, "detail": "fixture", "hint": ""}
+            ],
+            "extras": {"available": True, "checks": []},
+        }
+        with patch.object(DiagnosticService, "doctor", return_value=report):
+            result = runner.invoke(app, ["--json", "doctor"])
         data = json.loads(result.stdout)
-        assert "ok" in data
-        assert data["ok"] is True
-        assert "data" in data
+        assert data["ok"] is healthy
+        assert result.exit_code == (0 if healthy else 1)
+        assert data["data"]["healthy"] is healthy
+        if healthy:
+            assert data["seq"] == 0
+        else:
+            assert data["error"]["code"] == "doctor_failed"
 
     def test_has_checks_array(self) -> None:
         result = runner.invoke(app, ["--json", "doctor"])
@@ -70,12 +100,6 @@ class TestDoctorCommand:
         checks = data["data"]["checks"]
         py_check = next(c for c in checks if c["name"] == "python_version")
         assert py_check["ok"] is True
-
-    def test_has_seq_field(self) -> None:
-        result = runner.invoke(app, ["--json", "doctor"])
-        data = json.loads(result.stdout)
-        assert "seq" in data
-        assert data["seq"] == 0
 
     def test_path_entry_check_present(self) -> None:
         # ``path_entry`` warns when ``agentcloak``/``cloak`` aren't on PATH.
@@ -101,8 +125,6 @@ class TestDoctorCommand:
         assert "actions" in data["data"]["fix"]
         assert "command" in data["data"]["fix"]
         assert "executed" in data["data"]["fix"]
-        # No daemon running in test env → not healthy, but the fix dict
-        # itself is still present.
 
     def test_fix_help_advertises_sudo(self) -> None:
         result = runner.invoke(app, ["doctor", "--help"])

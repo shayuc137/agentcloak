@@ -45,8 +45,8 @@ async def advertise_daemon(host: str, port: int) -> None:
     zc: Any = None
     try:
         from zeroconf import ServiceInfo  # pyright: ignore[reportMissingImports]
-        from zeroconf.asyncio import (
-            AsyncZeroconf,  # pyright: ignore[reportMissingImports]
+        from zeroconf.asyncio import (  # pyright: ignore[reportMissingImports]
+            AsyncZeroconf,
         )
 
         addresses = await asyncio.get_running_loop().getaddrinfo(

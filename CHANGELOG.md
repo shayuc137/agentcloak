@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Pin local main-world evaluation to the active tab's main document using frame and unique context identities; iframe contexts cannot redirect evaluation, and context loss never replays scripts.
+
 - Retire pending requests with their documents, exclude EventSource from bounded batch settling, and connect batch snapshot reads across execution paths.
 - Add screenshot annotation scope, text and node limits; document JSONL batches, response payloads and suspended session identities.
 

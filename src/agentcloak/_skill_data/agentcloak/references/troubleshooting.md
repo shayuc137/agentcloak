@@ -189,3 +189,5 @@ Start with `cloak daemon start --log-level info` for request entered/acquired/st
 Profile localStorage is native browser state: navigation does not replay JSON backups. `profile create --from-current` seeds a new native profile once. If a legacy profile contains only a localStorage snapshot, recreate it from a live authenticated session; do not overwrite current storage with an old backup.
 
 `network --pending` retains live SSE but retires requests when their document is replaced or frame detached. History/hash navigation keeps them. Action-batch snapshot settling excludes EventSource; use explicit selector/JS waits for application readiness. A closed session listed as `suspended` retains only its identity, not live pages; the next request creates a new page.
+
+On local backends, `evaluate_failed` during navigation can mean the selected main-document context was destroyed. The script is not replayed, and no child-frame fallback is used. Check the resulting page state before retrying a script with side effects. `frame focus` does not retarget page-level evaluation.

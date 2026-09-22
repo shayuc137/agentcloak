@@ -504,3 +504,5 @@ start 固定当前 session 的活动标签页。status 返回采集状态和限�
 `agentcloak_screenshot(annotate=true)` 返回标注图片及引用/框元数据。`agentcloak_snapshot(find="文本")` 在分页前搜索可访问名称/值。`agentcloak_action` 的 click/fill/hover 支持 `selector`，drag 支持 `hold`、`duration`、`sample`；`agentcloak_network` 支持 `pending` 和 URL `filter`。
 
 `agentcloak_screenshot(annotate=true, within="#panel", find="Save", limit=20)` 筛选标注引用，不裁剪图片；`limit=0` 不限。标注元数据为 CSS 像素的 `annotations: [{ref, role, name, box: [x,y,width,height]}]`；snapshot 的 HTTP/CLI JSON 使用 `data.tree_text`，MCP snapshot 工具则渲染为文本。
+
+本地后端的页面级 JavaScript 求值始终面向当前标签页的主文档。`world="main"` 根据主 frame ID 和唯一执行上下文身份选择该文档的默认世界，不依赖 iframe 事件顺序、名称或重复 URL。`frame focus` 用于 iframe 快照和元素操作，不改变页面级 evaluate 或截图身份。导航销毁所选上下文时返回失败，不重放 JavaScript，也不回落到子 frame；本次未更改 RemoteBridge 求值。

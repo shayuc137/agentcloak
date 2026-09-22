@@ -62,10 +62,13 @@ def _mock_cdp_session(eval_value: Any = "result") -> MagicMock:
                     {"role": {"value": "link"}, "name": {"value": "Click me"}},
                 ]
             }
+        if method == "Page.getFrameTree":
+            return {"frameTree": {"frame": {"id": "F1"}}}
         if method == "Runtime.enable":
             main_ctx = {
                 "context": {
                     "id": 1,
+                    "uniqueId": "main-unique",
                     "origin": "https://example.com",
                     "name": "",
                     "auxData": {"isDefault": True, "type": "default", "frameId": "F1"},

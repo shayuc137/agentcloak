@@ -109,14 +109,7 @@ async def test_document_requests_retire_without_hiding_live_streams(
             "window.child=document.createElement('iframe');child.src='/';document.body.append(child);true",
         )
         await wait_streams(client, 2)
-        removed = await client.post(
-            "/evaluate",
-            json={
-                "js": "document.querySelector('iframe').remove()",
-                "world": "isolated",
-            },
-        )
-        assert removed.is_success, removed.text
+        await evaluate(client, "document.querySelector('iframe').remove()")
         await wait_streams(client, 1)
         tab = (await client.post("/tab/new", json={"url": streaming_site})).json()[
             "data"

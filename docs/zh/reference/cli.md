@@ -812,3 +812,5 @@ WebM 导出要求 daemon 所在机器安装含 VP9 编码器的 `ffmpeg`。ZIP �
 Snapshot JSON 的树在 `data.tree_text`，例如 `"[1] button \"Save\""`，使用 `--find` 时也是文本；可用 `--selector-map` 获取可选的结构化 `data.selector_map`。
 
 标注筛选要求 `--annotate`：`--within '#panel' --find 'Save' --limit 20`。复用 compact snapshot 筛选和行数限制（祖先也计数）；省略 limit 使用 snapshot 配置，`0` 表示不限。只标注实际展示的引用，截图范围不变。没有匹配时仍返回图片，`data.annotations` 为空。列表元素为 `{"ref":1,"role":"button","name":"Save","box":[100,80,140,40]}`，`box` 是 CSS 像素的 `[x,y,width,height]`，相对视口，`--full-page` 时相对文档；DPR 只缩放图片。CLI JSON 另有 `data.saved`，HTTP 的图片位于 `data.base64`。
+
+本地后端的页面级 JavaScript 求值始终面向当前标签页的主文档。`world="main"` 根据主 frame ID 和唯一执行上下文身份选择该文档的默认世界，不依赖 iframe 事件顺序、名称或重复 URL。`frame focus` 用于 iframe 快照和元素操作，不改变页面级 evaluate 或截图身份。导航销毁所选上下文时返回失败，不重放 JavaScript，也不回落到子 frame；本次未更改 RemoteBridge 求值。

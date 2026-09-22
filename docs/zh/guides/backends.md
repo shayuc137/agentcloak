@@ -212,3 +212,5 @@ CSS 定位、snapshot find 和定时拖动复用共享交互/快照路径，两�
 本地录屏使用固定页面的 CDP screencast 并限制帧缓存；WebM 导出需要 ffmpeg，ZIP 无额外依赖。标注截图将原生 DOM 框绘制到图像像素中。两者都有本地双后端回归；Bridge 不支持录屏，Bridge 标注尚未实测。
 
 本地 pending 请求观测跟随文档/frame 生命周期：替换文档和移除 frame 会清理旧请求，同文档 history/hash 更新则保留。仍在运行的 EventSource 流继续可见，但不阻塞动作批处理的 snapshot 等待。
+
+本地后端的页面级 JavaScript 求值始终面向当前标签页的主文档。`world="main"` 根据主 frame ID 和唯一执行上下文身份选择该文档的默认世界，不依赖 iframe 事件顺序、名称或重复 URL。`frame focus` 用于 iframe 快照和元素操作，不改变页面级 evaluate 或截图身份。导航销毁所选上下文时返回失败，不重放 JavaScript，也不回落到子 frame；本次未更改 RemoteBridge 求值。

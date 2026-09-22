@@ -1641,25 +1641,37 @@ class PlaywrightContext(BrowserContextBase):
         """Evaluate JS in the page's main execution context via CDP."""
         cdp = await self._page.context.new_cdp_session(self._page)
         try:
-            contexts: list[dict[str, Any]] = []
+            contexts: dict[int, dict[str, Any]] = {}
 
             def _on_ctx(params: dict[str, Any]) -> None:
-                contexts.append(params["context"])
+                context = params["context"]
+                contexts[context["id"]] = context
+
+            def _on_destroyed(params: dict[str, Any]) -> None:
+                contexts.pop(params["executionContextId"], None)
+
+            def _on_cleared(_params: dict[str, Any]) -> None:
+                contexts.clear()
 
             cdp.on("Runtime.executionContextCreated", _on_ctx)
+            cdp.on("Runtime.executionContextDestroyed", _on_destroyed)
+            cdp.on("Runtime.executionContextsCleared", _on_cleared)
             await cdp.send("Runtime.enable")
 
-            main_ctx_id: int | None = None
-            for ec in contexts:
-                aux: dict[str, Any] = ec.get("auxData", {})
-                if aux.get("isDefault") is True:
-                    main_ctx_id = ec["id"]
-                    break
-
-            if main_ctx_id is None:
+            tree = await cdp.send("Page.getFrameTree")
+            frame_id = tree.get("frameTree", {}).get("frame", {}).get("id")
+            candidates = [
+                ec["uniqueId"]
+                for ec in contexts.values()
+                if frame_id
+                and ec.get("auxData", {}).get("isDefault") is True
+                and ec.get("auxData", {}).get("frameId") == frame_id
+                and ec.get("uniqueId")
+            ]
+            if len(candidates) != 1:
                 raise BackendError(
                     error="evaluate_failed",
-                    hint="could not find main world execution context",
+                    hint="could not identify the main document's main world context",
                     action="ensure page is loaded before evaluating",
                 )
 
@@ -1667,7 +1679,8 @@ class PlaywrightContext(BrowserContextBase):
                 "Runtime.evaluate",
                 {
                     "expression": js,
-                    "contextId": main_ctx_id,
+                    # Numeric IDs can be reused across process/navigation changes.
+                    "uniqueContextId": candidates[0],
                     "returnByValue": True,
                     "awaitPromise": True,
                     "userGesture": True,

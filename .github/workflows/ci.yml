@@ -82,6 +82,7 @@ jobs:
           tests/integration/test_storage_lifecycle.py
           tests/integration/test_visual_evidence.py
           tests/integration/test_network_lifecycle.py
+          tests/integration/test_evaluate_context.py
           tests/integration/test_interaction_observation.py
           tests/integration/test_input_actions.py
           tests/integration/test_network_controls.py

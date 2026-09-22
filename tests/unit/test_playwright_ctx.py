@@ -90,11 +90,14 @@ def _mock_cdp_session() -> MagicMock:
             return {"cssContentSize": {"width": 1280, "height": 720}}
         if method == "Accessibility.getFullAXTree":
             return _ax_tree_response()
+        if method == "Page.getFrameTree":
+            return {"frameTree": {"frame": {"id": "F1"}}}
         if method == "Runtime.enable":
             # Replay existing execution contexts — simulates CDP behavior.
             main_ctx = {
                 "context": {
                     "id": 1,
+                    "uniqueId": "main-unique",
                     "origin": "https://example.com",
                     "name": "",
                     "auxData": {
@@ -478,10 +481,13 @@ class TestEvaluate:
             _listeners.setdefault(event, []).append(callback)
 
         async def _send(method: str, params: Any = None) -> Any:
+            if method == "Page.getFrameTree":
+                return {"frameTree": {"frame": {"id": "F1"}}}
             if method == "Runtime.enable":
                 main_ctx = {
                     "context": {
                         "id": 1,
+                        "uniqueId": "main-unique",
                         "origin": "",
                         "name": "",
                         "auxData": {
@@ -539,10 +545,13 @@ class TestEvaluate:
             _listeners.setdefault(event, []).append(callback)
 
         async def _send(method: str, params: Any = None) -> Any:
+            if method == "Page.getFrameTree":
+                return {"frameTree": {"frame": {"id": "F1"}}}
             if method == "Runtime.enable":
                 main_ctx = {
                     "context": {
                         "id": 1,
+                        "uniqueId": "main-unique",
                         "origin": "",
                         "name": "",
                         "auxData": {
@@ -571,8 +580,8 @@ class TestEvaluate:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_evaluate_main_world_passes_context_id(self) -> None:
-        """Main world evaluate passes contextId from Runtime.enable discovery."""
+    async def test_evaluate_main_world_passes_unique_context_id(self) -> None:
+        """Main world evaluate uses a unique ID to reject context reuse."""
         cdp = MagicMock()
         _listeners: dict[str, list] = {}
         captured_params: dict[str, Any] = {}
@@ -581,10 +590,13 @@ class TestEvaluate:
             _listeners.setdefault(event, []).append(callback)
 
         async def _send(method: str, params: Any = None) -> Any:
+            if method == "Page.getFrameTree":
+                return {"frameTree": {"frame": {"id": "F1"}}}
             if method == "Runtime.enable":
                 main_ctx = {
                     "context": {
                         "id": 42,
+                        "uniqueId": "main-unique",
                         "origin": "https://example.com",
                         "name": "",
                         "auxData": {
@@ -612,7 +624,8 @@ class TestEvaluate:
         ctx = _make_ctx(page=page)
         result = await ctx.evaluate("window.jQuery")
         assert result == "ok"
-        assert captured_params["contextId"] == 42
+        assert captured_params["uniqueContextId"] == "main-unique"
+        assert "contextId" not in captured_params
 
     @pytest.mark.asyncio
     async def test_evaluate_main_world_no_context_raises(self) -> None:
@@ -636,6 +649,56 @@ class TestEvaluate:
         with pytest.raises(BackendError) as exc_info:
             await ctx.evaluate("1+1")
         assert "main world" in exc_info.value.hint
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("lifecycle", ["live", "destroyed", "cleared"])
+    async def test_evaluation_never_falls_back_to_child_context(
+        self, lifecycle: str
+    ) -> None:
+        cdp = MagicMock()
+        listeners: dict[str, Any] = {}
+        evaluated: list[dict[str, Any]] = []
+
+        async def send(method: str, params: Any = None) -> Any:
+            if method == "Runtime.enable":
+                for context_id, frame_id in [(1, "child"), (2, "root")]:
+                    listeners["Runtime.executionContextCreated"](
+                        {
+                            "context": {
+                                "id": context_id,
+                                "uniqueId": f"unique-{frame_id}",
+                                "auxData": {"isDefault": True, "frameId": frame_id},
+                            }
+                        }
+                    )
+            if method == "Page.getFrameTree":
+                if lifecycle == "destroyed":
+                    listeners["Runtime.executionContextDestroyed"](
+                        {"executionContextId": 2}
+                    )
+                elif lifecycle == "cleared":
+                    listeners["Runtime.executionContextsCleared"]({})
+                return {"frameTree": {"frame": {"id": "root"}}}
+            if method == "Runtime.evaluate":
+                evaluated.append(params)
+                return {"result": {"value": "root"}}
+            return {}
+
+        cdp.on.side_effect = lambda event, callback: listeners.update({event: callback})
+        cdp.send = AsyncMock(side_effect=send)
+        cdp.detach = AsyncMock()
+        page = _default_page()
+        page.context.new_cdp_session = AsyncMock(return_value=cdp)
+        ctx = _make_ctx(page=page)
+        if lifecycle == "live":
+            assert await ctx.evaluate("sideEffect()") == "root"
+            assert len(evaluated) == 1
+            assert evaluated[0]["uniqueContextId"] == "unique-root"
+        else:
+            with pytest.raises(BackendError):
+                await ctx.evaluate("sideEffect()")
+            assert evaluated == []
+        cdp.detach.assert_awaited_once()
 
 
 class TestClick:

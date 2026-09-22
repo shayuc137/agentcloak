@@ -79,7 +79,7 @@ cloak fill N "4242..."
 cloak frame focus --main   # back to main page
 ```
 
-Frame targeting: `--name`, `--url "*pattern*"`, or `--main`.
+Frame targeting: `--name`, `--url "*pattern*"`, or `--main`. On local backends this scopes snapshots and element operations; page-level `js evaluate` still targets the active tab's main document.
 
 ## Explore Large Page
 

@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.4.1 (2026-11-16)
+
+Fixes from long unattended acceptance runs: refs can no longer hit an element you never saw, covered clicks fail fast with the blocker named, dialogs and idle sessions keep the page recoverable — plus element screenshots, unit-aware timeouts, and a dependency refresh that pins CloakBrowser below its license-key releases.
+
+### Behavior changes
+
+Each of these replaces behavior that silently did the wrong thing; scripts that relied on the old output should check them.
+
+- **No stale-ref auto-retry** — a ref missing from your latest snapshot output now fails with `element_not_found` (naming any `--find`/`--selector` filter) instead of re-snapshotting and replaying the same number, which could click a different element. A filtered snapshot numbers only what it shows
+- **`js evaluate` scalars use JSON spelling** — `true`, `false`, `null` (was `True`, `False`, empty line); strings still print raw
+- **`beforeunload` is no longer auto-accepted** — like `confirm`, it is left to `dialog accept` / `dismiss`, so unsaved page state can be kept
+- **Idle sessions are reclaimed after 30 minutes** — `daemon.session_idle_timeout` defaults to 1800s (was 300s)
+- **`route remove` with an unmatched ID/pattern fails** with `route_not_found` (was a silent no-op printed as "added rule")
+
+### Bug Fixes
+
+- **Refs stay bound to what you saw** — a re-rendered element is re-found only by the snapshot's own role and exact name when exactly one element matches (via the accessibility tree, so it also works with humanize); the old Playwright fallbacks that clicked the first of several matches or any element with the same role are gone. The opt-in content scan checks the shown ref instead of taking a renumbering snapshot
+- **Action echo names the target** — `clicked [2] link "Customers"`; JSON results carry `role` / `name`
+- **Covered clicks fail fast** — a native 2s trial detects a persistent overlay (e.g. an open menu's transparent backdrop) and returns `element_covered` naming the blocker with a hint to `press Escape`; a target removed mid-click returns `element_resolve_failed`. Elements that are merely not ready yet keep the full `browser.action_timeout`, and timeouts name what they waited for. Long-lived SSE and polling never delayed clicks
+- **Page loss is explained** — `page_recreated` reports the lost URL/title, when and why (idle reclaim, browser rebuild, page closed), the session and the config key
+- **Dialogs keep the page usable** — `navigate` blocked by `beforeunload`/`confirm` returns `blocked_by_dialog` with the dialog type and text; after `accept` the navigation completes, after `dismiss` the original page stays valid without re-navigating
+- **`route remove` accepts rule IDs** from `route add` / `route list` and prints each removed rule plus the remaining count
+
+### Features
+
+- **Element screenshots** — `screenshot --selector CSS [--padding PX]` crops to one element using native geometry, respects DPR and temporary viewport overrides, and returns the crop rectangle as `clip`; also on the HTTP API and MCP `agentcloak_screenshot`
+- **Unit-aware timeouts** — every `--timeout` / `--wait-timeout` accepts `45s` or `45000ms`; bare numbers keep each flag's unit and warn on stderr when they look like the other unit (e.g. `wait --timeout 45`)
+
+### Dependencies
+
+- Pin `cloakbrowser>=0.5.10,<0.6`: 0.6 reworks humanize (our default) and 0.7+ requires a license key for every launch, which breaks the headless daemon; fresh installs of 0.4.0 could resolve to it. Locked at 0.5.12
+- Require Pillow 13+ (fixes the 2026 decoder CVEs); refresh the lockfile, including Playwright 1.65.2, FastAPI 0.163.1, Starlette 1.10.0, Typer 0.29.1, Pydantic 2.14.3, PyJWT 2.15.1 and certifi 2026.10.23. The MCP SDK stays below 2
+
 ## 0.4.0 (2026-09-22)
 
 Workspace-aware sessions on one shared daemon, browser evidence you can verify, richer pointer/keyboard input, screen recording, and hardened daemon ownership and release gates.

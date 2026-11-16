@@ -1,6 +1,6 @@
 [project]
 name = "agentcloak"
-version = "0.4.0"
+version = "0.4.1"
 description = "Browser toolkit for AI agents — stealth browsing, web reverse engineering, CLI and MCP interface"
 requires-python = ">=3.12"
 license = "MIT"
@@ -31,7 +31,10 @@ dependencies = [
     "pydantic>=2.7",
     "starlette>=0.40",
     "websockets>=12.0",
-    "cloakbrowser>=0.3",
+    # <0.6: 0.6 reworked humanize (strict locators, no fallback; humanize is our
+    # default) and 0.7+ needs a license key for every launch, which breaks the
+    # headless daemon. Raise only after testing a newer line (2026-11-16).
+    "cloakbrowser>=0.5.10,<0.6",
     # Directly used by our backend and its read-only Chromium/shell discovery.
     "playwright>=1.49",
     "httpx>=0.27",
@@ -39,7 +42,8 @@ dependencies = [
     # Security floor for CloakBrowser's transitive dependency (CVE-2026-69247).
     "cryptography>=50.0.1",
     "mcp>=1.27.0,<2.0.0",
-    "Pillow>=12.0",
+    # Security floor: 13.0 fixes the 2026 decoder CVEs flagged by pip-audit.
+    "Pillow>=13.0",
 ]
 
 [project.scripts]

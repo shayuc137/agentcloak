@@ -67,9 +67,9 @@ async def handle_navigate(
     result = await ctx.navigate(body.url, timeout=body.timeout)
     manager = getattr(request.app.state, "session_manager", None)
     if manager is not None:
-        manager.slot(
-            session_id_of(request), **workspace_scope(request)
-        ).page_recreated = False
+        slot = manager.slot(session_id_of(request), **workspace_scope(request))
+        slot.page_recreated = False
+        slot.page_loss = ""
     if body.expect_path:
         from urllib.parse import urlsplit
 

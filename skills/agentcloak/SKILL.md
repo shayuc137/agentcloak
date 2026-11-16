@@ -230,7 +230,7 @@ cloak screenshot -o page.png
 
 For one selector readiness condition, combine it with capture: `cloak screenshot --wait-for "#ready" --wait-timeout 15000`. A timeout stops before any file is written.
 
-**Evidence**: use `navigate --expect-path /page` and `screenshot --expect-url "*/page" --json` to reject redirects. Screenshot JSON includes URL, title, viewport, DPR and actual pixel dimensions. After `page_recreated`/`page_lost`, navigate again. For `session_busy` or a frozen page use `session close --force`; see troubleshooting.
+**Evidence**: use `navigate --expect-path /page` and `screenshot --expect-url "*/page" --json` to reject redirects. Screenshot JSON includes URL, title, viewport, DPR and actual pixel dimensions. After `page_recreated`/`page_lost`, inspect the session/page identity, loss reason and UTC+8 time in the error, then navigate again. Idle tab reclamation defaults to 1800s (`daemon.session_idle_timeout`). For `session_busy` or a frozen page use `session close --force`; see troubleshooting.
 
 **Emulation**: color scheme and reduced motion support headed/headless local browsers. Pointer requires `browser.headless=false`; headless and RemoteBridge pointer requests fail before changing the page. Owned tabs inherit settings; popup scripts may run before registration. Overrides last until reset or session closure.
 

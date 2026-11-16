@@ -213,3 +213,5 @@ Profile localStorage is native browser state: navigation never replays `localSto
 ### `evaluate_failed` during navigation
 
 On local backends this can mean the selected main-document context was destroyed. The script is not replayed and no child-frame fallback is used; check the resulting page state before retrying a script with side effects. `frame focus` does not retarget page-level evaluation.
+
+`page_recreated` includes the session ID/label, previous URL/title, UTC+8 loss/detection time and reason. Idle tabs are reclaimed after `daemon.session_idle_timeout` (default 1800 seconds). Browser rebuilds and closed/disconnected pages have distinct reasons; detection time is not necessarily the instant of an external crash. CLI text errors go to stderr and exit 1; JSON additionally carries `ok:false` with `error.code/message`. Navigate explicitly to recover.

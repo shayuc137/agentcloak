@@ -779,7 +779,9 @@ cloak session close panel-a            # 显式关闭指定 session
 cloak session close --force            # 取消排队/卡住的工作后关闭（本地后端）
 ```
 
-session 闲置 `daemon.session_idle_timeout` 秒（默认 300s）后仅回收自己的 tab，下次请求重新创建。`session close` 释放页面，但在 daemon 退出前保留 `suspended` 的会话身份——同名再次使用时新建页面，不恢复旧 DOM；持久存储遵循 profile/workspace 策略。页面关闭或本地浏览器断开后，下次请求会重建；共享浏览器整体故障会丢失临时页面状态，页面动作会报告 `page_recreated`，直到重新导航。其他 session 活跃时，切换共享 tier/profile 会报错，避免改变其他调用方的浏览器。RemoteBridge 不会把多个调用方静默映射到同一个用户 tab。队列上限、`--force` 语义与诊断手段见[恢复与证据](../guides/recovery.md)。
+session 闲置 `daemon.session_idle_timeout` 秒（默认 1800s）后仅回收自己的 tab，下次请求重新创建。`session close` 释放页面，但在 daemon 退出前保留 `suspended` 的会话身份——同名再次使用时新建页面，不恢复旧 DOM；持久存储遵循 profile/workspace 策略。页面关闭或本地浏览器断开后，下次请求会重建；共享浏览器整体故障会丢失临时页面状态，页面动作会报告 `page_recreated`，直到重新导航。其他 session 活跃时，切换共享 tier/profile 会报错，避免改变其他调用方的浏览器。RemoteBridge 不会把多个调用方静默映射到同一个用户 tab。队列上限、`--force` 语义与诊断手段见[恢复与证据](../guides/recovery.md)。
+
+`page_recreated` 错误包含当前 session ID/label、原 URL/标题、UTC+8 的回收或检测时间，以及闲置超时、浏览器重建、页面关闭/断开的原因，并给出 `daemon.session_idle_timeout` 配置键。text 失败写 stderr 并退出 1；`--json` 还返回 `ok:false` 与 `error.code/message`。仍需重新导航恢复，不会恢复旧 DOM。
 
 客户端探测记录中的 `/health` 来发现 daemon，只读取 `daemon.json`；PID 不可见或状态目录只读不会让活着的 daemon 被判死。原始 HTTP 可发送 `X-Agentcloak-Workspace` 和 `X-Agentcloak-Session`；缺省时使用兼容的空工作空间和 `default` session。CLI/MCP 发送解析后的身份。
 

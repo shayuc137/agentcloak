@@ -116,6 +116,8 @@ class SessionMiddleware:
         async def tracked_send(message: Message) -> None:
             nonlocal response_started
             if message["type"] == "http.response.start":
+                if not force:
+                    await manager.remember_page(slot)
                 response_started = True
             await send(message)
 

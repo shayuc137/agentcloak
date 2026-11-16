@@ -122,6 +122,7 @@ All environment variables use the `AGENTCLOAK_` prefix.
 | `AGENTCLOAK_LOG_TO_FILE` | `daemon.log_to_file` | `false` | Mirror daemon logs to `~/.agentcloak/logs/daemon.log` with rotation |
 | `AGENTCLOAK_LOG_MAX_BYTES` | `daemon.log_max_bytes` | `10000000` | Max bytes per rotated log file (10 MB default) |
 | `AGENTCLOAK_LOG_BACKUP_COUNT` | `daemon.log_backup_count` | `3` | Number of rotated log files to retain |
+| `AGENTCLOAK_SESSION_IDLE_TIMEOUT` | `daemon.session_idle_timeout` | `1800` | Idle session tab reclamation in seconds (30 minutes); 0 disables reclamation. Errors retain the old page identity and reason. |
 
 ### Browser settings
 

@@ -109,12 +109,11 @@ class DaemonConfig:
     # and the poll interval between health probes.
     auto_start_timeout: float = 15.0
     auto_start_poll_interval: float = 0.5
-    # Per-session idle reclamation (multi-session): a named (non-default)
-    # session whose browser sits unused this many seconds is suspended — its
-    # Chromium is closed to free RAM while the session metadata survives so the
-    # next request transparently rebuilds it. 0 disables per-session
-    # reclamation. The default session uses ``browser.idle_timeout_min``.
-    session_idle_timeout: float = 300.0
+    # Idle sessions release their owned tabs while retaining identity. The
+    # shared browser and login storage survive; the next request reports that
+    # its page was lost. 0 disables tab reclamation independently of the global
+    # daemon timer (browser.idle_timeout_min).
+    session_idle_timeout: float = 1800.0
 
 
 @dataclass

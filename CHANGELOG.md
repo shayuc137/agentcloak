@@ -22,6 +22,7 @@ Each of these replaces behavior that silently did the wrong thing; scripts that 
 - **Page loss is explained** — `page_recreated` reports the lost URL/title, when and why (idle reclaim, browser rebuild, page closed), the session and the config key
 - **Dialogs keep the page usable** — `navigate` blocked by `beforeunload`/`confirm` returns `blocked_by_dialog` with the dialog type and text; after `accept` the navigation completes, after `dismiss` the original page stays valid without re-navigating
 - **`route remove` accepts rule IDs** from `route add` / `route list` and prints each removed rule plus the remaining count
+- **`upload --index` on a non-file-input** (e.g. the visible Upload button) returns `upload_target_not_file_input` naming the element instead of an unhandled 500
 
 ### Features
 

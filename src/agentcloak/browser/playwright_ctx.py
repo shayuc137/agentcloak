@@ -1366,6 +1366,23 @@ class PlaywrightContext(BrowserContextBase):
 
     async def _upload_impl(self, index: int, files: list[str]) -> dict[str, Any]:
         element = await self._resolve_element(index)
+        # Agents naturally pass the visible "Upload" button's ref; Playwright
+        # then raises a raw "Node is not an HTMLInputElement" that surfaced as
+        # an unhandled 500 (DOS journal, 11-1x). Check first and say what to do.
+        is_file_input = await element.evaluate(
+            "(node) => node instanceof HTMLInputElement && node.type === 'file'"
+        )
+        if not is_file_input:
+            ref = self._selector_map.get(index)
+            shown = f"<{ref.role}> '{ref.text}'" if ref else "that element"
+            raise BackendError(
+                error="upload_target_not_file_input",
+                hint=f"[{index}] is {shown}, not an <input type=file>",
+                action=(
+                    "run 'upload FILE' without an index to use the page's file "
+                    "input (hidden ones included; --nth picks among several)"
+                ),
+            )
         await element.set_input_files(files)
         return {"uploaded": True}
 

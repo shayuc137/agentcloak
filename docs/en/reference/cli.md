@@ -492,7 +492,7 @@ cloak upload --file /path/to/file                  # auto-find hidden file input
 cloak upload --file /path/to/file --nth 1          # pick the 2nd file input
 ```
 
-With `--index` it targets a specific snapshot `[N]` ref. Omit `--index` and the daemon auto-finds every `input[type=file]` on the page — including the `display:none` inputs drag-drop uploaders (Dropzone, react-dropzone, Ant Upload) hide from the accessibility tree — and attaches to the `--nth` one (0-based, default 0). The response reports `candidates_count` and `used_nth`, so if it picked the wrong input you can re-issue with a different `--nth`. When no file input exists the command returns `no_file_input_found`; an out-of-range `--nth` returns `file_input_index_out_of_range`.
+With `--index` it targets a specific snapshot `[N]` ref. Omit `--index` and the daemon auto-finds every `input[type=file]` on the page — including the `display:none` inputs drag-drop uploaders (Dropzone, react-dropzone, Ant Upload) hide from the accessibility tree — and attaches to the `--nth` one (0-based, default 0). The response reports `candidates_count` and `used_nth`, so if it picked the wrong input you can re-issue with a different `--nth`. When no file input exists the command returns `no_file_input_found`; an out-of-range `--nth` returns `file_input_index_out_of_range`. An `--index` that points at something other than a file input — typically the visible "Upload" button — returns `upload_target_not_file_input` naming that element; drop `--index` to use auto-find.
 
 ## Downloads
 

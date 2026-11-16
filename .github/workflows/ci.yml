@@ -94,6 +94,12 @@ jobs:
           tests/integration/test_workspace_cli.py
           tests/integration/test_recovery_evidence.py
           tests/integration/test_bridge_runtime.py
+          tests/integration/test_click_liveness.py
+          tests/integration/test_dialog_recovery.py
+          tests/integration/test_element_screenshot.py
+          tests/integration/test_page_loss_diagnostics.py
+          tests/integration/test_upload_target.py
+          tests/integration/test_daemon_api.py
           -v --tb=short --timeout=100
 
       - name: Headed pointer emulation and reset

@@ -486,7 +486,7 @@ cloak upload --file /path/to/file                  # 自动查找隐藏的 file 
 cloak upload --file /path/to/file --nth 1          # 选第 2 个 file input
 ```
 
-带 `--index` 时定位指定的 snapshot `[N]` 引用。省略 `--index`，daemon 会自动查找页面上所有 `input[type=file]`——包括 drag-drop 上传组件（Dropzone、react-dropzone、Ant Upload）藏在 a11y tree 之外的 `display:none` 输入——并附加到 `--nth` 那个（从 0 开始，默认 0）。响应中会报告 `candidates_count` 和 `used_nth`，选错时可以换个 `--nth` 重发。找不到任何 file input 时返回 `no_file_input_found`；`--nth` 超出范围返回 `file_input_index_out_of_range`。
+带 `--index` 时定位指定的 snapshot `[N]` 引用。省略 `--index`，daemon 会自动查找页面上所有 `input[type=file]`——包括 drag-drop 上传组件（Dropzone、react-dropzone、Ant Upload）藏在 a11y tree 之外的 `display:none` 输入——并附加到 `--nth` 那个（从 0 开始，默认 0）。响应中会报告 `candidates_count` 和 `used_nth`，选错时可以换个 `--nth` 重发。找不到任何 file input 时返回 `no_file_input_found`；`--nth` 超出范围返回 `file_input_index_out_of_range`。`--index` 指向的不是 file input（常见的是页面上可见的「上传」按钮）时返回 `upload_target_not_file_input`，并写明那是什么元素；去掉 `--index` 改用自动查找即可。
 
 ## 下载
 

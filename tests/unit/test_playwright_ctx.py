@@ -779,23 +779,29 @@ class TestClick:
         element = MagicMock()
         element.evaluate = AsyncMock()
         element.click = AsyncMock()
-        element._impl_obj.click = AsyncMock()
+        native_click = AsyncMock()
         ctx._resolve_element = AsyncMock(  # type: ignore[method-assign]
             return_value=element
         )
         ctx._get_ref = MagicMock(return_value=MagicMock())  # type: ignore[method-assign]
 
-        await ctx._click_impl(
-            target="1",
-            x=None,
-            y=None,
-            button="right",
-            click_count=2,
-            force=False,
-        )
+        with patch(
+            "agentcloak.browser.playwright_ctx._NATIVE_LOCATOR_CLICK", native_click
+        ):
+            await ctx._click_impl(
+                target="1",
+                x=None,
+                y=None,
+                button="right",
+                click_count=2,
+                force=False,
+            )
 
-        element._impl_obj.click.assert_awaited_once()
-        assert element._impl_obj.click.await_args.kwargs["trial"] is True
+        native_click.assert_awaited_once()
+        assert native_click.await_args.args == (element,)
+        # Public snake_case kwargs; the private camelCase form broke on 1.65.
+        assert native_click.await_args.kwargs["click_count"] == 2
+        assert native_click.await_args.kwargs["trial"] is True
         element.click.assert_awaited_once()
         assert element.click.await_args.kwargs["button"] == "right"
         assert element.click.await_args.kwargs["click_count"] == 2
@@ -1577,3 +1583,18 @@ def test_native_console_does_not_misclassify_marker_shaped_data(payload: str) ->
     assert len(entries) == 1
     assert entries[0].text == text
     assert not entries[0].is_error
+
+
+def test_native_click_capture_rejects_patched_locator() -> None:
+    """A Locator.click already patched by CloakBrowser must not be used for trial."""
+    from playwright.async_api import Locator
+
+    from agentcloak.browser.playwright_ctx import _capture_native_locator_click
+
+    async def humanized_click(self: Any, **kwargs: Any) -> None:
+        return None
+
+    humanized_click.__module__ = "cloakbrowser.human"
+    with patch.object(Locator, "click", humanized_click):
+        assert _capture_native_locator_click() is None
+    assert _capture_native_locator_click() is Locator.click

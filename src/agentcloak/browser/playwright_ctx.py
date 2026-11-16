@@ -69,6 +69,25 @@ __all__ = ["PlaywrightContext", "launch_playwright"]
 logger = structlog.get_logger()
 
 
+def _capture_native_locator_click() -> Any:
+    """Return Playwright's own ``Locator.click``, or None if it is already patched.
+
+    CloakBrowser's humanize patches ``Locator`` methods class-wide at launch,
+    and 0.5.x ignores ``trial=True`` there — a trial click would dispatch real
+    input. This module is imported before any launch, so the public method is
+    still Playwright's here. (The earlier ``_impl_obj.click`` route used a
+    private signature that broke on Playwright 1.65.)
+    """
+    from playwright.async_api import Locator
+
+    click = Locator.click
+    module = getattr(click, "__module__", "") or ""
+    return click if module.startswith("playwright.") else None
+
+
+_NATIVE_LOCATOR_CLICK = _capture_native_locator_click()
+
+
 def find_free_port() -> int:
     """Bind to port 0 and return the OS-assigned free port."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -952,19 +971,23 @@ class PlaywrightContext(BrowserContextBase):
                     + max(1, self._browser_config.action_timeout - 100) / 1000
                 )
                 try:
-                    # CloakBrowser's humanize wrapper ignores trial=True.
-                    # Use native protocol only for this non-dispatching check;
-                    # the sole real click below retains humanized behaviour.
-                    await self._await_or_dialog(
-                        element._impl_obj.click(
-                            button=button,
-                            clickCount=int(click_count),
-                            trial=True,
-                            timeout=max(
-                                1, min(2000, (deadline - time.monotonic()) * 1000)
-                            ),
+                    # Non-dispatching obstruction check through Playwright's own
+                    # Locator.click (see _capture_native_locator_click); the
+                    # sole real click below keeps humanized behaviour. Without
+                    # the native method the check is skipped: slower on a
+                    # covered target, but never a second click.
+                    if _NATIVE_LOCATOR_CLICK is not None:
+                        await self._await_or_dialog(
+                            _NATIVE_LOCATOR_CLICK(
+                                element,
+                                button=button,
+                                click_count=int(click_count),
+                                trial=True,
+                                timeout=max(
+                                    1, min(2000, (deadline - time.monotonic()) * 1000)
+                                ),
+                            )
                         )
-                    )
                 except DialogBlockedError:
                     raise
                 except Exception as preflight:

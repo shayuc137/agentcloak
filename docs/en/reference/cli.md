@@ -156,11 +156,13 @@ HTTP: `POST /emulation` with optional `color_scheme`, `reduced_motion`, `pointer
 Take a screenshot of the current page.
 
 ```bash
-cloak screenshot [--output FILE] [--viewport WIDTHxHEIGHT] [--dpr RATIO] [--expect-url GLOB] [--annotate [--within CSS] [--find TEXT] [--limit N]] [--full-page] [--format FORMAT] [--quality N] [--wait-for CSS] [--hide CSS] [--keep-overlays]
+cloak screenshot [--selector CSS] [--padding PX] [--output FILE] [--viewport WIDTHxHEIGHT] [--dpr RATIO] [--expect-url GLOB] [--annotate [--within CSS] [--find TEXT] [--limit N]] [--full-page] [--format FORMAT] [--quality N] [--wait-for CSS] [--hide CSS] [--keep-overlays]
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
+| `--selector` | none | Crop to exactly one main-document CSS element |
+| `--padding` | `0` | Finite non-negative crop padding in CSS pixels; requires selector |
 | `--output` | auto-named in OS temp dir (`tempfile.gettempdir()`) | Save to file; `.png` selects PNG and `.jpg`/`.jpeg` selects JPEG. The parent directory must exist |
 | `--viewport` | current page | Temporary `WIDTHxHEIGHT`, restored after capture |
 | `--dpr` | current page | Temporary device pixel ratio, restored after capture |
@@ -190,6 +192,14 @@ cloak screenshot [--output FILE] [--viewport WIDTHxHEIGHT] [--dpr RATIO] [--expe
 > quality 80.
 
 `--json` output identifies the capture: `url`, `title`, `viewport` (CSS width/height), `dpr`, and `pixel_width`/`pixel_height` decoded from the image. A navigation during capture fails with `page_changed`. See [recovery and evidence](../guides/recovery.md) for the full evidence workflow.
+
+`--selector CSS` crops to the native border rectangle of exactly one main-document element. Add `--padding PX` for finite, non-negative CSS-pixel context (default 0); padding is clamped to the viewport. The element is scrolled into view first, which may change page scroll. Oversized elements are limited to their visible intersection; a fixed element still outside the viewport fails with `screenshot_outside_viewport`. No match/invalid CSS and multiple matches use the existing selector errors; non-rendered/zero-size elements fail with `screenshot_empty_element`.
+
+`--selector` cannot be combined with `--full-page` or annotation `--within`. Temporary `--viewport`/`--dpr` are applied before measuring and restored even on failure. With `--annotate`, annotations are automatically scoped to the selected element. JSON adds `clip: {x,y,width,height}` in the original viewport's CSS coordinates, rounded outwards to encoded image pixels; `pixel_width/height` describe the cropped file. Annotation boxes keep original viewport coordinates, so subtract `clip.x/y` to locate them in the crop. Uncropped captures have `clip:null`.
+
+```bash
+cloak screenshot --selector '[role=dialog]' --padding 8 -o dialog.png --json
+```
 
 ### Annotated screenshots
 

@@ -92,6 +92,8 @@ Navigation completion is not SPA readiness. Insert an explicit `/wait` for a sel
 - CLI: `cloak screenshot`
 - MCP: `agentcloak_screenshot`
 - Query:
+  - `selector` (string, default: "") — Crop to one CSS element; cannot use full_page/within.
+  - `padding` (number, default: 0) — CSS-pixel padding; requires selector, clamped to viewport.
   - `annotate` (boolean, default: false) — Draw fresh snapshot refs and return CSS boxes.
   - `within` (string, default: "") — Limit annotations to a CSS subtree; requires annotate.
   - `limit` (integer | null, default: —) — Annotation node limit; 0 is unlimited; requires annotate.
@@ -118,6 +120,7 @@ Navigation completion is not SPA readiness. Insert an explicit `/wait` for a sel
   - `dpr` (number)
   - `pixel_width` (integer)
   - `pixel_height` (integer)
+  - `clip` (object | null) — Source {x,y,width,height} in viewport CSS pixels, rounded outwards to encoded pixels; null for uncropped captures.
   - `annotated` (boolean)
   - `annotations` (array<object>) — Each item has ref (integer), role, name, and box [x, y, width, height] in CSS pixels. Coordinates are viewport-relative, or document-relative for full_page; DPR only scales the image. in_viewport reports a positive-area intersection with the current viewport, including in full_page captures.
 - CLI writes the image locally and replaces `base64`/`path` with `saved`; annotation metadata stays under `data`. MCP returns image content plus metadata text.

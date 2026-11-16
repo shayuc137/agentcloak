@@ -81,7 +81,7 @@ Snapshot modes: `compact` (default, interactive + containers only, capped at 80 
 | `cloak snapshot --offset 50` | Paginate from 50th element |
 | `cloak snapshot --frames` | Include iframe content |
 | `cloak snapshot --diff` | Mark `[+]` added, `[~]` changed vs previous |
-| `cloak screenshot [--output FILE]` | Screenshot to file, stdout = path (`--wait-for CSS` waits first; `--hide CSS` hides overlays once; `--keep-overlays` reveals all) |
+| `cloak screenshot [--selector CSS] [--padding PX] [--output FILE]` | Screenshot to file, stdout = path (`--wait-for CSS` waits first; `--hide CSS` hides overlays once; `--keep-overlays` reveals all) |
 | `cloak screenshot --annotate [--within CSS] [--find TEXT] [--limit N] --json` | Draw fresh `[N]` refs on the image; JSON lists `annotations` with CSS-pixel `box` and `in_viewport` — see Gotchas |
 | `cloak screenshot --expect-url "*/page"` / `navigate URL --expect-path /page` | Fail with `url_mismatch` on silent redirects; screenshot `--json` reports URL, title, viewport, DPR and pixel size |
 | `cloak record start [--format webm\|zip]` / `status` / `stop -o FILE` | Record the current tab (pinned at start) to WebM (needs ffmpeg on the daemon) or a ZIP of JPEG frames; bounded by frames/seconds/64 MiB; unfinished recordings are discarded on session close |
@@ -280,3 +280,5 @@ Read these when you need deeper guidance:
 | `references/remote-bridge.md` | operating the user's real Chrome via the extension (token auth, claim, finalize, `bridge doctor`) |
 | `references/troubleshooting.md` | you see a `Error:` on stderr and the inline hint isn't enough, or the daemon won't start; also the `--json` envelope shape |
 | `references/commands-reference.md` | you need an exact daemon parameter / type — full route catalog with CLI / MCP bindings (auto-generated from the OpenAPI spec) |
+
+Element crops: `cloak screenshot --selector '[role=dialog]' --padding 8 -o dialog.png --json` requires one match, scrolls it into view and returns viewport-CSS `clip`. No full-page/within combination; temporary viewport/DPR restore after capture. Annotation boxes keep original viewport coordinates.

@@ -58,6 +58,8 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 43 个工具。已包含在�
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|-------|------|
+| `selector` | `str` | `""` | 裁剪到唯一 CSS 元素，不可与 full_page/within 组合 |
+| `padding` | `float` | `0` | 有限非负 CSS 像素边距，限制在视口内；须配合 selector |
 | `annotate` | `bool` | `false` | 在图片上绘制新生成的 `[N]` 引用和元素框；元数据返回 `annotations: [{ref, role, name, box: [x,y,width,height], in_viewport}]`，单位 CSS 像素（相对视口，`full_page` 时相对文档） |
 | `within` / `find` / `limit` | `str` / `str` / `int \| null` | `""` / `""` / `null` | 筛选被标注的引用（须配合 `annotate`）；语义与 snapshot 同名参数一致，`limit=0` 不限。截图范围不变 |
 | `viewport` | `str \| null` | `null` | 一次性 `WIDTHxHEIGHT`，截图后恢复 |

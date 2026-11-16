@@ -156,11 +156,13 @@ HTTP 使用 `POST /emulation`，字段为可选的 `color_scheme`、`reduced_mot
 截取当前页面的屏幕截图。
 
 ```bash
-cloak screenshot [--output FILE] [--viewport WIDTHxHEIGHT] [--dpr RATIO] [--expect-url GLOB] [--annotate [--within CSS] [--find TEXT] [--limit N]] [--full-page] [--format FORMAT] [--quality N] [--wait-for CSS] [--hide CSS] [--keep-overlays]
+cloak screenshot [--selector CSS] [--padding PX] [--output FILE] [--viewport WIDTHxHEIGHT] [--dpr RATIO] [--expect-url GLOB] [--annotate [--within CSS] [--find TEXT] [--limit N]] [--full-page] [--format FORMAT] [--quality N] [--wait-for CSS] [--hide CSS] [--keep-overlays]
 ```
 
 | 参数 | 默认值 | 说明 |
 |------|-------|------|
+| `--selector` | 无 | 裁剪到主文档中唯一匹配的 CSS 元素 |
+| `--padding` | `0` | 有限非负的 CSS 像素边距，须配合 selector |
 | `--output` | 自动放在系统临时目录（`tempfile.gettempdir()`） | 保存到文件；`.png` 选择 PNG，`.jpg`/`.jpeg` 选择 JPEG。父目录必须已存在 |
 | `--viewport` | 当前页面 | 一次性 `WIDTHxHEIGHT`，截图后恢复 |
 | `--dpr` | 当前页面 | 一次性设备像素比，截图后恢复 |
@@ -187,6 +189,14 @@ cloak screenshot [--output FILE] [--viewport WIDTHxHEIGHT] [--dpr RATIO] [--expe
 > CLI 默认质量 80。
 
 `--json` 输出带截图身份：`url`、`title`、`viewport`（CSS 宽高）、`dpr`，以及从图片解码得到的 `pixel_width`/`pixel_height`。截图期间发生导航会以 `page_changed` 失败。完整取证流程见[恢复与证据](../guides/recovery.md)。
+
+`--selector CSS` 按主文档中唯一元素的原生 border 矩形裁剪。`--padding PX` 添加有限、非负的 CSS 像素边距（默认 0），并限制在视口内。先将元素滚入视口，因此可能改变页面滚动位置；超大元素仅截当前可见交集。固定定位元素滚动后仍在视口外时返回 `screenshot_outside_viewport`。无匹配、CSS 无效或多匹配使用已有 selector 错误；未渲染或零尺寸元素返回 `screenshot_empty_element`。
+
+`--selector` 不能与 `--full-page` 或标注的 `--within` 组合。临时 `--viewport`/`--dpr` 先应用再取框，失败后也会恢复；配合 `--annotate` 时自动仅标注所选元素内部。JSON 返回 `clip: {x,y,width,height}`，坐标使用原视口 CSS 像素，并向外取整到实际图片像素；`pixel_width/height` 是裁剪后的文件尺寸。标注框仍用原视口坐标，减去 `clip.x/y` 即为裁剪图片内的位置。未裁剪时 `clip:null`。
+
+```bash
+cloak screenshot --selector '[role=dialog]' --padding 8 -o dialog.png --json
+```
 
 ### 带标注的截图
 

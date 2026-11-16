@@ -77,6 +77,17 @@ def browser_navigate(
 
 @app.command("screenshot")
 def browser_screenshot(
+    selector: str = typer.Option(
+        "",
+        "--selector",
+        help="Crop to one CSS element; cannot combine --full-page/--within.",
+    ),
+    padding: float = typer.Option(
+        0,
+        "--padding",
+        min=0,
+        help="CSS-pixel crop padding (requires --selector); clamped to the viewport.",
+    ),
     expect_url: str = typer.Option(
         "", "--expect-url", help="Require the captured URL to match this glob."
     ),
@@ -182,6 +193,8 @@ def browser_screenshot(
             client._send_sync("POST", "/wait", json_body=wait_body)  # pyright: ignore[reportPrivateUsage]
         if (
             hide
+            or selector
+            or padding
             or keep_overlays
             or viewport is not None
             or dpr is not None
@@ -195,6 +208,8 @@ def browser_screenshot(
                 full_page=full_page,
                 format=resolution.format,
                 quality=quality,
+                **({"selector": selector} if selector else {}),
+                padding=padding,
                 wait_selector=wait_selector,
                 wait_timeout=wait_timeout,
                 hide=hide,

@@ -59,6 +59,8 @@ Take a screenshot of the current page. Returns an `ImageContent` (the image byte
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
+| `selector` | `str` | `""` | Crop to one CSS element; cannot combine full_page/within |
+| `padding` | `float` | `0` | Finite non-negative CSS padding, clamped to viewport; requires selector |
 | `annotate` | `bool` | `false` | Draw fresh `[N]` refs and boxes on the image; metadata returns `annotations: [{ref, role, name, box: [x,y,width,height], in_viewport}]` in CSS pixels (viewport-relative, document-relative with `full_page`) |
 | `within` / `find` / `limit` | `str` / `str` / `int \| null` | `""` / `""` / `null` | Filter which refs are annotated (require `annotate`); same semantics as the snapshot parameters, `limit=0` is unlimited. The captured area is unchanged |
 | `viewport` | `str \| null` | `null` | Temporary `WIDTHxHEIGHT`, restored after capture |

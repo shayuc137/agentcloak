@@ -208,6 +208,7 @@ class TestHide:
             wait_selector="",
             wait_timeout=None,
             hide=".toolbar,#dev",
+            padding=0,
             annotate=False,
             within="",
             limit=None,

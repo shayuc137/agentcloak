@@ -25,7 +25,7 @@ You need a browser. Your agents do too.
 - **Session reuse** -- save/restore login profiles (cookies + localStorage auto-persisted across launches, so SPAs that stash auth tokens client-side stay logged in) + RemoteBridge to operate your real Chrome browser
 - **Network config** -- proxy (SOCKS5/HTTP), DNS-over-HTTPS control, and custom Chromium args via `cloak config set`
 - **Workspace-aware sessions** -- one daemon serves every Git worktree or plain directory with its own pages, queue and refs; login stays shared by default, with opt-in per-workspace storage
-- **Evidence you can trust** -- screenshots report URL, title, viewport, DPR and pixel size; `--expect-url` / `--expect-path` reject silent redirects; `--annotate` labels `[N]` refs on the image; `record` captures WebM or frame archives
+- **Evidence you can trust** -- screenshots report URL, title, viewport, DPR and pixel size; `--expect-url` / `--expect-path` reject silent redirects; `--annotate` labels `[N]` refs; `--selector` crops to one element; `record` captures WebM or frame archives
 - **Realistic input and emulation** -- timed drag with per-step samples, coordinate hover, key aliases, live viewport/DPR changes, color-scheme and reduced-motion emulation (touch/pointer needs a headed browser)
 - **Recoverable by design** -- bounded per-session queues, `session close --force` for frozen pages, request hold/release, pending-request observation, and one locked daemon per state directory
 - **Spells + API capture** -- wrap common site operations as one-liners; capture traffic, analyze patterns, generate spells automatically

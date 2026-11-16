@@ -103,6 +103,13 @@ class ScreenshotResponse(BaseModel):
     dpr: float = 1
     pixel_width: int = 0
     pixel_height: int = 0
+    clip: dict[str, float] | None = Field(
+        None,
+        description=(
+            "Source {x,y,width,height} in viewport CSS pixels, rounded outwards "
+            "to encoded pixels; null for uncropped captures."
+        ),
+    )
     annotated: bool = False
     annotations: list[dict[str, Any]] = Field(
         default_factory=list[dict[str, Any]],

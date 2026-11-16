@@ -984,7 +984,10 @@ class PlaywrightContext(BrowserContextBase):
                                 click_count=int(click_count),
                                 trial=True,
                                 timeout=max(
-                                    1, min(2000, (deadline - time.monotonic()) * 1000)
+                                    1,
+                                    min(
+                                        2000, int((deadline - time.monotonic()) * 1000)
+                                    ),
                                 ),
                             )
                         )
@@ -1007,7 +1010,9 @@ class PlaywrightContext(BrowserContextBase):
                     element.click(
                         button=button,
                         click_count=int(click_count),
-                        timeout=max(1, (deadline - time.monotonic()) * 1000),
+                        # Whole ms, floored: never exceed the remaining budget
+                        # (float drift failed a <= check on Windows clocks).
+                        timeout=max(1, int((deadline - time.monotonic()) * 1000)),
                     )
                 )
         except DialogBlockedError:

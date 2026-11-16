@@ -119,6 +119,7 @@ async def test_session_environment_inheritance_and_reset(private_api, local_serv
         "reduce": True,
     }
     capture = await client.get("/screenshot", params={"format": "png"})
+    assert capture.is_success, capture.text
     with Image.open(
         BytesIO(base64.b64decode(capture.json()["data"]["base64"]))
     ) as image:

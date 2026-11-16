@@ -419,6 +419,8 @@ cloak dialog accept [--text "reply"]
 cloak dialog dismiss
 ```
 
+Only alerts are auto-accepted. beforeunload, confirm and prompt require `dialog accept` or `dialog dismiss`. A blocked navigate returns `blocked_by_dialog` with the browser dialog type/message and preserves the current page. Dismiss keeps unsaved state; accept resumes the pending navigation. Handling a dialog does not override an unrelated navigation failure. Chromium may expose an empty beforeunload message; this is preserved verbatim.
+
 ## Waiting
 
 ```bash

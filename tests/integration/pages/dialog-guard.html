@@ -1,0 +1,6 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Unsaved order</title>
+<label>Draft <input id="draft" value="unsaved order"></label>
+<button id="arm" onclick="window.onbeforeunload=e=>{e.preventDefault();e.returnValue='Unsaved order';}">Arm unload guard</button>
+<button id="spa" onclick="if(confirm('Discard unsaved order?'))history.pushState({},'', '#next')">SPA navigation</button>

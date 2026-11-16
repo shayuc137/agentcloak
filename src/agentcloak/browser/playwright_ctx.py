@@ -50,6 +50,7 @@ from agentcloak.core.emulation import PageEmulation
 from agentcloak.core.errors import (
     BackendError,
     BrowserTimeoutError,
+    DialogBlockedError,
     ElementNotFoundError,
     NavigationError,
 )
@@ -58,6 +59,8 @@ from agentcloak.core.storage_snapshot import write_browser_state
 from agentcloak.core.types import StealthTier
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable
+
     from agentcloak.core.capture import CaptureStore
     from agentcloak.core.config import BrowserConfig
 
@@ -162,6 +165,8 @@ class PlaywrightContext(BrowserContextBase):
         self._cdp_port: int | None = cdp_port
         # Playwright Dialog object retained so dialog_handle can accept/dismiss.
         self._dialog_object: Any = None
+        self._dialog_navigation_pending = False
+        self._last_page_title = ""
 
         # Raw request cancellation must not detach manager event subscriptions.
         self._cdp_sessions: dict[int, Any] = {}
@@ -265,10 +270,14 @@ class PlaywrightContext(BrowserContextBase):
             url = str(self._page.url)
         except Exception:
             url = ""
+        if self._pending_dialog is not None:
+            # Native dialogs suspend renderer evaluation, including title().
+            return url, self._last_page_title
         try:
             title = str(await self._page.title())
         except Exception:
             title = ""
+        self._last_page_title = title
         return url, title
 
     async def resume_snapshot(self) -> dict[str, Any]:
@@ -380,7 +389,7 @@ class PlaywrightContext(BrowserContextBase):
 
     def _on_dialog(self, dialog: Any) -> None:
         # Stash the Playwright Dialog object up front so both auto-accept
-        # (for alert/beforeunload) and the agent-driven _dialog_handle_impl
+        # (for alerts) and the agent-driven _dialog_handle_impl
         # path can reach it via ``self._dialog_object``. The base class
         # owns the alert-vs-confirm/prompt dispatch logic so this stays
         # backend-agnostic.
@@ -590,15 +599,34 @@ class PlaywrightContext(BrowserContextBase):
     # Atomic: navigate / ax tree / page snapshots
     # ------------------------------------------------------------------
 
+    async def _await_or_dialog(self, operation: Awaitable[Any]) -> Any:
+        task = asyncio.ensure_future(operation)
+        try:
+            while not task.done():
+                await asyncio.wait({task}, timeout=0.01)
+                self._raise_if_dialog_blocked()
+            return await task
+        finally:
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
     async def _navigate_impl(self, url: str, *, timeout: float) -> dict[str, Any]:
         try:
-            resp = await self._page.goto(
-                url,
-                timeout=timeout * 1000,
-                wait_until="commit"
-                if self._route_mgr and self._route_mgr.has_holds
-                else "domcontentloaded",
+            resp = await self._await_or_dialog(
+                self._page.goto(
+                    url,
+                    timeout=timeout * 1000,
+                    wait_until="commit"
+                    if self._route_mgr and self._route_mgr.has_holds
+                    else "domcontentloaded",
+                )
             )
+        except DialogBlockedError:
+            # Cancel only the Python waiter: the agent must still be able to
+            # accept/dismiss Chromium's pending beforeunload navigation.
+            self._dialog_navigation_pending = True
+            raise
         except asyncio.CancelledError:
             self._page_valid = False
             await self._stop_navigation()
@@ -899,15 +927,18 @@ class PlaywrightContext(BrowserContextBase):
                 # DOS #6: an open menu's backdrop must not consume the entire
                 # action budget. Allow animations to finish, then return control
                 # to the agent; never replay a possibly dispatched click.
-                await element.click(
-                    button=button,
-                    click_count=int(click_count),
-                    # Leave the session queue time to return this diagnostic
-                    # when its overall budget is shorter than the grace period.
-                    timeout=max(
-                        1, min(2000, self._browser_config.action_timeout - 100)
-                    ),
+                await self._await_or_dialog(
+                    element.click(
+                        button=button,
+                        click_count=int(click_count),
+                        # Leave the session queue time to return the diagnostic.
+                        timeout=max(
+                            1, min(2000, self._browser_config.action_timeout - 100)
+                        ),
+                    )
                 )
+        except DialogBlockedError:
+            raise
         except Exception as exc:
             msg = str(exc).lower()
             detail = "\n".join(dict.fromkeys(str(exc).splitlines()))[:4000]
@@ -1194,6 +1225,8 @@ class PlaywrightContext(BrowserContextBase):
                 self._emulation_tasks.difference_update(pending)
 
     async def _post_action_cleanup(self) -> None:
+        if self._pending_dialog is not None:
+            return
         with contextlib.suppress(Exception):
             await self._page.wait_for_load_state("domcontentloaded", timeout=2000)
         with contextlib.suppress(Exception):
@@ -1663,17 +1696,35 @@ class PlaywrightContext(BrowserContextBase):
     ) -> dict[str, Any]:
         if self._dialog_object is None:
             return {}
+        dialog = self._dialog_object
+        deferred = self._dialog_navigation_pending and dialog.type == "beforeunload"
         try:
+            if action == "accept" and deferred:
+                async with self._page.expect_navigation(
+                    wait_until="domcontentloaded",
+                    timeout=self._browser_config.navigation_timeout * 1000,
+                ):
+                    await dialog.accept()
+                return {"navigated": True}
             if action == "accept":
                 if text is not None:
-                    await self._dialog_object.accept(text)
+                    await dialog.accept(text)
                 else:
-                    await self._dialog_object.accept()
+                    await dialog.accept()
             else:
-                await self._dialog_object.dismiss()
+                await dialog.dismiss()
         except Exception as exc:
-            logger.debug("dialog_handle_error", error=str(exc))
-        self._dialog_object = None
+            self._pending_dialog = None
+            if deferred:
+                self._page_valid = False
+            raise NavigationError(
+                error="dialog_resolution_failed",
+                hint=str(exc),
+                action="inspect the current page before retrying navigation",
+            ) from exc
+        finally:
+            self._dialog_object = None
+            self._dialog_navigation_pending = False
         return {}
 
     # ------------------------------------------------------------------

@@ -49,7 +49,7 @@ cloak click <new-N>     # retry with the new ref
 ```
 
 ### Blocked by dialog (`blocked_by_dialog`)
-A confirm/prompt dialog is intercepting every operation. The stderr line already tells you the dialog text.
+A beforeunload/confirm/prompt dialog is intercepting every operation. The stderr line already tells you the dialog text.
 ```bash
 cloak dialog accept                 # OK / confirm
 cloak dialog accept --text "reply"  # answer a prompt

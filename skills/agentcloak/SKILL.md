@@ -108,7 +108,7 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak do batch --calls-file actions.jsonl` | Run several actions in one request with `$N.path` result references; see `references/data-and-spells.md` |
 | `cloak select N --value "opt"` | Select dropdown option (`--label "text"` to match by visible text) |
 | `cloak keydown/keyup Shift` | Hold/release key |
-| `cloak dialog accept` / `dismiss` | Handle confirm/prompt dialog |
+| `cloak dialog accept` / `dismiss` | Handle beforeunload/confirm/prompt dialog |
 | `cloak wait --selector ".results"` | Wait for element / URL / JS condition / time |
 | `cloak upload --file path [--index N] [--nth N]` | Upload file; omit `--index` to auto-find hidden `input[type=file]` (drag-drop uploaders), `--nth` picks which one |
 | `cloak frame focus --name "x"` | Switch to iframe (`--main` to return) |

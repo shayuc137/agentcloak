@@ -217,3 +217,5 @@ Local pending-request observation follows document/frame lifetimes: document rep
 On local backends, page-level JavaScript evaluation is pinned to the active tab's main document by frame and execution-context identity; `frame focus` never retargets it, and a context destroyed by navigation fails without replay. RemoteBridge evaluation is unchanged. Details: [`js evaluate`](../reference/cli.md#js-evaluate).
 
 Local clicks share a bounded 2s actionability budget on Playwright and CloakBrowser. Persistent overlays and removed marker targets fail without stale-ref replay; errors retain the browser wait summary. Ordinary clicks do not wait for network idle.
+
+Only alerts are auto-accepted. beforeunload, confirm and prompt require `dialog accept` or `dialog dismiss`. A blocked navigate returns `blocked_by_dialog` with the browser dialog type/message and preserves the current page. Dismiss keeps unsaved state; accept resumes the pending navigation. Handling a dialog does not override an unrelated navigation failure. Chromium may expose an empty beforeunload message; this is preserved verbatim.

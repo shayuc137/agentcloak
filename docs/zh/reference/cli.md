@@ -413,6 +413,8 @@ cloak dialog accept [--text "reply"]
 cloak dialog dismiss
 ```
 
+只有 alert 会自动接受；beforeunload、confirm、prompt 均需 `dialog accept` 或 `dialog dismiss`。导航被拦时返回 `blocked_by_dialog`，直接带浏览器对话框类型和原文，并保留当前页面。dismiss 保留未保存状态，accept 继续待决导航。处理对话框不会覆盖无关的导航失败。Chromium 的 beforeunload 原文可能为空，按原样保留。
+
 ## 等待
 
 ```bash

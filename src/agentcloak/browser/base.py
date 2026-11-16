@@ -244,7 +244,7 @@ class BrowserContextBase(ABC):
         # R1: Dialog handling.
         self._pending_dialog: PendingDialog | None = None
         # Holds the asyncio tasks spawned by ``_dispatch_dialog_event`` to
-        # auto-accept alert/beforeunload dialogs. We keep strong refs so the
+        # auto-accept alerts. We keep strong refs so the
         # event loop doesn't GC the coroutine before it resolves.
         self._auto_dialog_tasks: set[asyncio.Task[None]] = set()
 
@@ -563,12 +563,12 @@ class BrowserContextBase(ABC):
 
     @abstractmethod
     async def _auto_accept_dialog_impl(self) -> None:
-        """Auto-accept the currently-pending alert/beforeunload dialog.
+        """Auto-accept the currently-pending alert dialog.
 
         Subclasses route to whichever underlying primitive their backend
         exposes (Playwright ``dialog.accept()`` vs CDP
         ``Page.handleJavaScriptDialog``). Called from
-        :meth:`_dispatch_dialog_event` for alert/beforeunload only; the
+        :meth:`_dispatch_dialog_event` for alerts only; the
         agent-driven accept/dismiss path runs through
         :meth:`_dialog_handle_impl`.
         """
@@ -903,6 +903,7 @@ class BrowserContextBase(ABC):
     ) -> dict[str, Any]:
         self._check_debugger_paused()
         self._check_browser_alive()
+        self._raise_if_dialog_blocked()
         if timeout is None:
             timeout = float(self._browser_config.navigation_timeout)
 
@@ -919,6 +920,11 @@ class BrowserContextBase(ABC):
         self._console_page_url = url
         try:
             result = await self._navigate_impl(url, timeout=timeout)
+        except DialogBlockedError:
+            # DOS #9: a user decision suspends navigation without invalidating
+            # the still-live page (including its unsaved form state).
+            self._console_page_url, _ = await self._get_page_info()
+            raise
         except Exception as exc:
             self._page_valid = False
             self._translate_browser_closed(exc)
@@ -1513,7 +1519,7 @@ class BrowserContextBase(ABC):
             dialog["default_value"] = d.default_value
         raise DialogBlockedError(
             error="blocked_by_dialog",
-            hint="A dialog is pending — handle it before continuing",
+            hint=f"Pending {d.dialog_type} dialog: {d.message}",
             action="use 'dialog accept' or 'dialog dismiss'",
             dialog=dialog,
         )
@@ -1549,13 +1555,13 @@ class BrowserContextBase(ABC):
         Called by backend-specific event handlers (Playwright
         ``page.on('dialog')``, CDP ``Page.javascriptDialogOpening``)
         after they normalise the underlying payload into four plain
-        strings. alert / beforeunload are accepted in the background so
-        scripts driven by ``window.alert()`` keep flowing; confirm /
-        prompt are stashed as ``self._pending_dialog`` and surface as a
+        strings. Alerts are accepted in the background so scripts driven by
+        ``window.alert()`` keep flowing; beforeunload / confirm / prompt
+        are stashed as ``self._pending_dialog`` and surface as a
         ``DialogBlockedError`` on the next action — the agent must call
         ``dialog accept`` / ``dialog dismiss`` to clear it.
         """
-        if dialog_type in ("alert", "beforeunload"):
+        if dialog_type == "alert":
             self._last_auto_dialog = {"type": dialog_type, "message": message}
             task = asyncio.ensure_future(self._auto_accept_dialog_impl())
             self._auto_dialog_tasks.add(task)
@@ -1591,8 +1597,11 @@ class BrowserContextBase(ABC):
             "type": self._pending_dialog.dialog_type,
             "message": self._pending_dialog.message,
         }
-        await self._dialog_handle_impl(action_type, text=text)
+        resolution = await self._dialog_handle_impl(action_type, text=text)
         self._pending_dialog = None
+        if resolution.get("navigated"):
+            await self._notify_managers_on_navigated()
+        await self._post_action_cleanup()
 
         new_seq = self._seq_counter.increment_action()
         self._ring_buffer.append(
@@ -1602,13 +1611,15 @@ class BrowserContextBase(ABC):
                 data={"action": action_type, **dialog_info},
             )
         )
-        return {
+        result = {
             "ok": True,
             "handled": True,
             "action": action_type,
             "dialog": dialog_info,
             "seq": new_seq,
         }
+        self._collect_feedback(result)
+        return result
 
     # ------------------------------------------------------------------
     # Wait

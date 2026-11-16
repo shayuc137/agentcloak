@@ -52,8 +52,8 @@ Error [element_not_found]: Element [99] not in selector_map (4 entries)
 
 Dialogs (alert, confirm, prompt, beforeunload) block all browser operations.
 
-- **alert / beforeunload**: auto-accepted, you'll see them in action feedback as `auto_dialog`
-- **confirm / prompt**: stored as pending, you must handle explicitly
+- **alert**: auto-accepted, you'll see them in action feedback as `auto_dialog`
+- **beforeunload / confirm / prompt**: stored as pending, you must handle explicitly
 
 ```bash
 cloak dialog status                 # check for a pending dialog
@@ -215,3 +215,5 @@ Profile localStorage is native browser state: navigation never replays `localSto
 On local backends this can mean the selected main-document context was destroyed. The script is not replayed and no child-frame fallback is used; check the resulting page state before retrying a script with side effects. `frame focus` does not retarget page-level evaluation.
 
 `page_recreated` includes the session ID/label, previous URL/title, UTC+8 loss/detection time and reason. Idle tabs are reclaimed after `daemon.session_idle_timeout` (default 1800 seconds). Browser rebuilds and closed/disconnected pages have distinct reasons; detection time is not necessarily the instant of an external crash. CLI text errors go to stderr and exit 1; JSON additionally carries `ok:false` with `error.code/message`. Navigate explicitly to recover.
+
+A dialog-blocked `navigate` preserves the real page and reports the dialog type/message directly. `dialog dismiss` retains the original unsaved state; `dialog accept` continues the pending navigation. Ordinary timed-out/cancelled navigation still stops loading before the session queue is released.

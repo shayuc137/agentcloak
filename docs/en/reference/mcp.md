@@ -168,6 +168,8 @@ Query captured traffic data.
 
 Handle browser dialogs (alert, confirm, prompt).
 
+Only alerts are auto-accepted. beforeunload, confirm and prompt require `dialog accept` or `dialog dismiss`. A blocked navigate returns `blocked_by_dialog` with the browser dialog type/message and preserves the current page. Dismiss keeps unsaved state; accept resumes the pending navigation. Handling a dialog does not override an unrelated navigation failure. Chromium may expose an empty beforeunload message; this is preserved verbatim.
+
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `kind` | `str` | `status` | `status`, `accept`, or `dismiss` |

@@ -12,6 +12,7 @@ from pathlib import Path  # noqa: TC003 — Typer needs runtime access
 import typer
 
 from agentcloak.cli._dispatch import dispatch_text_or_json
+from agentcloak.cli.commands._common import duration_option
 from agentcloak.client import DaemonClient
 from agentcloak.core.text_renderers import (
     render_download_list_text,
@@ -54,8 +55,8 @@ def download_wait(
         "-o",
         help="Directory to save into (default: system temp dir).",
     ),
-    timeout: float | None = typer.Option(
-        None, "--timeout", help="Seconds to wait for a download to start."
+    timeout: float | None = duration_option(
+        None, "--timeout", unit="s", help="How long to wait for a download to start."
     ),
 ) -> None:
     """Wait for the next click-triggered download and save it."""
@@ -84,8 +85,8 @@ def download_wait_click(
         "-o",
         help="Directory to save into (default: system temp dir).",
     ),
-    timeout: float | None = typer.Option(
-        None, "--timeout", help="Seconds to wait for the download."
+    timeout: float | None = duration_option(
+        None, "--timeout", unit="s", help="How long to wait for the download."
     ),
     force: bool = typer.Option(
         False, "--force", help="Bypass overlays with a DOM click on the element ref."

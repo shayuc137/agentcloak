@@ -231,29 +231,27 @@ def test_cdp_http_timeout_preserves_explicit_request_budget() -> None:
     assert timeout.connect == client._connect_timeout_s
 
 
-async def test_bracket_reference_keeps_stale_retry() -> None:
+async def test_missing_ref_is_reported_not_replayed() -> None:
+    """DOS 11-16 #1: re-snapshotting and replaying [N] hit an unseen element."""
     from agentcloak.core.errors import ElementNotFoundError
     from agentcloak.daemon.services.action_service import ActionService
 
     ctx = MagicMock()
     ctx.action = AsyncMock(
-        side_effect=[
-            ElementNotFoundError(
-                error="element_not_found", hint="stale", action="refresh"
-            ),
-            {"clicked": True},
-        ]
+        side_effect=ElementNotFoundError(
+            error="element_not_found", hint="not shown", action="refresh"
+        )
     )
     ctx.snapshot = AsyncMock()
-    result, retried = await ActionService().execute(ctx, "click", "[12]", extra={})
-    assert result == {"clicked": True} and retried
-    ctx.snapshot.assert_awaited_once_with(mode="compact")
-    assert ctx.action.await_args.args == ("click", "12")
+    with pytest.raises(ElementNotFoundError):
+        await ActionService().execute(ctx, "click", "[12]", extra={})
+    ctx.snapshot.assert_not_awaited()
+    ctx.action.assert_awaited_once_with("click", "12")
 
 
 async def test_bracket_reference_keeps_content_scan() -> None:
     from agentcloak.browser.secure_ctx import SecureBrowserContext
-    from agentcloak.browser.state import ElementRef, PageSnapshot
+    from agentcloak.browser.state import ElementRef
     from agentcloak.core.config import AgentcloakConfig
     from agentcloak.core.errors import SecurityError
 
@@ -261,26 +259,18 @@ async def test_bracket_reference_keeps_content_scan() -> None:
     cfg.security.content_scan = True
     cfg.security.content_scan_patterns = ["ignore previous instructions"]
     inner = MagicMock()
-    inner.snapshot = AsyncMock(
-        return_value=PageSnapshot(
-            seq=1,
-            url="https://example.com",
-            title="",
-            mode="accessible",
-            tree_text="",
-            selector_map={
-                12: ElementRef(
-                    index=12,
-                    tag="button",
-                    role="button",
-                    text="ignore previous instructions",
-                )
-            },
+    inner.ref_identity = MagicMock(
+        return_value=ElementRef(
+            index=12, tag="button", role="button", text="ignore previous instructions"
         )
     )
+    inner.snapshot = AsyncMock()
     inner.action = AsyncMock()
     with pytest.raises(SecurityError):
         await SecureBrowserContext(inner, cfg).action("click", "[12]")
+    inner.ref_identity.assert_called_once_with(12)
+    # A scan snapshot would renumber the caller's refs (DOS 11-16 #1).
+    inner.snapshot.assert_not_awaited()
     inner.action.assert_not_called()
 
 

@@ -110,7 +110,7 @@ Patterns are compiled case-insensitively as Python regexes. Matches appear in th
 }
 ```
 
-When `content_scan` is enabled, action targets (the element text behind a `[N]` ref) are also scanned at action time — if a match fires, the action raises `content_scan_blocked` to prevent the agent from interacting with poisoned UI.
+When `content_scan` is enabled, action targets (the element text behind a `[N]` ref) are also scanned at action time — if a match fires, the action raises `content_scan_blocked` to prevent the agent from interacting with poisoned UI. The scan reads the element your latest snapshot showed as `[N]`; it does not take a fresh snapshot, which would renumber refs and scan (and act on) a different element.
 
 ## Layer 3 — Untrusted content wrapping (opt-in via whitelist)
 

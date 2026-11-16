@@ -809,54 +809,38 @@ class PlaywrightContext(BrowserContextBase):
         return locator.first
 
     async def _resolve_by_role(self, index: int) -> Any:
+        """Re-find a stale ref by its exact identity, or fail.
+
+        Only reached when the snapshot's backend node is gone (e.g. a
+        framework re-rendered it). A re-rendered element keeps its role and
+        accessible name, so exactly one live AX node with the same role and
+        name is accepted and the ref is rebound to it. Anything looser — first
+        of several matches, or any element with the same role — can land on a
+        different control and trigger a real operation without an error (DOS
+        issue 11-16 #1), so it is refused.
+        """
+        from agentcloak.browser._snapshot_builder import find_ax_identity
+
         ref = self._selector_map[index]
-        role_name = ref.role.lower()
-
+        matches: list[int] = []
         if ref.text:
-            locator = self._page.get_by_role(role_name, name=ref.text, exact=False)
-            try:
-                count = await locator.count()
-                if count > 0:
-                    if count > 1:
-                        logger.debug(
-                            "role_resolve_ambiguous",
-                            index=index,
-                            role=role_name,
-                            name=ref.text,
-                            matches=count,
-                        )
-                    return locator.first
-            except Exception as exc:
-                logger.debug(
-                    "role_name_resolve_failed",
-                    index=index,
-                    role=role_name,
-                    name=ref.text,
-                    error=str(exc),
-                )
-
-        locator = self._page.get_by_role(role_name)
-        try:
-            count = await locator.count()
-            if count > 0:
-                logger.debug(
-                    "role_only_resolve",
-                    index=index,
-                    role=role_name,
-                    matches=count,
-                )
-                return locator.first
-        except Exception as exc:
-            logger.debug(
-                "role_only_resolve_failed",
-                index=index,
-                role=role_name,
-                error=str(exc),
+            matches = find_ax_identity(
+                await self._get_ax_tree(frames=False), ref.role, ref.text
             )
+        if len(matches) == 1:
+            self._backend_node_map[index] = matches[0]
+            return await self._resolve_by_backend_node(matches[0], index)
 
+        reason = (
+            f"{len(matches)} elements now match <{ref.role}> '{ref.text}'"
+            if matches
+            else "it has no accessible name to re-identify it"
+            if not ref.text
+            else "it is no longer on the page"
+        )
         raise BackendError(
             error="element_resolve_failed",
-            hint=f"Could not resolve [{index}] <{ref.role}> '{ref.text}' in the DOM",
+            hint=f"Could not resolve [{index}] <{ref.role}> '{ref.text}': {reason}",
             action="the page may have changed — run 'snapshot' to refresh, then retry",
         )
 

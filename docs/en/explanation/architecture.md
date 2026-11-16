@@ -65,7 +65,7 @@ The daemon (`src/agentcloak/daemon/`) is a long-running FastAPI application serv
 
 **Lifecycle:** The daemon auto-starts on the first CLI or MCP command. It runs on `127.0.0.1:18765` by default and stays alive until explicitly stopped or idle-timeout triggers. OpenAPI spec is served at `/openapi.json`; Swagger UI at `/docs`.
 
-**Service layer**: Business logic (stale-ref retry, snapshot diff, profile CRUD, capture export, doctor checks) lives in `daemon/services/`. Route handlers are thin HTTP shells that parse the Pydantic request body, call a service method, and wrap the return value in the `OkEnvelope` shape.
+**Service layer**: Business logic (`$N.path` batch references, snapshot diff, profile CRUD, capture export, doctor checks) lives in `daemon/services/`. Route handlers are thin HTTP shells that parse the Pydantic request body, call a service method, and wrap the return value in the `OkEnvelope` shape.
 
 **Wire format**: The daemon only speaks JSON. Pydantic models live in `daemon/models/` (one file per surface group — `browser.py`, `interaction.py`, `capture.py`, …) and route handlers live in `daemon/routes/` (same split). CLI text mode and MCP both render locally from the JSON envelope using the shared `core/text_renderers` module, so for any given daemon response both surfaces emit byte-identical text. Errors keep the three-field envelope (`{"error", "hint", "action"}`) for both surfaces.
 

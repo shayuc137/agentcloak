@@ -418,9 +418,7 @@ async def handle_action(
 
     # DialogBlockedError from ctx.action() bubbles up to the FastAPI handler
     # (409 with dialog metadata) — no special case needed here.
-    result, retried = await ActionService().execute(ctx, body.kind, target, extra=extra)
-    if retried:
-        result["retried"] = True
+    result = await ActionService().execute(ctx, body.kind, target, extra=extra)
 
     summary = ActionService.build_resume_summary(body.kind, target, extra)
     await _update_resume(resume_writer, ctx, action_summary=summary)

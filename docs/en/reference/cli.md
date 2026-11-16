@@ -42,6 +42,8 @@ Envelope shape (only when `--json` is active):
 
 Failures emit one JSON envelope on stdout and an `Error [code]: message` diagnostic on stderr. This also covers missing arguments and local validation failures. `js evaluate` throws and rejected promises fail; a returned string beginning with `Error:` remains ordinary data. Diagnostic failures can include their check results under `data`.
 
+**Durations.** Every `--timeout` / `--wait-timeout` flag accepts a unit suffix — `45s` or `45000ms`. A bare number keeps the flag's documented unit (seconds for `navigate`, `fetch` and `download`; milliseconds for `wait`, `cdp send` and `screenshot --wait-timeout`). A bare number that looks like the other unit still runs but warns on stderr, e.g. `wait --timeout 45` warns that it means 45ms.
+
 | `error.code` | Meaning |
 |--------------|---------|
 | `invalid_request` | Invalid CLI arguments or daemon request validation |
@@ -82,7 +84,7 @@ cloak navigate URL [--timeout SECONDS] [--expect-path /PATH] [--snap] [--snapsho
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--timeout` | `30` | Max seconds to wait for page load |
+| `--timeout` | `30` | Max wait for page load; bare number = seconds, or `45s` / `45000ms` |
 | `--expect-path` | none | Fail with `url_mismatch` unless the final URL's pathname equals this value exactly (query and fragment ignored) — catches silent redirects to a login page |
 | `--snap` (alias `--snapshot`) | off | Attach a compact snapshot to the result (saves a round-trip) |
 | `--snapshot-mode` | `compact` | Snapshot mode when `--snap` is set (`compact` or `accessible`) |
@@ -172,7 +174,7 @@ cloak screenshot [--output FILE] [--viewport WIDTHxHEIGHT] [--dpr RATIO] [--expe
 | `--quality` | `80` | JPEG quality 0-100 (ignored for PNG) |
 | `--wait-selector` | none | Wait for a CSS selector to be visible before capture |
 | `--wait-for` | none | Run the regular visible-selector wait before capture; timeout short-circuits without writing a file |
-| `--wait-timeout` | `browser.action_timeout` | Selector wait timeout in milliseconds |
+| `--wait-timeout` | `browser.action_timeout` | Selector wait timeout; bare number = milliseconds, or `15s` |
 | `--hide` | none | Comma-separated CSS selectors to hide for this capture |
 | `--keep-overlays` | off | Reveal persistent, one-time, and `[data-cloak-hide]` overlays for this capture |
 
@@ -245,6 +247,8 @@ Positional references accept both `12` and `'[12]'`. Quote bracket references in
 `click`, `fill` and `hover` also accept `--selector CSS` instead of a ref when the target is a known control and a snapshot round-trip is unnecessary: `cloak fill --selector '#email' --text 'user@example.com'`. The selector must match exactly one main-document element and cannot be combined with a ref or absolute coordinates (hover `--offset` is fine). Existing refs keep working.
 
 Add `--snap` to any interaction to attach a compact snapshot to the response.
+
+A ref means exactly the element shown as `[N]` in the latest snapshot output — including a filtered `--find` / `--selector` snapshot, which numbers only what it shows. A ref missing from that output fails with `element_not_found` (naming the filter, if any) and is never replayed against a fresh snapshot. If the shown element was re-rendered, local backends re-find it only by the same role and exact name, and only when exactly one element matches; otherwise the action fails with `element_resolve_failed`. The confirmation echoes the target, e.g. `clicked [2] link "Customers"`, so a wrong target is visible immediately.
 
 ### click
 
@@ -358,7 +362,7 @@ cloak js evaluate --file probe.js          # multiline UTF-8 script, no shell qu
 cloak js evaluate --preset vue_inspect    # run a reverse-engineering preset instead of JS
 ```
 
-Scalar results (string/number/boolean) print as raw values. Objects and arrays print as pretty JSON.
+Strings print as raw text. Numbers, booleans and `null` use JSON spelling (`true`, `false`, `null`) — the same as inside objects; `undefined` also prints `null`. Objects and arrays print as pretty JSON. Use `--json` when a script must tell the string `"true"` from the boolean.
 Inline code, `--file`, and `--preset` are mutually exclusive. Evaluation failures
 report the thrown message and first useful source/stack location, bounded to 400
 characters so a page cannot flood agent context with a stack trace.
@@ -433,7 +437,7 @@ cloak wait --ms 2000
 | `--load` | Wait for load state (`load`, `domcontentloaded`, `networkidle`) |
 | `--js` | Wait for JS expression to return truthy |
 | `--ms` | Sleep for N milliseconds |
-| `--timeout` | Max wait time in ms (default 30000) |
+| `--timeout` | Max wait (default 30000); bare number = milliseconds, or `45s` |
 
 ### Common recipes
 
@@ -520,11 +524,12 @@ Intercept requests by URL pattern. Rules persist across navigations and replay o
 cloak route add "**/api/*" --action abort
 cloak route add "**/track" --action fulfill --status 204 --content-type application/json --body "{}"
 cloak route add "*" --action continue --resource-type xhr --method POST
-cloak route remove "**/api/*"         # omit pattern to clear ALL rules
+cloak route remove 3f2a9c1e7b04       # by rule ID from add/list, or by exact pattern
+cloak route remove                    # clear ALL rules
 cloak route list
 ```
 
-`route list` includes rule ids, hit counts, and pending request ids. Zero hits produce a warning, so a registered rule is not mistaken for a verified interception. A pattern without `*` is a URL substring; `*` matches across `/`.
+`route remove` prints each removed rule and the remaining count; an ID or pattern that matches no rule fails with `route_not_found` and lists the active rules. `route list` includes rule ids, hit counts, and pending request ids. Zero hits produce a warning, so a registered rule is not mistaken for a verified interception. A pattern without `*` is a URL substring; `*` matches across `/`.
 
 ```bash
 cloak route add --hold "/api/orders"
@@ -547,7 +552,7 @@ cloak cdp send Runtime.evaluate --params-file - < params.json
 
 Use `--params-file PATH` for large payloads without shell argument-size limits, or `-` to read stdin. The input must be one UTF-8 JSON object containing only the CDP method's parameters (for example, `{"expression":"document.title","returnByValue":true}`), not the outer HTTP request envelope. It is mutually exclusive with `--params`; omitting both sends `{}`. Unreadable files, invalid JSON and non-object values fail before contacting the daemon.
 
-Commands target the current session's page. The timeout is per request in milliseconds; protocol errors and timeouts exit nonzero with structured errors in JSON mode. Local raw CDP calls share a dedicated per-tab channel. Timeout/cancellation resets that channel, so reapply any CDP state it held; manager subscriptions remain active.
+Commands target the current session's page. The timeout is per request (bare number = milliseconds, or `30s`); protocol errors and timeouts exit nonzero with structured errors in JSON mode. Local raw CDP calls share a dedicated per-tab channel. Timeout/cancellation resets that channel, so reapply any CDP state it held; manager subscriptions remain active.
 
 ### Extra HTTP headers
 

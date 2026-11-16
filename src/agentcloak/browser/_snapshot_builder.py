@@ -142,6 +142,28 @@ def find_ax_nodes(raw_nodes: list[dict[str, Any]], text: str) -> list[dict[str, 
     return [node for node in raw_nodes if str(node.get("nodeId", "")) in included]
 
 
+def find_ax_identity(
+    raw_nodes: list[dict[str, Any]], role: str, name: str
+) -> list[int]:
+    """Backend node ids of live AX nodes whose role and cleaned name equal a ref's.
+
+    Uses the snapshot's own role/name extraction so "same element" means
+    exactly what the snapshot showed — Playwright role locators compute names
+    differently and are rejected by the humanized resolver.
+    """
+    found: list[int] = []
+    for node in raw_nodes:
+        backend_id = node.get("backendDOMNodeId")
+        if (
+            not node.get("ignored", False)
+            and isinstance(backend_id, int)
+            and node.get("role", {}).get("value", "") == role
+            and _clean_text(node.get("name", {}).get("value", "")) == name
+        ):
+            found.append(backend_id)
+    return found
+
+
 def scope_ax_tree(
     raw_nodes: list[dict[str, Any]], backend_node_id: int
 ) -> list[dict[str, Any]]:

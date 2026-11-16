@@ -568,7 +568,7 @@ Navigation completion is not SPA readiness. Insert an explicit `/wait` for a sel
 - CLI: `cloak route remove`
 - MCP: `agentcloak_route (action=remove)`
 - Body:
-  - `pattern` (string, default: "") — Pattern to remove; blank removes ALL active rules.
+  - `target` (string, default: "") — Rule ID or exact pattern to remove; blank removes ALL rules.
 
 ### `GET /route/list`
 

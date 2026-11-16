@@ -1872,10 +1872,10 @@ class DaemonClient:
             payload["body"] = body
         return await self._send_async("POST", "/route/add", json_body=payload)
 
-    async def route_remove(self, *, pattern: str = "") -> dict[str, Any]:
+    async def route_remove(self, *, target: str = "") -> dict[str, Any]:
         body: dict[str, Any] = {}
-        if pattern:
-            body["pattern"] = pattern
+        if target:
+            body["target"] = target
         return await self._send_async("POST", "/route/remove", json_body=body)
 
     async def route_release(self, *, identifier: str) -> dict[str, Any]:

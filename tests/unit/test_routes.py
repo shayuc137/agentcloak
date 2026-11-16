@@ -853,37 +853,26 @@ class TestIncludeSnapshot:
         assert "snapshot" not in data["data"]
 
 
-class TestStaleRefRetry:
-    """Tests for stale ref auto-retry (R4.5)."""
+class TestMissingRef:
+    """A ref missing from the latest snapshot fails; it is never replayed."""
 
-    def test_stale_ref_retries_on_numeric_target(self, client: TestClient) -> None:
+    def test_missing_numeric_ref_is_not_retried(self, client: TestClient) -> None:
         from agentcloak.core.errors import ElementNotFoundError
 
         ctx = client.app.state.browser_ctx
-        call_count = 0
-
-        async def action_side_effect(kind: str, target: str, **kw: Any) -> Any:
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                raise ElementNotFoundError(
-                    error="element_not_found",
-                    hint="Element [5] not in selector_map",
-                    action="take a new snapshot",
-                )
-            return {"ok": True, "clicked": True, "seq": 2, "action": "click"}
-
-        ctx.action = AsyncMock(side_effect=action_side_effect)
-
-        resp = client.post(
-            "/action",
-            json={"kind": "click", "target": "5"},
+        ctx.action = AsyncMock(
+            side_effect=ElementNotFoundError(
+                error="element_not_found",
+                hint="[5] was not shown in the latest snapshot (0 refs)",
+                action="run 'snapshot' and use a ref shown in that output",
+            )
         )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["ok"] is True
-        assert data["data"]["retried"] is True
-        assert call_count == 2
+
+        resp = client.post("/action", json={"kind": "click", "target": "5"})
+
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "element_not_found"
+        ctx.action.assert_awaited_once()
 
     def test_stale_ref_no_retry_on_non_numeric(self, client: TestClient) -> None:
         from agentcloak.core.errors import ElementNotFoundError

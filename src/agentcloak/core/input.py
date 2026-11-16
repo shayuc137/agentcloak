@@ -34,6 +34,31 @@ def parse_point(value: str) -> tuple[float, float]:
         raise invalid_input("Coordinates must be two finite numbers: x,y") from exc
 
 
+_DURATION_RE = re.compile(r"([0-9]+(?:\.[0-9]+)?)\s*(ms|s)?", re.IGNORECASE)
+
+
+def parse_duration(value: str, *, unit: str) -> tuple[float, bool]:
+    """Parse ``45`` / ``45s`` / ``45000ms`` into ``unit`` (``"s"`` or ``"ms"``).
+
+    Returns ``(amount, explicit)``. A bare number keeps ``unit`` — each flag's
+    historical unit — so existing scripts stay valid; ``explicit`` lets the
+    caller warn when a bare number looks like the other unit. The CLI mixes
+    seconds (navigate/fetch/download) and milliseconds (wait/cdp/screenshot),
+    and a seconds value passed to an ms flag timed out instantly
+    (DOS issue 11-16 #8).
+    """
+    match = _DURATION_RE.fullmatch(value.strip())
+    if not match:
+        raise invalid_input(
+            f"Duration '{value}' must look like 45s, 45000ms or a bare number of {unit}"
+        )
+    amount = float(match.group(1))
+    written = (match.group(2) or "").lower()
+    if not written or written == unit:
+        return amount, bool(written)
+    return (amount / 1000 if unit == "s" else amount * 1000), True
+
+
 def parse_viewport(value: str) -> tuple[int, int]:
     match = re.fullmatch(r"([0-9]+)[xX]([0-9]+)", value)
     if not match:

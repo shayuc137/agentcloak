@@ -9,6 +9,7 @@ import orjson
 import typer
 
 from agentcloak.cli._dispatch import dispatch_text_or_json
+from agentcloak.cli.commands._common import duration_option
 from agentcloak.client import DaemonClient
 from agentcloak.core.input import invalid_input
 from agentcloak.core.text_renderers import (
@@ -48,8 +49,8 @@ def cdp_send(
         "--params-file",
         help="Read a UTF-8 JSON object from a file or '-' for stdin.",
     ),
-    timeout: int = typer.Option(
-        30000, "--timeout", min=1, help="Request timeout in milliseconds."
+    timeout: int = duration_option(
+        30000, "--timeout", unit="ms", minimum=1, help="Request timeout."
     ),
 ) -> None:
     """Send a CDP command to the current session's page."""

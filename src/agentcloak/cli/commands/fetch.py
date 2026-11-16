@@ -11,6 +11,7 @@ from pathlib import Path  # noqa: TC003 — Typer needs runtime access
 import typer
 
 from agentcloak.cli._dispatch import emit_envelope
+from agentcloak.cli.commands._common import duration_option
 from agentcloak.cli.output import info, is_json_mode, value
 from agentcloak.client import DaemonClient
 
@@ -45,10 +46,11 @@ def fetch_url(
     header: list[str] | None = typer.Option(
         None, "--header", "-H", help="Header in 'Key: Value' format (repeatable)."
     ),
-    timeout: float | None = typer.Option(
+    timeout: float | None = duration_option(
         None,
         "--timeout",
-        help="Request timeout in seconds (default: config.browser.navigation_timeout).",
+        unit="s",
+        help="Request timeout (default: config.browser.navigation_timeout).",
     ),
     output: Path | None = typer.Option(
         None, "--output", "-o", help="Save response body to file."

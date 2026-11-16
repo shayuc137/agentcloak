@@ -21,9 +21,11 @@ Error [element_not_found]: Element [99] not in selector_map (4 entries)
 | `doctor_failed` / `bridge_check_failed` | Diagnostic checks failed | Inspect JSON `data.checks` and follow the failing check's hint |
 | `skill_uninstall_failed` | File access/removal failed | Fix the reported path permissions and retry |
 | `daemon_invalid_response` / `daemon_request_failed` | Invalid body or failed daemon request | Check daemon logs and the selected endpoint |
-| `element_not_found` / `[N] not in selector_map` | `[N]` ref is stale (page changed) | Auto-retried once; if still fails, re-snapshot and use the new ref |
+| `element_not_found` / `[N] was not shown in the latest snapshot` | `[N]` is not in your latest snapshot output (a filtered `--find`/`--selector` snapshot renumbers refs) | Run `cloak snapshot` and use a ref from that output; refs are never replayed automatically |
+| `element_resolve_failed` | The shown element is gone, or several elements now share its role and name | Re-snapshot and pick the intended element |
+| `route_not_found` | `route remove` got an ID/pattern that matches no rule | Run `cloak route list` and pass a listed ID or exact pattern |
 | `element_covered` / visible ref does not react | Overlay intercepted coordinate click | Hide the overlay with `cloak hide add CSS`, then re-snapshot; use `--force` only as a one-off single-left-click fallback |
-| `navigation_timeout` | Page took too long to load; local backends stop the abandoned navigation | Retry with `--timeout 60`, or check the URL is correct |
+| `navigation_timeout` | Page took too long to load; local backends stop the abandoned navigation | Retry with `--timeout 60s`, or check the URL is correct |
 | `session_busy` | Session queue wait exceeded `browser.action_timeout` | Inspect `session list --all` for active actions/queue; `session close --force` cancels work and closes only the selected session |
 | `action_timeout` | Page operation exceeded its execution budget | Navigate again; if the renderer is frozen, close the session with `--force` first |
 | `page_recreated` / `page_lost` | Page or browser disappeared | Navigate to the intended URL before collecting evidence; blank replacement pages are not valid evidence |
@@ -127,7 +129,7 @@ Some elements may live in iframes. Try `--frames` to include iframe content. Or 
 
 ### Stale refs
 
-If `element_not_found` persists after the automatic retry, the page has changed significantly. Take a fresh `cloak snapshot` and find the element again.
+`element_not_found` means the ref is not in your latest snapshot output — often because the last snapshot was filtered (`--find`, `--selector`) and numbered only its matches. `element_resolve_failed` means the element that ref showed is gone or no longer unique. Neither is retried automatically, because a fresh snapshot renumbers refs and the same number can point at a different control. Take a fresh `cloak snapshot` and find the element again.
 
 ## RemoteBridge Issues
 

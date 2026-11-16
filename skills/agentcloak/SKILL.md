@@ -35,7 +35,7 @@ $ cloak snapshot
   [1] link "Learn more" href="https://iana.org/domains/example"
 
 $ cloak click 1
-clicked [1]
+clicked [1] link "Learn more"
   navigation: https://iana.org/...
 
 $ cloak js evaluate "document.title"
@@ -141,9 +141,9 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak script add JS` / `add --preset fetch\|xhr\|json_parse\|crypto\|timing` | Inject an init script that runs before page scripts (the hook point for patching fetch/XHR/JSON.parse); presets log calls to `cloak console` |
 | `cloak script remove ID` / `list` | Remove an init script by identifier / list active ones |
 | `cloak route add PATTERN --action abort\|fulfill\|continue` | Intercept matching requests; `--status`/`--content-type`/`--body` shape a `fulfill` response, `--method`/`--resource-type` narrow the match |
-| `cloak route remove [PATTERN]` / `list` | Remove rules / list rule ids, hit counts and pending requests; zero hits warn |
+| `cloak route remove [ID\|PATTERN]` / `list` | Remove a rule by ID or exact pattern (none = all; no match fails) / list rule ids, hit counts and pending requests; zero hits warn |
 | `cloak route add --hold PATTERN` / `route release ID` | Pause requests for loading-state snapshot/screenshot; release a pending request or rule id |
-| `cloak cdp send METHOD --params JSON --timeout MS` | Session-bound CDP request; protocol errors/timeouts fail nonzero |
+| `cloak cdp send METHOD --params JSON --timeout 30s` | Session-bound CDP request; protocol errors/timeouts fail nonzero |
 | `cloak cdp send METHOD --params-file params.json` | Large UTF-8 JSON parameter object; use `-` for stdin; mutually exclusive with `--params` |
 | `cloak emulation headers -H 'Name: value'` | Inject extra HTTP headers on every request (custom auth/tokens); no `-H` clears them |
 | `cloak graphql introspect URL` | Run the standard `__schema` introspection query (via the session's cookies) |
@@ -202,8 +202,8 @@ CLI is **text-first**: stdout is the answer (no JSON parsing required), hints/wa
 
 ```text
 $ cloak click 99
-Error [element_not_found]: Element [99] not in selector_map (4 entries)
-  -> run 'snapshot' to refresh the selector_map, or re-snapshot if the page changed
+Error [element_not_found]: [99] was not shown in the latest snapshot (4 refs)
+  -> run 'snapshot' and use a ref shown in that output
 ```
 
 For `jq` scripting, `--json` (or `AGENTCLOAK_OUTPUT=json`) switches to the JSON envelope (`error.code` / `error.message` on failure) — shape and MCP rendering notes in `references/troubleshooting.md`.
@@ -211,7 +211,7 @@ For `jq` scripting, `--json` (or `AGENTCLOAK_OUTPUT=json`) switches to the JSON 
 ## Smart Behaviors
 
 These work automatically:
-- **Stale ref auto-retry**: `element_not_found` triggers one automatic re-snapshot + retry
+- **Refs are strict**: `[N]` means the element shown as `[N]` in your latest snapshot output — a `--find`/`--selector` snapshot numbers only what it shows. A ref not in that output fails (`element_not_found`); it is never re-snapshotted and replayed. A re-rendered element is re-found only by the same role and exact name when exactly one matches. Action echoes name the target: `clicked [2] link "Customers"` — check it
 - **Hash anchors**: a simple `#id` on `navigate` waits up to 3s for late SPA rendering and scrolls into view; `[anchor] not found` is informational
 - **Page-owned hiding**: elements marked `[data-cloak-hide]` stay hidden from snapshots, screenshots, and hit-testing unless `--keep-overlays` is used
 - **`--snap`**: add to `navigate` or any action to get a compact snapshot back in the same call (output starts with `# Title | url | N nodes`), saving a round trip
@@ -260,7 +260,7 @@ Counter-intuitive behaviors worth knowing before you hit them:
 
 ## Key Principles
 
-- **Timeouts**: navigation and actions both default to 30s. For slow pages or large uploads, pass `--timeout 60` on `navigate` or `wait`. If `navigation_timeout` errors persist, set `AGENTCLOAK_NAVIGATION_TIMEOUT=60` globally
+- **Timeouts**: navigation and actions both default to 30s. Write units explicitly — `--timeout 60s` works on every timeout flag. Bare numbers keep each flag's unit: `navigate`/`fetch`/`download` take seconds, `wait`/`cdp send`/`screenshot --wait-timeout` take milliseconds (a suspicious bare value warns). If `navigation_timeout` errors persist, set `AGENTCLOAK_NAVIGATION_TIMEOUT=60` (seconds) globally
 - **Headless by default**: the browser runs headless. For stronger anti-detection, start headed without changing config: `cloak daemon stop && cloak daemon start --headed -b`. Or set `headless = false` in `~/.agentcloak/config.toml` (or `AGENTCLOAK_HEADLESS=false`). Xvfb auto-starts on headless Linux servers
 - **Workspace/session identity**: `--workspace PATH` > `AGENTCLOAK_WORKSPACE` > configured roots > Git repository > cwd. `--session ID` > `AGENTCLOAK_SESSION` > worktree/root path hash. Sessions own pages, refs and managers; list/close default to the caller workspace; list --all shows all workspaces. Login storage defaults to shared; set `browser.isolation=workspace` and restart for per-workspace storage. Same-space sessions still share login; RemoteBridge requires shared mode.
 - **Daemon lifecycle**: auto-starts on first command, stays running. `cloak launch --tier X` switches tier without restart when no other sessions are active; changing a shared tier/profile with active siblings fails explicitly. Changing headless/profile requires `cloak daemon stop` + `cloak daemon start`. `cloak daemon status` shows current state

@@ -227,6 +227,11 @@ class BrowserContextBase(ABC):
 
         # Element + snapshot caches populated by snapshot()
         self._selector_map: dict[int, ElementRef] = {}
+        # Scope of the snapshot that produced ``_selector_map``: None before the
+        # first snapshot, "" for an unfiltered tree, else the filter flags. Ref
+        # errors quote it so a caller sees why [N] is missing (a filtered
+        # snapshot renumbers refs; see DOS issue 11-16 #1).
+        self._snapshot_scope: str | None = None
         self._direct_selector_index: int | None = None
         self._recording: Any = None
         self._backend_node_map: dict[int, int] = {}
@@ -1120,6 +1125,14 @@ class BrowserContextBase(ABC):
         )
         self._backend_node_map = result.backend_node_map
         self._selector_map = result.selector_map
+        self._snapshot_scope = " ".join(
+            part
+            for part in (
+                f"--selector {selector!r}" if selector else "",
+                f"--find {find!r}" if find else "",
+            )
+            if part
+        )
         self._cached_lines = result.cached_lines
         self._cached_mode = mode
         return result.snapshot
@@ -2586,8 +2599,15 @@ class BrowserContextBase(ABC):
     # _click_impl etc. and look up the element themselves)
     # ------------------------------------------------------------------
 
+    def ref_identity(self, index: int) -> ElementRef | None:
+        """Return what the latest snapshot showed for ``[index]``, if anything."""
+        return self._selector_map.get(index)
+
     def _require_snapshot(self, index: int) -> ElementRef:
-        if not self._selector_map:
+        # A ref only means "the element shown as [N] in the latest snapshot".
+        # Never re-snapshot and reuse the number: refs are renumbered per
+        # snapshot, so that silently targets a different element.
+        if self._snapshot_scope is None and not self._selector_map:
             raise ElementNotFoundError(
                 error="no_snapshot",
                 hint="No snapshot taken yet — selector_map is empty",
@@ -2595,11 +2615,16 @@ class BrowserContextBase(ABC):
             )
         if index not in self._selector_map:
             count = len(self._selector_map)
+            scope = (
+                f", filtered by {self._snapshot_scope}" if self._snapshot_scope else ""
+            )
             raise ElementNotFoundError(
                 error="element_not_found",
-                hint=f"Index [{index}] not in selector_map ({count} entries)",
-                action="run 'snapshot' to refresh the selector_map,"
-                " then retry with a valid index",
+                hint=(
+                    f"[{index}] was not shown in the latest snapshot "
+                    f"({count} refs{scope})"
+                ),
+                action="run 'snapshot' and use a ref shown in that output",
             )
         return self._selector_map[index]
 
@@ -2632,6 +2657,13 @@ class BrowserContextBase(ABC):
 
         new_seq = self._seq_counter.increment_action()
         pre_url, _ = await self._get_page_info()
+        # Echo what the ref meant when the action ran, so a caller can spot a
+        # wrong target from the output alone (DOS issue 11-16 #2).
+        identity = (
+            self.ref_identity(int(target.strip("[]")))
+            if target.strip("[]").isdigit()
+            else None
+        )
 
         # R0: reset per-action transient state before executing.
         self._last_navigation_event = None
@@ -2671,6 +2703,9 @@ class BrowserContextBase(ABC):
         result["ok"] = True
         result["seq"] = new_seq
         result["action"] = kind
+        if identity is not None:
+            result["role"] = identity.role
+            result["name"] = identity.text
         if caused_navigation:
             result["caused_navigation"] = True
             result["new_url"] = post_url

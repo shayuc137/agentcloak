@@ -41,8 +41,8 @@ For repeatable UI acceptance, keep baselines local and run `cloak diff screensho
 
 Each block is **symptom → cause → recovery commands**.
 
-### Stale element ref (`element_not_found` / `[N] not in selector_map`)
-The page changed and `[N]` no longer maps. The daemon already auto-retried once with a fresh snapshot.
+### Stale element ref (`element_not_found` / `element_resolve_failed`)
+`[N]` is not in your latest snapshot output, or the element it showed is gone. Refs are never replayed against a fresh snapshot — the same number can mean a different element.
 ```bash
 cloak snapshot          # get fresh refs
 cloak click <new-N>     # retry with the new ref
@@ -60,14 +60,14 @@ cloak dialog dismiss                # Cancel
 ### Navigation didn't take (`no_valid_page`)
 The last `navigate` failed, so the page is still the previous URL; snapshot/screenshot/click/evaluate refuse to run on stale state. (`fetch` and `network` are unaffected.)
 ```bash
-cloak navigate "<url>" --timeout 60   # re-navigate, give it more time
+cloak navigate "<url>" --timeout 60s  # re-navigate, give it more time
 cloak snapshot
 ```
 
 ### Timeout (`navigation_timeout` / `wait_timeout`)
 The page or wait condition didn't resolve in time.
 ```bash
-cloak navigate "<url>" --timeout 60        # one-off longer budget
+cloak navigate "<url>" --timeout 60s       # one-off longer budget
 # or globally:  AGENTCLOAK_NAVIGATION_TIMEOUT=60
 cloak wait --selector ".ready" --timeout 15000   # verify the condition is actually reachable
 cloak screenshot --wait-for ".ready" --wait-timeout 15000  # wait + capture; timeout writes no file

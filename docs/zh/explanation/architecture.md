@@ -65,7 +65,7 @@ daemon（`src/agentcloak/daemon/`）是一个由 uvicorn 服务的 FastAPI 应�
 
 **生命周期：** daemon 在首次 CLI 或 MCP 命令时自动启动。默认运行在 `127.0.0.1:18765`，持续运行直到被显式停止或空闲超时触发。OpenAPI 规范暴露在 `/openapi.json`，Swagger UI 在 `/docs`。
 
-**Service 层**：业务逻辑（stale-ref 重试、snapshot diff、profile CRUD、capture 导出、doctor 检查）住在 `daemon/services/`。Route handler 退化为薄壳，只做三件事：解析 Pydantic 请求体、调 service 方法、把返回值包成 `OkEnvelope`。
+**Service 层**：业务逻辑（`$N.path` 批处理引用、snapshot diff、profile CRUD、capture 导出、doctor 检查）住在 `daemon/services/`。Route handler 退化为薄壳，只做三件事：解析 Pydantic 请求体、调 service 方法、把返回值包成 `OkEnvelope`。
 
 **Wire 格式**：daemon 只说 JSON。Pydantic model 拆分在 `daemon/models/`（一个 surface group 一个文件 —— `browser.py`、`interaction.py`、`capture.py` 等），route handler 拆分在 `daemon/routes/`（相同划分）。CLI 文本模式和 MCP 都在本地从 JSON 信封通过共享的 `core/text_renderers` 模块渲染，所以同一份 daemon 响应在两个表面上的文本输出字节相同。错误两个表面都保持三字段信封（`{"error", "hint", "action"}`）。
 

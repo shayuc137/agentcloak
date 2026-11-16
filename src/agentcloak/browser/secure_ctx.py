@@ -167,8 +167,7 @@ class SecureBrowserContext:
             if kw.get("selector"):
                 await self._scan_selector(str(kw["selector"]))
             else:
-                snap: PageSnapshot = await self._inner.snapshot(mode="accessible")
-                self._check_action_target(snap, target)
+                self._check_action_target(target)
         return await self._inner.action(kind, target, **kw)
 
     async def action_batch(
@@ -217,8 +216,7 @@ class SecureBrowserContext:
                 if act.get("selector"):
                     await self._scan_selector(str(act["selector"]))
                 else:
-                    snap = await self._inner.snapshot(mode="accessible")
-                    self._check_action_target(snap, target)
+                    self._check_action_target(target)
             except SecurityError:
                 return {
                     "results": results,
@@ -324,14 +322,19 @@ class SecureBrowserContext:
                 action="inspect the element manually or disable content_scan",
             )
 
-    def _check_action_target(self, snap: PageSnapshot, target: str) -> None:
-        """Check the target element text for injection patterns."""
+    def _check_action_target(self, target: str) -> None:
+        """Check the target element text for injection patterns.
+
+        Scans the element the caller's latest snapshot showed as ``[N]``. A
+        fresh snapshot here would renumber refs under the caller and scan (and
+        then act on) a different element.
+        """
         try:
             index = parse_ref(target)
         except (AgentBrowserError, TypeError):
             return
 
-        elem = snap.selector_map.get(index)
+        elem = self._inner.ref_identity(index)
         if elem is None:
             return
 

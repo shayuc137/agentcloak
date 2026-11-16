@@ -29,6 +29,7 @@ being scattered across the call sites.
 
 from __future__ import annotations
 
+import json
 from typing import Any, cast
 
 import orjson
@@ -102,6 +103,7 @@ __all__ = [
     "render_route_list_text",
     "render_route_op_text",
     "render_route_release_text",
+    "render_route_remove_text",
     "render_scope_variables_text",
     "render_screenshot_text",
     "render_script_add_text",
@@ -416,8 +418,11 @@ def render_image_diff_text(data: dict[str, Any]) -> str:
 def render_evaluate_text(data: dict[str, Any]) -> str:
     """Render the ``/evaluate`` payload following R10 rules.
 
-    * scalars (str/number/bool) → raw value
-    * null / undefined → empty
+    * strings → raw text (the common ``document.title`` case stays pipeable)
+    * number / bool / null → JSON spelling (``true``, ``false``, ``null``), the
+      same as inside objects; ``undefined`` also prints ``null``. Python's
+      ``True`` / empty line made scripts comparing JS values misjudge
+      (DOS issue 11-16 #3) and hid ``null`` behind an empty string.
     * object/array → pretty JSON so agents can read it
     * truncated marker → forward verbatim so the agent knows
     """
@@ -433,10 +438,11 @@ def render_evaluate_text(data: dict[str, Any]) -> str:
         size = int(data.get("total_size", 0) or 0)
         return f"{result_text}\n--- truncated at {size} bytes ---"
     result = data.get("result")
-    if result is None:
-        return ""
-    if isinstance(result, str | int | float | bool):
-        return str(result)
+    if isinstance(result, str):
+        return result
+    if result is None or isinstance(result, bool | int | float):
+        # stdlib json: orjson rejects integers beyond 64 bits.
+        return json.dumps(result)
     return orjson.dumps(result, option=orjson.OPT_INDENT_2).decode()
 
 
@@ -493,6 +499,13 @@ def render_action_text(kind: str, target: str, data: dict[str, Any]) -> str:
     target = str(data.get("selector") or target)
     ref = f"[{target}]" if target and target.lstrip("-").isdigit() else target
     base = f"{verb} {ref}".rstrip()
+    if data.get("role"):
+        # ``clicked [2] link "客户"`` — the echo names the element so a wrong
+        # target is visible without another snapshot.
+        base = f"{base} {data['role']}"
+        if data.get("name"):
+            name = _clip_title(str(data["name"]))
+            base = f"{base} {orjson.dumps(name).decode()}"
     if kind == "fill" and "text" in data:
         text = str(data.get("text", ""))
         base = f"{base} | value: {text!r}"
@@ -1467,17 +1480,31 @@ def render_hide_list_text(data: dict[str, Any]) -> str:
 
 
 def render_route_op_text(data: dict[str, Any]) -> str:
-    """Render ``/route/add`` and ``/route/remove`` — a short state summary."""
+    """Render ``/route/add`` — the new rule ID plus the active count."""
     count = int(data.get("count", 0) or 0)
-    removed = int(data.get("removed", 0) or 0)
-    if removed:
-        return f"removed {removed} rule{'s' if removed != 1 else ''} ({count} active)"
-    pattern = str(data.get("pattern", "") or "")
-    if pattern:
-        identifier = str(data.get("identifier", "") or "")
-        label = f" {identifier}" if identifier else ""
-        return f"added rule{label} {pattern} ({count} active)"
-    return f"{count} active rules"
+    identifier = str(data.get("identifier", "") or "")
+    label = f" {identifier}" if identifier else ""
+    return f"added rule{label} {data.get('pattern', '')} ({count} active)"
+
+
+def render_route_remove_text(data: dict[str, Any]) -> str:
+    """Render ``/route/remove`` — which rules went away and what is left.
+
+    Kept apart from the add renderer: sharing one renderer printed
+    "added rule" for a removal that matched nothing (DOS issue 11-16 #7).
+    """
+    count = int(data.get("count", 0) or 0)
+    raw_rules: list[Any] = list(data.get("removed_rules") or [])
+    rules = [_as_dict(r) for r in raw_rules if isinstance(r, dict)]
+    if not rules:
+        removed = int(data.get("removed", 0) or 0)
+        noun = "rule" if removed == 1 else "rules"
+        return f"removed {removed} {noun} ({count} active)"
+    lines = [
+        f"removed rule {r.get('identifier', '')} {r.get('pattern', '')}" for r in rules
+    ]
+    lines[-1] += f" ({count} active)"
+    return "\n".join(lines)
 
 
 def render_route_release_text(data: dict[str, Any]) -> str:

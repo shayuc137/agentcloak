@@ -17,6 +17,7 @@ from agentcloak.core.text_renderers import (
     render_route_list_text,
     render_route_op_text,
     render_route_release_text,
+    render_route_remove_text,
 )
 
 __all__ = ["app"]
@@ -80,20 +81,21 @@ def route_add(
 
 @app.command("remove")
 def route_remove(
-    pattern: str = typer.Argument(
-        "", help="Pattern to remove; omit to remove ALL rules."
+    target: str = typer.Argument(
+        "",
+        help="Rule ID (from route add/list) or exact pattern; omit to remove ALL.",
     ),
 ) -> None:
-    """Remove a route rule by pattern, or all rules when no pattern is given."""
+    """Remove route rules by ID or pattern, or all rules when none is given."""
     body: dict[str, object] = {}
-    if pattern:
-        body["pattern"] = pattern
+    if target:
+        body["target"] = target
     dispatch_text_or_json(
         DaemonClient(),
         "POST",
         "/route/remove",
         json_body=body,
-        renderer=render_route_op_text,
+        renderer=render_route_remove_text,
     )
 
 

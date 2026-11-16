@@ -74,9 +74,11 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
           navigation — new URL if page navigated
           current_value — current value after fill/select
 
-        If the target [N] ref is stale (element_not_found), the daemon
-        automatically re-snapshots and retries once. The result will
-        include retried=true when this happens.
+        [N] means the element shown as [N] in the latest snapshot (a
+        find/selector-filtered snapshot numbers only what it shows). A ref
+        missing from it fails with element_not_found and is never replayed
+        against a fresh snapshot. Results include the target's role and
+        name — check them to catch a wrong target.
 
         If a dialog is blocking, returns error='blocked_by_dialog'.
         Handle it with agentcloak_dialog before retrying.

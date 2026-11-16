@@ -13,6 +13,7 @@ from agentcloak.core.text_renderers import (
     render_route_list_text,
     render_route_op_text,
     render_route_release_text,
+    render_route_remove_text,
 )
 from agentcloak.mcp._format import format_call
 
@@ -46,7 +47,8 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
 
         Actions:
           add    — register a rule (needs 'pattern' and 'rule_action')
-          remove — drop a rule by 'pattern' (omit pattern to clear all)
+          remove — drop rules by 'identifier' (rule ID) or exact 'pattern';
+                   omit both to clear all; an unmatched ID/pattern errors
           list   — show rules, hit counts, and pending request IDs
           release — resume held requests by identifier (request or rule ID)
 
@@ -54,7 +56,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             action: 'add', 'remove', 'list', or 'release'
             pattern: URL glob ('*' = any chars; no '*' = substring match)
             rule_action: Disposition for 'add' — abort, fulfill, hold, or continue
-            identifier: Pending request or rule ID for release
+            identifier: Rule ID for remove; pending request or rule ID for release
             resource_type: Only match this resource type (xhr, image, ...)
             method: Only match this HTTP method (GET, POST, ...)
             status: Response status for a 'fulfill' rule (default 200)
@@ -84,6 +86,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
             )
         if action == "remove":
             return await format_call(
-                client.route_remove(pattern=pattern), render_route_op_text
+                client.route_remove(target=identifier or pattern),
+                render_route_remove_text,
             )
         return await format_call(client.route_list(), render_route_list_text)

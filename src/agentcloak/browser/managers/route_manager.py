@@ -134,25 +134,30 @@ class RouteManager:
             self._rules.remove(rule)
             raise
 
-    async def remove(self, pattern: str | None) -> int:
-        """Remove rules by ``pattern`` (or all when ``None``); return count removed.
+    async def remove(self, target: str | None) -> list[RouteRule]:
+        """Remove rules whose ID or pattern equals ``target`` (all when ``None``).
+
+        Returns the removed rules so callers can say exactly what went away.
+        IDs are accepted because ``route add`` / ``route list`` print them and
+        agents naturally pass them back (DOS issue 11-16 #7).
 
         The local list is updated *before* the backend teardown so a backend
         that re-derives its interception state from the live rule list (the
         RemoteBridge ``Fetch`` path checks whether any rules remain) observes
         the post-removal set and can fully disable when the last rule is gone.
         """
+
+        def selected(rule: RouteRule) -> bool:
+            return target is None or target in (rule.identifier, rule.pattern)
+
         for identifier, (rule, _, _) in list(self._pending.items()):
-            if pattern is None or rule.pattern == pattern:
+            if selected(rule):
                 self.release(identifier)
-        if pattern is None:
-            removed = len(self._rules)
-            self._rules.clear()
-        else:
-            before = len(self._rules)
-            self._rules = [r for r in self._rules if r.pattern != pattern]
-            removed = before - len(self._rules)
-        await self._ctx._route_remove_impl(pattern)
+        removed = [r for r in self._rules if selected(r)]
+        self._rules = [r for r in self._rules if not selected(r)]
+        await self._ctx._route_remove_impl(
+            None if target is None else (removed[0].pattern if removed else target)
+        )
         return removed
 
     def list_rules(self) -> list[RouteRule]:

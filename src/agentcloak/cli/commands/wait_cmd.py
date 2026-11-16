@@ -5,6 +5,7 @@ from __future__ import annotations
 import typer
 
 from agentcloak.cli._dispatch import dispatch_text_or_json
+from agentcloak.cli.commands._common import duration_option
 from agentcloak.cli.output import error
 from agentcloak.client import DaemonClient
 from agentcloak.core.text_renderers import render_wait_text
@@ -31,10 +32,11 @@ def do_wait(
         None, "--js", help="JS expression that must return truthy."
     ),
     ms: int | None = typer.Option(None, "--ms", help="Milliseconds to sleep."),
-    timeout: int | None = typer.Option(
+    timeout: int | None = duration_option(
         None,
         "--timeout",
-        help="Timeout in milliseconds (default: config.browser.action_timeout).",
+        unit="ms",
+        help="Timeout (default: config.browser.action_timeout).",
     ),
     state: str = typer.Option(
         "visible",

@@ -2,9 +2,61 @@
 
 from __future__ import annotations
 
-from agentcloak.core.errors import AgentBrowserError
+from typing import Any, Literal
 
-__all__ = ["parse_header_list"]
+import typer
+
+from agentcloak.core.errors import AgentBrowserError
+from agentcloak.core.input import parse_duration
+
+__all__ = ["duration_option", "parse_header_list"]
+
+
+def duration_option(
+    default: Any,
+    flag: str,
+    *,
+    unit: Literal["s", "ms"],
+    help: str,
+    minimum: float = 0,
+) -> Any:
+    """A timeout option taking ``45s`` / ``45000ms`` or a bare number of ``unit``.
+
+    Every timeout flag goes through here so the accepted spellings and the
+    wrong-unit warning are the same everywhere. Bare numbers keep the flag's
+    historical unit; one that looks like the other unit (``wait --timeout 45``,
+    ``navigate --timeout 45000``) still runs but warns on stderr.
+    """
+    unit_word = "seconds" if unit == "s" else "milliseconds"
+
+    def parse(raw: Any) -> float | int:
+        # Click also feeds non-None defaults (e.g. cdp's 30000) through here.
+        raw = str(raw).strip()
+        try:
+            amount, explicit = parse_duration(raw, unit=unit)
+        except AgentBrowserError as exc:
+            raise typer.BadParameter(exc.hint) from exc
+        if amount < minimum:
+            raise typer.BadParameter(f"{flag} must be at least {minimum:g}{unit}")
+        if not explicit and (
+            (unit == "ms" and 0 < amount < 1000) or (unit == "s" and amount >= 1000)
+        ):
+            other = "s" if unit == "ms" else "ms"
+            typer.echo(
+                f"warning: {flag} {raw} means {raw}{unit}; "
+                f"write {raw}{other} if you meant "
+                f"{'seconds' if other == 's' else 'milliseconds'}",
+                err=True,
+            )
+        return round(amount) if unit == "ms" else amount
+
+    return typer.Option(
+        default,
+        flag,
+        parser=parse,
+        metavar="DURATION",
+        help=f"{help} Bare numbers are {unit_word}; 45s / 45000ms also work.",
+    )
 
 
 def parse_header_list(items: list[str] | None) -> dict[str, str]:

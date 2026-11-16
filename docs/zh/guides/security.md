@@ -110,7 +110,7 @@ content_scan_patterns = [
 }
 ```
 
-启用 `content_scan` 后，action 的目标元素文本（`[N]` ref 背后的内容）在执行 action 时也会被扫描——一旦命中，action 会抛 `content_scan_blocked`，防止 agent 与被污染的 UI 交互。
+启用 `content_scan` 后，action 的目标元素文本（`[N]` ref 背后的内容）在执行 action 时也会被扫描——一旦命中，action 会抛 `content_scan_blocked`，防止 agent 与被污染的 UI 交互。扫描读取的是最近一次 snapshot 里显示为 `[N]` 的元素，不会另做一次 snapshot——那会给 ref 重新编号，扫描（并操作）到别的元素。
 
 ## 第 3 层 —— 不可信内容包裹（白名单非空时自动启用）
 

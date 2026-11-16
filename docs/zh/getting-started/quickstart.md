@@ -83,7 +83,7 @@ cloak select 8 --value "option-2"
 
 ```text
 $ cloak click 1
-clicked [1]
+clicked [1] link "Learn more"
   navigation: https://www.iana.org/domains/example
 ```
 
@@ -96,7 +96,7 @@ cloak click 2 --snap
 ```
 
 ```text
-clicked [2]
+clicked [2] link "Page two"
   navigation: https://example.com/page2
 
 # Page Two | https://example.com/page2 | 12 nodes (4 interactive) | seq=4

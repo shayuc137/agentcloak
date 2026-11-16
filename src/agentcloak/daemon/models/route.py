@@ -9,7 +9,7 @@ through). ``/route/add`` registers a rule, ``/route/remove`` drops one (or all),
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 __all__ = [
     "RouteAddRequest",
@@ -43,9 +43,17 @@ class RouteAddRequest(BaseModel):
 
 
 class RouteRemoveRequest(BaseModel):
-    pattern: str = Field(
-        "", description="Pattern to remove; blank removes ALL active rules."
+    # ``pattern`` stays accepted for clients written before rule IDs were.
+    target: str = Field(
+        "",
+        validation_alias=AliasChoices("target", "pattern"),
+        description="Rule ID or exact pattern to remove; blank removes ALL rules.",
     )
+
+
+class RemovedRouteRule(BaseModel):
+    identifier: str = Field(description="Removed rule ID.")
+    pattern: str = Field(description="Removed rule pattern.")
 
 
 class RouteOpResponse(BaseModel):
@@ -54,6 +62,10 @@ class RouteOpResponse(BaseModel):
     )
     pattern: str | None = Field(None, description="Pattern acted on (None = all).")
     removed: int = Field(0, description="Number of rules removed (remove only).")
+    removed_rules: list[RemovedRouteRule] = Field(
+        default_factory=lambda: list[RemovedRouteRule](),
+        description="Rules removed (remove only).",
+    )
     count: int = Field(description="Active rule count after the operation.")
 
 

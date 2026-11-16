@@ -110,9 +110,32 @@ class TestManagerCrud:
 
         removed = await mgr.remove("a")
 
-        assert removed == 1
+        assert [r.pattern for r in removed] == ["a"]
         assert [r.pattern for r in mgr.list_rules()] == ["b"]
         remove_impl.assert_awaited_once_with("a")
+
+    @pytest.mark.asyncio
+    async def test_remove_by_identifier(self) -> None:
+        """DOS 11-16 #7: the ID printed by route add/list removes that rule."""
+        mgr, _, remove_impl = _make_mgr()
+        keep = RouteRule(pattern="*api*", action="abort", method="GET")
+        drop = RouteRule(pattern="*api*", action="fulfill", method="POST")
+        await mgr.add(keep)
+        await mgr.add(drop)
+
+        removed = await mgr.remove(drop.identifier)
+
+        assert removed == [drop]
+        assert mgr.list_rules() == [keep]
+        remove_impl.assert_awaited_once_with("*api*")
+
+    @pytest.mark.asyncio
+    async def test_remove_unknown_target_removes_nothing(self) -> None:
+        mgr, _, _ = _make_mgr()
+        await mgr.add(RouteRule(pattern="a", action="abort"))
+
+        assert await mgr.remove("nope") == []
+        assert len(mgr.list_rules()) == 1
 
     @pytest.mark.asyncio
     async def test_remove_all_with_none(self) -> None:
@@ -122,7 +145,7 @@ class TestManagerCrud:
 
         removed = await mgr.remove(None)
 
-        assert removed == 2
+        assert len(removed) == 2
         assert mgr.list_rules() == []
         remove_impl.assert_awaited_once_with(None)
 

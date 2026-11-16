@@ -297,7 +297,7 @@ class TestClickImpl:
         _seed_selector_map(ctx, ref=1)
         ctx._send = AsyncMock(return_value={})  # type: ignore[method-assign]
 
-        with pytest.raises(ElementNotFoundError, match="not in selector_map"):
+        with pytest.raises(ElementNotFoundError, match="not shown in the latest"):
             await ctx._click_impl(
                 target="9", x=None, y=None, button="left", click_count=1, force=True
             )

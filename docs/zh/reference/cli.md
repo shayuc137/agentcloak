@@ -42,6 +42,8 @@ AGENTCLOAK_OUTPUT=json cloak snapshot
 
 失败时 stdout 只输出一份 JSON envelope，stderr 输出 `Error [code]: message`。缺少参数和本地校验失败也遵循此约定。`js evaluate` 抛出异常或 Promise 拒绝会失败；正常返回以 `Error:` 开头的字符串仍属于成功数据。诊断失败可在 `data` 中附带检查结果。
 
+**时长写法。** 所有 `--timeout` / `--wait-timeout` 都接受带单位的写法：`45s` 或 `45000ms`。裸数字沿用该参数文档里的单位（`navigate`、`fetch`、`download` 为秒；`wait`、`cdp send`、`screenshot --wait-timeout` 为毫秒）。裸数字看起来像另一种单位时照常执行，但会在 stderr 警告，例如 `wait --timeout 45` 会提示这是 45ms。
+
 | `error.code` | 含义 |
 |--------------|------|
 | `invalid_request` | CLI 参数错误或 daemon 请求校验失败 |
@@ -82,7 +84,7 @@ cloak navigate URL [--timeout SECONDS] [--expect-path /PATH] [--snap] [--snapsho
 
 | 参数 | 默认值 | 说明 |
 |------|-------|------|
-| `--timeout` | `30` | 等待页面加载的最大秒数 |
+| `--timeout` | `30` | 等待页面加载的上限；裸数字为秒，也可写 `45s` / `45000ms` |
 | `--expect-path` | 无 | 最终 URL 的 pathname 必须与该值完全一致（忽略查询串和 fragment），否则以 `url_mismatch` 失败——用于识别被静默跳转到登录页 |
 | `--snap`（别名 `--snapshot`） | 关闭 | 附带 compact snapshot（省一次往返） |
 | `--snapshot-mode` | `compact` | `--snap` 启用时的 snapshot 模式（`compact` 或 `accessible`） |
@@ -172,7 +174,7 @@ cloak screenshot [--output FILE] [--viewport WIDTHxHEIGHT] [--dpr RATIO] [--expe
 | `--quality` | `80` | JPEG 质量 0-100（PNG 时忽略） |
 | `--wait-selector` | 无 | 截图前等待 CSS 选择器可见 |
 | `--wait-for` | 无 | 截图前执行标准的可见选择器等待；超时会短路且不写文件 |
-| `--wait-timeout` | `browser.action_timeout` | 选择器等待超时（毫秒） |
+| `--wait-timeout` | `browser.action_timeout` | 选择器等待超时；裸数字为毫秒，也可写 `15s` |
 | `--hide` | 无 | 本次截图隐藏的逗号分隔 CSS 选择器 |
 | `--keep-overlays` | 关闭 | 本次截图显示持久、一次性和 `[data-cloak-hide]` overlay |
 
@@ -240,6 +242,8 @@ cloak resume
 目标是已知控件、不想多一次 snapshot 往返时，`click`、`fill`、`hover` 也接受 `--selector CSS` 替代引用：`cloak fill --selector '#email' --text 'user@example.com'`。选择器必须在主文档中唯一匹配，不能与引用或绝对坐标组合（hover 的 `--offset` 可以）；已有引用照常可用。
 
 加 `--snap` 到任意交互命令，可附带 compact snapshot。
+
+引用只代表最近一次 snapshot 输出里显示为 `[N]` 的那个元素；带 `--find` / `--selector` 过滤的 snapshot 也一样，它只给显示出来的元素编号。不在那份输出里的引用报 `element_not_found`（有过滤时写明过滤条件），不会换一份新 snapshot 拿同一个编号重试。显示过的元素被重新渲染时，本地后端只按相同角色和完全一致的名称重新查找，且只在恰好匹配一个时才执行，否则报 `element_resolve_failed`。确认行会回显目标，例如 `clicked [2] link "客户"`，点错能当场看出来。
 
 ### click
 
@@ -353,7 +357,7 @@ cloak js evaluate --file probe.js          # 多行 UTF-8 脚本，无需处理 
 cloak js evaluate --preset vue_inspect    # 运行逆向 preset 而非自己写 JS
 ```
 
-scalar 结果（string/number/boolean）直接输出裸值。对象和数组打印为 pretty JSON。
+字符串原样输出。数字、布尔值和 `null` 用 JSON 写法（`true`、`false`、`null`），和对象内部一致；`undefined` 也输出 `null`。对象和数组打印为 pretty JSON。脚本需要区分字符串 `"true"` 和布尔值时用 `--json`。
 行内代码、`--file` 和 `--preset` 三选一。执行失败时会返回真实异常消息和
 首个有效源码/栈位置，并限制在 400 字符内，避免页面用超长栈占满 agent 上下文。
 
@@ -427,7 +431,7 @@ cloak wait --ms 2000
 | `--load` | 等待加载状态（`load`、`domcontentloaded`、`networkidle`） |
 | `--js` | 等待 JS 表达式返回真值 |
 | `--ms` | 休眠 N 毫秒 |
-| `--timeout` | 最大等待时间（毫秒，默认 30000） |
+| `--timeout` | 最大等待时间（默认 30000）；裸数字为毫秒，也可写 `45s` |
 
 ### 常用组合
 
@@ -514,11 +518,12 @@ cloak script list
 cloak route add "**/api/*" --action abort
 cloak route add "**/track" --action fulfill --status 204 --content-type application/json --body "{}"
 cloak route add "*" --action continue --resource-type xhr --method POST
-cloak route remove "**/api/*"         # 省略 pattern 则清空全部规则
+cloak route remove 3f2a9c1e7b04       # 按 add/list 输出的规则 ID，或按完整 pattern
+cloak route remove                    # 清空全部规则
 cloak route list
 ```
 
-`route list` 显示规则 id、命中次数和挂起请求 id。零命中会给出警告，避免将“登记成功”当作“拦截已验证”。不含 `*` 的模式按 URL 子串匹配，`*` 可以跨 `/` 匹配。
+`route remove` 逐条打印删掉的规则和剩余数量；ID 或 pattern 匹配不到任何规则时报 `route_not_found`，并列出现有规则。`route list` 显示规则 id、命中次数和挂起请求 id。零命中会给出警告，避免将“登记成功”当作“拦截已验证”。不含 `*` 的模式按 URL 子串匹配，`*` 可以跨 `/` 匹配。
 
 ```bash
 cloak route add --hold "/api/orders"
@@ -541,7 +546,7 @@ cloak cdp send Runtime.evaluate --params-file - < params.json
 
 大载荷可用 `--params-file PATH` 绕过命令行参数大小限制，或用 `-` 读取 stdin。输入必须是一个 UTF-8 JSON 对象，只包含 CDP 方法参数（例如 `{"expression":"document.title","returnByValue":true}`），不包含外层 HTTP 请求封装。该选项与 `--params` 互斥；两者均省略时发送 `{}`。文件不可读、JSON 无效或值不是对象时，会在连接 daemon 前报错。
 
-命令作用于当前 session 的页面，超时按每次请求计，单位毫秒。协议错误与超时均非零退出，JSON 模式返回结构化错误。本地 raw CDP 使用独立的 per-tab 持久通道；超时或取消会重置该通道，之后需重新设置其 CDP 状态，manager 订阅保持有效。
+命令作用于当前 session 的页面，超时按每次请求计（裸数字为毫秒，也可写 `30s`）。协议错误与超时均非零退出，JSON 模式返回结构化错误。本地 raw CDP 使用独立的 per-tab 持久通道；超时或取消会重置该通道，之后需重新设置其 CDP 状态，manager 订阅保持有效。
 
 ### 额外 HTTP header
 

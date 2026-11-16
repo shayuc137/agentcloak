@@ -18,6 +18,7 @@ from tempfile import gettempdir
 import typer
 
 from agentcloak.cli._dispatch import dispatch_text_or_json, emit_envelope
+from agentcloak.cli.commands._common import duration_option
 from agentcloak.cli.output import error, error_from_exception, info, is_json_mode, value
 from agentcloak.client import DaemonClient
 from agentcloak.core.errors import AgentBrowserError
@@ -39,13 +40,11 @@ def browser_navigate(
     expect_path: str = typer.Option(
         "", "--expect-path", help="Require this exact final URL pathname."
     ),
-    timeout: float | None = typer.Option(
+    timeout: float | None = duration_option(
         None,
         "--timeout",
-        help=(
-            "Navigation timeout in seconds (default: "
-            "config.browser.navigation_timeout)."
-        ),
+        unit="s",
+        help="Navigation timeout (default: config.browser.navigation_timeout).",
     ),
     snap: bool = typer.Option(
         False,
@@ -130,10 +129,11 @@ def browser_screenshot(
         "--wait-selector",
         help="Wait for this selector to be visible before capture.",
     ),
-    wait_timeout: int | None = typer.Option(
+    wait_timeout: int | None = duration_option(
         None,
         "--wait-timeout",
-        help="Selector wait timeout in ms (default: browser.action_timeout).",
+        unit="ms",
+        help="Selector wait timeout (default: browser.action_timeout).",
     ),
     wait_for: str = typer.Option(
         "",

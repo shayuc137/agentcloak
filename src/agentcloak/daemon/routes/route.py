@@ -70,10 +70,33 @@ async def handle_route_remove(
     body: RouteRemoveRequest, ctx: BrowserCtxDep
 ) -> dict[str, Any]:
     mgr = ctx.route_manager
-    pattern = body.pattern or None
-    removed = await mgr.remove(pattern)
+    target = body.target or None
+    removed = await mgr.remove(target)
+    active = mgr.list_rules()
+    if target is not None and not removed:
+        # A named removal that matched nothing is almost always a typo or a
+        # stale ID; failing keeps scripts from assuming the rule is gone.
+        listing = ", ".join(f"{r.identifier} {r.pattern}" for r in active) or "none"
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "ok": False,
+                "error": "route_not_found",
+                "hint": (
+                    f"No route rule has ID or pattern '{target}' (active: {listing})"
+                ),
+                "action": "run route list and pass a listed ID or exact pattern",
+            },
+        )
     return _ok(
-        {"pattern": pattern, "removed": removed, "count": len(mgr.list_rules())},
+        {
+            "pattern": target,
+            "removed": len(removed),
+            "removed_rules": [
+                {"identifier": r.identifier, "pattern": r.pattern} for r in removed
+            ],
+            "count": len(active),
+        },
         seq=ctx.seq,
     )
 

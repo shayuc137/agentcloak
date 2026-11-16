@@ -1,7 +1,7 @@
-"""ActionService — orchestrates action / batch / stale ref retry.
+"""ActionService — orchestrates action / batch and ``$N.path`` references.
 
-The route handler in ``daemon/routes.py`` used to inline ~150 lines of
-stale-ref retry plus ``$N.path`` reference resolution. That logic moves here
+The route handler in ``daemon/routes.py`` used to inline the
+``$N.path`` reference resolution. That logic moves here
 so it can be tested in isolation and reused (e.g. by spells that drive the
 context directly).
 """
@@ -12,15 +12,12 @@ import asyncio
 import re
 from typing import Any
 
-import structlog
-
 from agentcloak.browser.base import batch_snapshot
-from agentcloak.core.errors import DialogBlockedError, ElementNotFoundError
+from agentcloak.core.errors import DialogBlockedError
 from agentcloak.core.input import parse_ref
 
 __all__ = ["ActionService"]
 
-logger = structlog.get_logger()
 
 # ``$N.dotted.path`` reference syntax used by batch actions to pull values out
 # of prior step results.
@@ -61,28 +58,16 @@ class ActionService:
         target: str,
         *,
         extra: dict[str, Any],
-    ) -> tuple[dict[str, Any], bool]:
-        """Run a single action, with one stale-ref auto-retry on miss.
+    ) -> dict[str, Any]:
+        """Run a single action against the refs of the latest snapshot.
 
-        Returns ``(result, retried)`` so callers can flag it in the response.
+        A missing ref is reported, never retried: re-snapshotting renumbers
+        refs, so replaying ``[N]`` after a fresh snapshot clicks whatever got
+        that number — DOS issue 11-16 #1 hit an unseen nav link this way.
         """
         if target.startswith("["):
             target = str(parse_ref(target))
-        try:
-            result = await ctx.action(kind, target, **extra)
-            return result, False
-        except ElementNotFoundError:
-            if target and target.isdigit():
-                logger.info(
-                    "stale_ref_retry",
-                    kind=kind,
-                    target=target,
-                    reason="element_not_found",
-                )
-                await ctx.snapshot(mode="compact")
-                result = await ctx.action(kind, target, **extra)
-                return result, True
-            raise
+        return await ctx.action(kind, target, **extra)
 
     async def execute_batch(
         self,

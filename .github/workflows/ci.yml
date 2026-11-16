@@ -100,7 +100,12 @@ jobs:
           tests/integration/test_page_loss_diagnostics.py
           tests/integration/test_upload_target.py
           tests/integration/test_daemon_api.py
-          -v --tb=short --timeout=100
+          tests/integration/test_capture.py
+          tests/integration/test_interaction.py
+          tests/integration/test_profile.py
+          tests/integration/test_recovery.py
+          tests/integration/test_tabs.py
+          -m "not network" -v --tb=short --timeout=100
 
       - name: Headed pointer emulation and reset
         run: >-

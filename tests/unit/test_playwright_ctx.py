@@ -793,7 +793,9 @@ class TestClick:
             force=False,
         )
 
-        element.click.assert_awaited_once_with(button="right", click_count=2)
+        element.click.assert_awaited_once_with(
+            button="right", click_count=2, timeout=2000
+        )
         element.evaluate.assert_not_awaited()
 
 

@@ -256,6 +256,9 @@ cloak click N --force             # 一次性的单左击 DOM fallback
 
 `cloak click N --click-count 2` 执行双击。
 
+
+本地点击最多等待 2 秒可操作性检查（`browser.action_timeout` 更短时以它为准）。持续遮挡返回 `element_covered`，浏览器 call log 中包含遮挡元素的标签、名称/文本及 class。先用 `cloak press Escape` 关闭菜单，或有意使用 `--force`。marker 目标被移除时返回 `element_resolve_failed`，重取 snapshot 后再决定是否重试。其他点击超时也带去重的 call log 摘要，说明正在等待什么；较长的应用就绪等待请显式使用 `cloak wait`。普通点击不等待 SSE 或轮询结束。
+
 ### fill
 
 清空输入框并设置值。

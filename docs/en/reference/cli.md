@@ -260,6 +260,9 @@ cloak click N --click-count 2     # double-click
 
 For a known overlay, add its selector with `cloak hide add CSS`, re-snapshot, and use a normal click; hiding also cleans screenshots and snapshot output. `--force` is the fallback for an unknown one-off obstruction and invokes the resolved DOM element's `click()` instead of coordinate hit testing. It only supports a single left click: combining it with a non-default `--button` or `--click-count` returns `invalid_argument`.
 
+
+Local clicks allow at most 2 seconds for actionability (or the shorter `browser.action_timeout`). A persistent overlay fails with `element_covered`, including the blocker tag, accessible label/text and classes from the browser call log. Close the menu with `cloak press Escape` or intentionally use `--force`. A removed marker target fails with `element_resolve_failed`; refresh the snapshot before retrying. Other click timeouts include a deduplicated call-log summary describing the wait. Use `cloak wait` for longer application readiness. SSE and polling do not delay ordinary clicks.
+
 ### fill
 
 Clear an input field and set its value.

@@ -215,3 +215,5 @@ Local screen recording uses page-pinned CDP screencast with bounded frames; WebM
 Local pending-request observation follows document/frame lifetimes: document replacement and frame detach retire old requests, while same-document history/hash updates retain them. Live EventSource streams remain observable but do not block action-batch snapshot settling.
 
 On local backends, page-level JavaScript evaluation is pinned to the active tab's main document by frame and execution-context identity; `frame focus` never retargets it, and a context destroyed by navigation fails without replay. RemoteBridge evaluation is unchanged. Details: [`js evaluate`](../reference/cli.md#js-evaluate).
+
+Local clicks share a bounded 2s actionability budget on Playwright and CloakBrowser. Persistent overlays and removed marker targets fail without stale-ref replay; errors retain the browser wait summary. Ordinary clicks do not wait for network idle.

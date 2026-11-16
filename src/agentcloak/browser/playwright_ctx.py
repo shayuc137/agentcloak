@@ -896,16 +896,49 @@ class PlaywrightContext(BrowserContextBase):
             if force:
                 await element.evaluate("(node) => node.click()")
             else:
-                await element.click(button=button, click_count=int(click_count))
+                # DOS #6: an open menu's backdrop must not consume the entire
+                # action budget. Allow animations to finish, then return control
+                # to the agent; never replay a possibly dispatched click.
+                await element.click(
+                    button=button,
+                    click_count=int(click_count),
+                    # Leave the session queue time to return this diagnostic
+                    # when its overall budget is shorter than the grace period.
+                    timeout=max(
+                        1, min(2000, self._browser_config.action_timeout - 100)
+                    ),
+                )
         except Exception as exc:
             msg = str(exc).lower()
+            detail = "\n".join(dict.fromkeys(str(exc).splitlines()))[:4000]
+            missing = False
+            if not force:
+                with contextlib.suppress(Exception):
+                    missing = await element.count() == 0
+            if missing or "not attached" in msg:
+                raise BackendError(
+                    error="element_resolve_failed",
+                    hint=f"Click target [{index}] left the DOM. {detail}",
+                    action="run 'snapshot' to inspect the current page before retrying",
+                ) from exc
             if not force and (
                 "intercepts pointer events" in msg or "element is covered" in msg
             ):
-                raise ElementNotFoundError(
+                # BackendError avoids the stale-ref retry: a covered element
+                # is still the same element, and a retry cannot remove its menu.
+                raise BackendError(
                     error="element_covered",
-                    hint=str(exc),
-                    action="use --force to skip pointer check, or evaluate JS directly",
+                    hint=detail,
+                    action=(
+                        "close the overlay first (for example 'press Escape'), "
+                        "or use --force for an intentional DOM click"
+                    ),
+                ) from exc
+            if "timeout" in msg or "timed out" in msg:
+                raise BrowserTimeoutError(
+                    error="action_timeout",
+                    hint=f"Click [{index}] did not become actionable. {detail}",
+                    action="inspect the wait reason; use 'wait' for page readiness",
                 ) from exc
             raise
         ref = self._get_ref(index)

@@ -214,3 +214,5 @@ CSS 定位、snapshot find 和定时拖动复用共享交互/快照路径，两�
 本地 pending 请求观测跟随文档/frame 生命周期：替换文档和移除 frame 会清理旧请求，同文档 history/hash 更新则保留。仍在运行的 EventSource 流继续可见，但不阻塞动作批处理的 snapshot 等待。
 
 本地后端的页面级 JavaScript 求值按 frame 和执行上下文身份固定在当前标签页的主文档上；`frame focus` 不会改变它，导航销毁上下文时直接失败、不重放。RemoteBridge 的求值行为不变。详见 [`js evaluate`](../reference/cli.md#js-evaluate)。
+
+Playwright 与 CloakBrowser 的本地点击共用最多 2 秒的可操作性检查预算。持续遮挡和已移除的 marker 目标直接失败，不做陈旧 ref 重放；错误保留浏览器等待摘要。普通点击不等待网络空闲。

@@ -1598,3 +1598,15 @@ def test_native_click_capture_rejects_patched_locator() -> None:
     with patch.object(Locator, "click", humanized_click):
         assert _capture_native_locator_click() is None
     assert _capture_native_locator_click() is Locator.click
+
+
+def test_click_wait_reason_keeps_preflight_state() -> None:
+    """A real click that times out before logging keeps the preflight's state."""
+    from agentcloak.browser.playwright_ctx import PlaywrightContext
+
+    preflight = "Timeout 199ms exceeded.\n  - element is not visible\n  - retrying"
+    final = "Timeout 1ms exceeded.\nCall log:\n  - waiting for locator('x')"
+    reason = PlaywrightContext._click_wait_reason
+    assert reason(preflight + "\n" + final) == "visible"
+    assert reason(final) == "actionability checks (no state reported)"
+    assert reason(preflight + "\n  - element is not enabled") == "enabled"

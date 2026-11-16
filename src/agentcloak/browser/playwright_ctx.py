@@ -897,7 +897,9 @@ class PlaywrightContext(BrowserContextBase):
 
     @staticmethod
     def _click_wait_reason(log: str) -> str:
-        reason = "target attachment"
+        # Not "attachment": an empty call log only means Playwright timed out
+        # before reporting a state, and naming one would mislead.
+        reason = "actionability checks (no state reported)"
         for line in log.lower().splitlines():
             for marker, state in (
                 ("not visible", "visible"),
@@ -962,6 +964,7 @@ class PlaywrightContext(BrowserContextBase):
 
         index = int(target)
         element = await self._resolve_element(index)
+        preflight_log = ""
         try:
             if force:
                 await element.evaluate("(node) => node.click()")
@@ -994,13 +997,17 @@ class PlaywrightContext(BrowserContextBase):
                 except DialogBlockedError:
                     raise
                 except Exception as preflight:
-                    message = str(preflight).lower()
+                    preflight_log = str(preflight)
+                    message = preflight_log.lower()
                     if (
                         "intercepts pointer events" in message
                         or "element is covered" in message
                         or "not attached" in message
                         or await element.count() == 0
-                        or time.monotonic() >= deadline
+                        # Under ~50ms the real click would time out before
+                        # Playwright records any state; report what the
+                        # preflight saw instead.
+                        or deadline - time.monotonic() < 0.05
                         or not ("timeout" in message or "timed out" in message)
                     ):
                         raise
@@ -1051,7 +1058,7 @@ class PlaywrightContext(BrowserContextBase):
                     error="action_timeout",
                     hint=(
                         f"Click [{index}] timed out waiting for "
-                        f"{self._click_wait_reason(str(exc))}"
+                        f"{self._click_wait_reason(preflight_log + chr(10) + str(exc))}"
                     ),
                     action="inspect the wait reason; use 'wait' for page readiness",
                 ) from exc

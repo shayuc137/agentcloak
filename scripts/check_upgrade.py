@@ -8,6 +8,7 @@ import contextlib
 import http.server
 import json
 import os
+import signal
 import socket
 import subprocess
 import tempfile
@@ -56,7 +57,10 @@ def request(port, path, body=None):
 
 
 def ready(process, port, log):
-    deadline = time.monotonic() + 30
+    # A cold runner may download the browser binary on first launch; 120s only
+    # guards against a hang. On timeout show the daemon log, which used to be
+    # discarded and left nothing to diagnose (2026-11-16 CI).
+    deadline = time.monotonic() + 120
     while time.monotonic() < deadline:
         if process.poll() is not None:
             raise RuntimeError(log.read_text())
@@ -64,7 +68,20 @@ def ready(process, port, log):
             return request(port, "/health")
         except (URLError, TimeoutError):
             time.sleep(0.1)
-    raise TimeoutError("upgrade daemon readiness")
+    raise TimeoutError(f"upgrade daemon readiness\n{log.read_text()[-4000:]}")
+
+
+def stop_tree(process):
+    """Kill the daemon and its browser; a lone kill orphaned Chrome, which kept
+    writing into the temp dir and broke its cleanup."""
+    # Also after a clean exit: the group outlives its leader while a browser
+    # child is still shutting down.
+    if hasattr(os, "killpg"):
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(process.pid, signal.SIGKILL)
+    if process.poll() is None:
+        process.kill()
+    process.wait()
 
 
 def main():
@@ -171,6 +188,7 @@ def main():
                     cwd=root,
                     stdout=log,
                     stderr=log,
+                    start_new_session=os.name != "nt",
                 )
                 try:
                     health = ready(process, port, log_path)
@@ -179,9 +197,7 @@ def main():
                     process.wait(timeout=15)
                     assert process.returncode == 0
                 finally:
-                    if process.poll() is None:
-                        process.kill()
-                    process.wait()
+                    stop_tree(process)
 
         def evaluate(js):
             return request(port, "/evaluate", {"js": js})["result"]

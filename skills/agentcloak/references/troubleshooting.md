@@ -22,9 +22,9 @@ Error [element_not_found]: Element [99] not in selector_map (4 entries)
 | `skill_uninstall_failed` | File access/removal failed | Fix the reported path permissions and retry |
 | `daemon_invalid_response` / `daemon_request_failed` | Invalid body or failed daemon request | Check daemon logs and the selected endpoint |
 | `element_not_found` / `[N] not in selector_map` | `[N]` ref is stale (page changed) | Auto-retried once; if still fails, re-snapshot and use the new ref |
-| `element_covered` / visible ref does not react | Overlay intercepted the click; local clicks fail within a 2s actionability budget and include blocker details | Close the menu (`cloak press Escape`) or hide the overlay, then re-snapshot; use `--force` only for an intentional single-left-click fallback |
+| `element_covered` / visible ref does not react | Overlay intercepted the click; native 2s trial detects persistent interception; hints name the blocker | Close the menu (`cloak press Escape`) or hide the overlay, then re-snapshot; use `--force` only for an intentional single-left-click fallback |
 | `element_resolve_failed` after a click starts | The marker target was removed/replaced during actionability checks | Run `snapshot` and inspect current state before deciding to retry |
-| `action_timeout` | Local click did not become actionable within 2s (or the shorter configured budget); call-log summary describes the wait | Use `cloak wait` for readiness, then re-observe |
+| `action_timeout` | Click exhausted the configured action budget; one-line hint names the wait (visible/enabled/stable/attachment/navigation); full call log is debug-only | Use `cloak wait` for readiness, then re-observe |
 | `navigation_timeout` | Page took too long to load; local backends stop the abandoned navigation | Retry with `--timeout 60`, or check the URL is correct |
 | `session_busy` | Session queue wait exceeded `browser.action_timeout` | Inspect `session list --all` for active actions/queue; `session close --force` cancels work and closes only the selected session |
 | `action_timeout` | Page operation exceeded its execution budget | Navigate again; if the renderer is frozen, close the session with `--force` first |

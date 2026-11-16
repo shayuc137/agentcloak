@@ -779,6 +779,7 @@ class TestClick:
         element = MagicMock()
         element.evaluate = AsyncMock()
         element.click = AsyncMock()
+        element._impl_obj.click = AsyncMock()
         ctx._resolve_element = AsyncMock(  # type: ignore[method-assign]
             return_value=element
         )
@@ -793,9 +794,12 @@ class TestClick:
             force=False,
         )
 
-        element.click.assert_awaited_once_with(
-            button="right", click_count=2, timeout=2000
-        )
+        element._impl_obj.click.assert_awaited_once()
+        assert element._impl_obj.click.await_args.kwargs["trial"] is True
+        element.click.assert_awaited_once()
+        assert element.click.await_args.kwargs["button"] == "right"
+        assert element.click.await_args.kwargs["click_count"] == 2
+        assert 2000 < element.click.await_args.kwargs["timeout"] <= 29900
         element.evaluate.assert_not_awaited()
 
 

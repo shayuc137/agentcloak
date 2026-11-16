@@ -892,6 +892,45 @@ class PlaywrightContext(BrowserContextBase):
     # Atomic: actions
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _click_wait_reason(log: str) -> str:
+        reason = "target attachment"
+        for line in log.lower().splitlines():
+            for marker, state in (
+                ("not visible", "visible"),
+                ("not enabled", "enabled"),
+                ("not stable", "stable"),
+                ("intercepts pointer events", "pointer hit testing"),
+                ("detached", "target attachment"),
+                ("not attached", "target attachment"),
+                ("scheduled navigations", "navigation"),
+            ):
+                if marker in line:
+                    reason = state
+        return reason
+
+    @staticmethod
+    def _click_blocker(log: str) -> str:
+        lines = [
+            line for line in log.splitlines() if "intercepts pointer events" in line
+        ]
+        if not lines:
+            return "an overlay"
+        fragment = lines[-1].split("intercepts pointer events")[0]
+        tag = re.search(r"<([\w:-]+)", fragment)
+        label = re.search(r'aria-label="([^"]*)"', fragment)
+        text = re.search(r">([^<]+)</", fragment)
+        classes = re.search(r'class="([^"]*)"', fragment)
+        name = label.group(1) if label else text.group(1) if text else ""
+        parts = [f"<{tag.group(1)}>" if tag else "overlay"]
+        if name:
+            parts.append(f'"{" ".join(name.split())[:100]}"')
+        if classes:
+            tokens = classes.group(1).split()
+            key = [c for c in tokens if c in {"fixed", "inset-0"} or c.startswith("z-")]
+            parts.append(f'class="{" ".join((key or tokens)[:5])[:100]}"')
+        return " ".join(parts)[:240]
+
     async def _click_impl(
         self,
         *,
@@ -924,24 +963,51 @@ class PlaywrightContext(BrowserContextBase):
             if force:
                 await element.evaluate("(node) => node.click()")
             else:
-                # DOS #6: an open menu's backdrop must not consume the entire
-                # action budget. Allow animations to finish, then return control
-                # to the agent; never replay a possibly dispatched click.
+                deadline = (
+                    time.monotonic()
+                    + max(1, self._browser_config.action_timeout - 100) / 1000
+                )
+                try:
+                    # CloakBrowser's humanize wrapper ignores trial=True.
+                    # Use native protocol only for this non-dispatching check;
+                    # the sole real click below retains humanized behaviour.
+                    await self._await_or_dialog(
+                        element._impl_obj.click(
+                            button=button,
+                            clickCount=int(click_count),
+                            trial=True,
+                            timeout=max(
+                                1, min(2000, (deadline - time.monotonic()) * 1000)
+                            ),
+                        )
+                    )
+                except DialogBlockedError:
+                    raise
+                except Exception as preflight:
+                    message = str(preflight).lower()
+                    if (
+                        "intercepts pointer events" in message
+                        or "element is covered" in message
+                        or "not attached" in message
+                        or await element.count() == 0
+                        or time.monotonic() >= deadline
+                        or not ("timeout" in message or "timed out" in message)
+                    ):
+                        raise
+                    # Readiness may legitimately take longer than two seconds.
+                    # Trial sent no input, so the actual click is still made once.
                 await self._await_or_dialog(
                     element.click(
                         button=button,
                         click_count=int(click_count),
-                        # Leave the session queue time to return the diagnostic.
-                        timeout=max(
-                            1, min(2000, self._browser_config.action_timeout - 100)
-                        ),
+                        timeout=max(1, (deadline - time.monotonic()) * 1000),
                     )
                 )
         except DialogBlockedError:
             raise
         except Exception as exc:
             msg = str(exc).lower()
-            detail = "\n".join(dict.fromkeys(str(exc).splitlines()))[:4000]
+            logger.debug("click_wait_failed", index=index, call_log=str(exc))
             missing = False
             if not force:
                 with contextlib.suppress(Exception):
@@ -949,7 +1015,7 @@ class PlaywrightContext(BrowserContextBase):
             if missing or "not attached" in msg:
                 raise BackendError(
                     error="element_resolve_failed",
-                    hint=f"Click target [{index}] left the DOM. {detail}",
+                    hint=f"Click target [{index}] detached during actionability checks",
                     action="run 'snapshot' to inspect the current page before retrying",
                 ) from exc
             if not force and (
@@ -959,7 +1025,10 @@ class PlaywrightContext(BrowserContextBase):
                 # is still the same element, and a retry cannot remove its menu.
                 raise BackendError(
                     error="element_covered",
-                    hint=detail,
+                    hint=(
+                        f"Click [{index}] blocked by {self._click_blocker(str(exc))}; "
+                        "close the overlay first (for example 'press Escape')"
+                    ),
                     action=(
                         "close the overlay first (for example 'press Escape'), "
                         "or use --force for an intentional DOM click"
@@ -968,7 +1037,10 @@ class PlaywrightContext(BrowserContextBase):
             if "timeout" in msg or "timed out" in msg:
                 raise BrowserTimeoutError(
                     error="action_timeout",
-                    hint=f"Click [{index}] did not become actionable. {detail}",
+                    hint=(
+                        f"Click [{index}] timed out waiting for "
+                        f"{self._click_wait_reason(str(exc))}"
+                    ),
                     action="inspect the wait reason; use 'wait' for page readiness",
                 ) from exc
             raise

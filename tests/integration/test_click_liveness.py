@@ -138,6 +138,9 @@ async def test_blocked_click_fails_promptly(
         assert "Close user menu" in caught.value.hint
         assert "z-panel" in caught.value.hint
         assert "Escape" in caught.value.action
+        assert "Escape" in caught.value.hint
+        assert "\n" not in caught.value.hint
+        assert len(caught.value.hint) < 350
     assert await browser_context.evaluate("window.pageClicks") == 0
 
 
@@ -165,8 +168,24 @@ async def test_click_timeout_explains_readiness_wait(
     with pytest.raises(AgentBrowserError) as caught:
         await browser_context.action("click", "", selector="#page-action")
     assert caught.value.error == "action_timeout"
-    assert "not visible" in caught.value.hint
-    assert "Call log" in caught.value.hint
+    assert "visible" in caught.value.hint
+    assert "\n" not in caught.value.hint
+    assert len(caught.value.hint) < 200
+
+
+async def test_click_allows_button_enabled_after_three_seconds(
+    browser_context: Any, click_site: str
+) -> None:
+    await browser_context.navigate(click_site)
+    await browser_context.evaluate(
+        "document.querySelector('#page-action').disabled=true;"
+        "setTimeout(()=>document.querySelector('#page-action').disabled=false,3000)"
+    )
+    started = time.monotonic()
+    result = await browser_context.action("click", "", selector="#page-action")
+    assert result["clicked"]
+    assert time.monotonic() - started >= 2.5
+    assert await browser_context.evaluate("window.pageClicks") == 1
 
 
 async def test_click_failure_through_http_and_mcp(

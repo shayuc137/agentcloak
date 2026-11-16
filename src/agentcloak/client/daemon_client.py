@@ -1091,6 +1091,8 @@ class DaemonClient:
         within: str = "",
         limit: int | None = None,
         find: str = "",
+        selector: str = "",
+        padding: float = 0,
     ) -> dict[str, Any]:
         return self._send_sync(
             "GET",
@@ -1114,6 +1116,8 @@ class DaemonClient:
                 within=within,
                 limit=limit,
                 find=find,
+                selector=selector,
+                padding=padding,
             ),
         )
 
@@ -1255,6 +1259,8 @@ class DaemonClient:
         within: str = "",
         limit: int | None = None,
         find: str = "",
+        selector: str = "",
+        padding: float = 0,
     ) -> dict[str, Any]:
         # MCP defaults to ``mcp_screenshot_quality`` (lower than CLI's 80) so
         # base64 output stays under typical MCP token budgets.
@@ -1278,6 +1284,8 @@ class DaemonClient:
                 within=within,
                 limit=limit,
                 find=find,
+                selector=selector,
+                padding=padding,
             ),
         )
 
@@ -2157,8 +2165,14 @@ def _build_screenshot_params(
     within: str = "",
     limit: int | None = None,
     find: str = "",
+    selector: str = "",
+    padding: float = 0,
 ) -> dict[str, str]:
     params: dict[str, str] = {"quality": str(quality)}
+    if selector:
+        params["selector"] = selector
+    if padding:
+        params["padding"] = str(padding)
     if format is not None:
         params["format"] = format
     if full_page:

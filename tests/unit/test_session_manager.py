@@ -14,6 +14,10 @@ from agentcloak.daemon.services.session_manager import SessionManager, SessionSl
 _MODULE = "agentcloak.daemon.services.session_manager"
 
 
+def test_idle_default_allows_thirty_minutes() -> None:
+    assert AgentcloakConfig().daemon.session_idle_timeout == 1800
+
+
 class _FakeCtx:
     """Stand-in for a SecureBrowserContext-wrapped backend.
 

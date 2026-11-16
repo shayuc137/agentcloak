@@ -114,6 +114,7 @@ domain_whitelist = ["*.target.com"]
 | `AGENTCLOAK_LOG_TO_FILE` | `daemon.log_to_file` | `false` | 将 daemon 日志镜像写入 `~/.agentcloak/logs/daemon.log` 并轮转 |
 | `AGENTCLOAK_LOG_MAX_BYTES` | `daemon.log_max_bytes` | `10000000` | 单个轮转日志文件最大字节数（默认 10 MB） |
 | `AGENTCLOAK_LOG_BACKUP_COUNT` | `daemon.log_backup_count` | `3` | 保留的轮转日志文件数量 |
+| `AGENTCLOAK_SESSION_IDLE_TIMEOUT` | `daemon.session_idle_timeout` | `1800` | 会话闲置多少秒后回收 tab（默认 30 分钟）；0 禁用回收。丢页错误保留原页面身份和原因。 |
 
 ### 浏览器设置
 

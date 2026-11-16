@@ -782,13 +782,11 @@ async def _idle_watchdog(
 
     Two timers run off the same 30s tick:
 
-    * **per-session** — every named (non-default) session whose browser has
+    * **per-session** — every session whose owned tabs have
       sat unused for ``session_idle_timeout`` seconds is suspended via
-      :meth:`SessionManager.cleanup_idle`. The Chromium process is closed to
-      free RAM while the session metadata survives, so the next request
-      transparently rebuilds it. ``0`` disables this (the field default is
-      300s). The default session is unaffected — it follows the global timer
-      below, matching ``browser.idle_timeout_min``.
+      :meth:`SessionManager.cleanup_idle`. Tabs are closed to free RAM while
+      the shared browser and session metadata survive; the next request
+      reports page loss. ``0`` disables this (the field default is 1800s).
     * **global** — once *no* request (to any session) has arrived for
       ``timeout`` seconds the whole daemon shuts down. ``last_request_time`` is
       bumped by the HTTP middleware on every request regardless of session, so

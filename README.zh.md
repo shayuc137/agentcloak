@@ -25,7 +25,7 @@ Agent 原生隐身浏览器 -- 看见、交互、自动化。
 - **登录态复用** -- 保存/恢复登录 profile（cookies + localStorage 跨启动自动持久化，把 auth token 塞在客户端存储的 SPA 也能保持登录状态），或通过 RemoteBridge 操控真实 Chrome 浏览器
 - **网络配置** -- 代理（SOCKS5/HTTP）、DNS-over-HTTPS 控制、自定义 Chromium 参数，通过 `cloak config set` 管理
 - **工作空间会话** -- 一个 daemon 服务所有 Git worktree 或普通目录，各自拥有独立的页面、队列和引用；默认共享登录，可选按工作空间隔离存储
-- **可信的取证** -- 截图返回 URL、标题、视口、DPR 与像素尺寸；`--expect-url` / `--expect-path` 拒绝静默跳转；`--annotate` 在图上标出 `[N]` 引用；`record` 录制 WebM 或帧序列
+- **可信的取证** -- 截图返回 URL、标题、视口、DPR 与像素尺寸；`--expect-url` / `--expect-path` 拒绝静默跳转；`--annotate` 标出 `[N]` 引用，`--selector` 裁剪到单个元素；`record` 录制 WebM 或帧序列
 - **真实输入与模拟** -- 带逐步采样的定时拖拽、坐标悬停、按键别名、热切视口/DPR，以及深浅色与减少动画模拟（触摸/指针需要有头浏览器）
 - **面向恢复的设计** -- 有界的 session 队列、`session close --force` 处理冻结页面、请求暂停/放行、在途请求观测，以及每个状态目录一个加锁的 daemon
 - **Spell + API 流量捕获** -- 常见站点操作封装为一行命令；捕获流量，分析模式，自动生成 spell

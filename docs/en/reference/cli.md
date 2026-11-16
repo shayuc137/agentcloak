@@ -158,11 +158,13 @@ HTTP: `POST /emulation` with optional `color_scheme`, `reduced_motion`, `pointer
 Take a screenshot of the current page.
 
 ```bash
-cloak screenshot [--output FILE] [--viewport WIDTHxHEIGHT] [--dpr RATIO] [--expect-url GLOB] [--annotate [--within CSS] [--find TEXT] [--limit N]] [--full-page] [--format FORMAT] [--quality N] [--wait-for CSS] [--hide CSS] [--keep-overlays]
+cloak screenshot [--selector CSS] [--padding PX] [--output FILE] [--viewport WIDTHxHEIGHT] [--dpr RATIO] [--expect-url GLOB] [--annotate [--within CSS] [--find TEXT] [--limit N]] [--full-page] [--format FORMAT] [--quality N] [--wait-for CSS] [--hide CSS] [--keep-overlays]
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
+| `--selector` | none | Crop to exactly one main-document CSS element |
+| `--padding` | `0` | Finite non-negative crop padding in CSS pixels; requires selector |
 | `--output` | auto-named in OS temp dir (`tempfile.gettempdir()`) | Save to file; `.png` selects PNG and `.jpg`/`.jpeg` selects JPEG. The parent directory must exist |
 | `--viewport` | current page | Temporary `WIDTHxHEIGHT`, restored after capture |
 | `--dpr` | current page | Temporary device pixel ratio, restored after capture |
@@ -192,6 +194,14 @@ cloak screenshot [--output FILE] [--viewport WIDTHxHEIGHT] [--dpr RATIO] [--expe
 > quality 80.
 
 `--json` output identifies the capture: `url`, `title`, `viewport` (CSS width/height), `dpr`, and `pixel_width`/`pixel_height` decoded from the image. A navigation during capture fails with `page_changed`. See [recovery and evidence](../guides/recovery.md) for the full evidence workflow.
+
+`--selector CSS` crops to the native border rectangle of exactly one main-document element. Add `--padding PX` for finite, non-negative CSS-pixel context (default 0); padding is clamped to the viewport. The element is scrolled into view first, which may change page scroll. Oversized elements are limited to their visible intersection; a fixed element still outside the viewport fails with `screenshot_outside_viewport`. No match/invalid CSS and multiple matches use the existing selector errors; non-rendered/zero-size elements fail with `screenshot_empty_element`.
+
+`--selector` cannot be combined with `--full-page` or annotation `--within`. Temporary `--viewport`/`--dpr` are applied before measuring and restored even on failure. With `--annotate`, annotations are automatically scoped to the selected element. JSON adds `clip: {x,y,width,height}` in the original viewport's CSS coordinates, rounded outwards to encoded image pixels; `pixel_width/height` describe the cropped file. Annotation boxes keep original viewport coordinates, so subtract `clip.x/y` to locate them in the crop. Uncropped captures have `clip:null`.
+
+```bash
+cloak screenshot --selector '[role=dialog]' --padding 8 -o dialog.png --json
+```
 
 ### Annotated screenshots
 
@@ -263,6 +273,9 @@ cloak click N --click-count 2     # double-click
 ```
 
 For a known overlay, add its selector with `cloak hide add CSS`, re-snapshot, and use a normal click; hiding also cleans screenshots and snapshot output. `--force` is the fallback for an unknown one-off obstruction and invokes the resolved DOM element's `click()` instead of coordinate hit testing. It only supports a single left click: combining it with a non-default `--button` or `--click-count` returns `invalid_argument`.
+
+
+Local clicks first perform a non-dispatching trial (up to 2s) to detect a persistent overlay or removed marker. `element_covered` names the blocker and suggests `press Escape`; `element_resolve_failed` asks for a fresh snapshot. Other readiness waits (visible/enabled/stable) retain the remaining `browser.action_timeout`; the real click runs only once. Errors contain a one-line wait summary; full call logs are debug-only. SSE and polling do not delay ordinary clicks.
 
 ### fill
 
@@ -419,6 +432,8 @@ cloak dialog status                # check for pending dialogs
 cloak dialog accept [--text "reply"]
 cloak dialog dismiss
 ```
+
+Only alerts are auto-accepted. beforeunload, confirm and prompt require `dialog accept` or `dialog dismiss`. A blocked navigate returns `blocked_by_dialog` with the browser dialog type/message and preserves the current page. Dismiss keeps unsaved state; accept resumes the pending navigation. Handling a dialog does not override an unrelated navigation failure. Chromium may expose an empty beforeunload message; this is preserved verbatim.
 
 ## Waiting
 
@@ -801,7 +816,9 @@ cloak session close panel-a            # explicitly close this session
 cloak session close --force            # cancel queued/stuck work, then close (local backends)
 ```
 
-An idle session releases its own tabs after `daemon.session_idle_timeout` seconds (default 300s); the next request recreates them. `session close` releases the pages but keeps the session identity as `suspended` until the daemon exits — reusing the ID creates a fresh page and does not restore the old DOM; persistent storage follows the profile/workspace policy. A closed page or disconnected local browser is rebuilt on the next request. A shared browser failure loses volatile page state, so page actions report `page_recreated` until a new navigation. Changing the shared tier/profile while other sessions are active is rejected rather than changing those callers' browser. RemoteBridge does not silently share its user tab between callers. Queue limits, `--force` semantics and diagnostics are in [recovery and evidence](../guides/recovery.md).
+An idle session releases its own tabs after `daemon.session_idle_timeout` seconds (default 1800s); the next request recreates them. `session close` releases the pages but keeps the session identity as `suspended` until the daemon exits — reusing the ID creates a fresh page and does not restore the old DOM; persistent storage follows the profile/workspace policy. A closed page or disconnected local browser is rebuilt on the next request. A shared browser failure loses volatile page state, so page actions report `page_recreated` until a new navigation. Changing the shared tier/profile while other sessions are active is rejected rather than changing those callers' browser. RemoteBridge does not silently share its user tab between callers. Queue limits, `--force` semantics and diagnostics are in [recovery and evidence](../guides/recovery.md).
+
+The `page_recreated` error includes the session ID/label, previous URL/title, UTC+8 reclamation or detection time, and reason (idle timeout, browser rebuild, or closed/disconnected page). It names `daemon.session_idle_timeout`; text failures use stderr and exit 1, while `--json` also returns `ok:false` and `error.code/message`. Recovery still requires navigation; the previous DOM is not restored.
 
 Clients discover the daemon by probing the recorded `/health` endpoint. They only read `daemon.json`; PID visibility or a read-only state directory does not invalidate a live daemon. Raw HTTP callers can send `X-Agentcloak-Workspace` and `X-Agentcloak-Session`; omitted headers use the legacy empty workspace and `default` session. CLI/MCP send their resolved identities.
 

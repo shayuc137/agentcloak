@@ -50,6 +50,7 @@ from agentcloak.core.emulation import PageEmulation
 from agentcloak.core.errors import (
     BackendError,
     BrowserTimeoutError,
+    DialogBlockedError,
     ElementNotFoundError,
     NavigationError,
 )
@@ -58,6 +59,8 @@ from agentcloak.core.storage_snapshot import write_browser_state
 from agentcloak.core.types import StealthTier
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable
+
     from agentcloak.core.capture import CaptureStore
     from agentcloak.core.config import BrowserConfig
 
@@ -162,6 +165,8 @@ class PlaywrightContext(BrowserContextBase):
         self._cdp_port: int | None = cdp_port
         # Playwright Dialog object retained so dialog_handle can accept/dismiss.
         self._dialog_object: Any = None
+        self._dialog_navigation_pending = False
+        self._last_page_title = ""
 
         # Raw request cancellation must not detach manager event subscriptions.
         self._cdp_sessions: dict[int, Any] = {}
@@ -265,10 +270,14 @@ class PlaywrightContext(BrowserContextBase):
             url = str(self._page.url)
         except Exception:
             url = ""
+        if self._pending_dialog is not None:
+            # Native dialogs suspend renderer evaluation, including title().
+            return url, self._last_page_title
         try:
             title = str(await self._page.title())
         except Exception:
             title = ""
+        self._last_page_title = title
         return url, title
 
     async def resume_snapshot(self) -> dict[str, Any]:
@@ -380,7 +389,7 @@ class PlaywrightContext(BrowserContextBase):
 
     def _on_dialog(self, dialog: Any) -> None:
         # Stash the Playwright Dialog object up front so both auto-accept
-        # (for alert/beforeunload) and the agent-driven _dialog_handle_impl
+        # (for alerts) and the agent-driven _dialog_handle_impl
         # path can reach it via ``self._dialog_object``. The base class
         # owns the alert-vs-confirm/prompt dispatch logic so this stays
         # backend-agnostic.
@@ -590,15 +599,34 @@ class PlaywrightContext(BrowserContextBase):
     # Atomic: navigate / ax tree / page snapshots
     # ------------------------------------------------------------------
 
+    async def _await_or_dialog(self, operation: Awaitable[Any]) -> Any:
+        task = asyncio.ensure_future(operation)
+        try:
+            while not task.done():
+                await asyncio.wait({task}, timeout=0.01)
+                self._raise_if_dialog_blocked()
+            return await task
+        finally:
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
     async def _navigate_impl(self, url: str, *, timeout: float) -> dict[str, Any]:
         try:
-            resp = await self._page.goto(
-                url,
-                timeout=timeout * 1000,
-                wait_until="commit"
-                if self._route_mgr and self._route_mgr.has_holds
-                else "domcontentloaded",
+            resp = await self._await_or_dialog(
+                self._page.goto(
+                    url,
+                    timeout=timeout * 1000,
+                    wait_until="commit"
+                    if self._route_mgr and self._route_mgr.has_holds
+                    else "domcontentloaded",
+                )
             )
+        except DialogBlockedError:
+            # Cancel only the Python waiter: the agent must still be able to
+            # accept/dismiss Chromium's pending beforeunload navigation.
+            self._dialog_navigation_pending = True
+            raise
         except asyncio.CancelledError:
             self._page_valid = False
             await self._stop_navigation()
@@ -848,6 +876,45 @@ class PlaywrightContext(BrowserContextBase):
     # Atomic: actions
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _click_wait_reason(log: str) -> str:
+        reason = "target attachment"
+        for line in log.lower().splitlines():
+            for marker, state in (
+                ("not visible", "visible"),
+                ("not enabled", "enabled"),
+                ("not stable", "stable"),
+                ("intercepts pointer events", "pointer hit testing"),
+                ("detached", "target attachment"),
+                ("not attached", "target attachment"),
+                ("scheduled navigations", "navigation"),
+            ):
+                if marker in line:
+                    reason = state
+        return reason
+
+    @staticmethod
+    def _click_blocker(log: str) -> str:
+        lines = [
+            line for line in log.splitlines() if "intercepts pointer events" in line
+        ]
+        if not lines:
+            return "an overlay"
+        fragment = lines[-1].split("intercepts pointer events")[0]
+        tag = re.search(r"<([\w:-]+)", fragment)
+        label = re.search(r'aria-label="([^"]*)"', fragment)
+        text = re.search(r">([^<]+)</", fragment)
+        classes = re.search(r'class="([^"]*)"', fragment)
+        name = label.group(1) if label else text.group(1) if text else ""
+        parts = [f"<{tag.group(1)}>" if tag else "overlay"]
+        if name:
+            parts.append(f'"{" ".join(name.split())[:100]}"')
+        if classes:
+            tokens = classes.group(1).split()
+            key = [c for c in tokens if c in {"fixed", "inset-0"} or c.startswith("z-")]
+            parts.append(f'class="{" ".join((key or tokens)[:5])[:100]}"')
+        return " ".join(parts)[:240]
+
     async def _click_impl(
         self,
         *,
@@ -880,16 +947,85 @@ class PlaywrightContext(BrowserContextBase):
             if force:
                 await element.evaluate("(node) => node.click()")
             else:
-                await element.click(button=button, click_count=int(click_count))
+                deadline = (
+                    time.monotonic()
+                    + max(1, self._browser_config.action_timeout - 100) / 1000
+                )
+                try:
+                    # CloakBrowser's humanize wrapper ignores trial=True.
+                    # Use native protocol only for this non-dispatching check;
+                    # the sole real click below retains humanized behaviour.
+                    await self._await_or_dialog(
+                        element._impl_obj.click(
+                            button=button,
+                            clickCount=int(click_count),
+                            trial=True,
+                            timeout=max(
+                                1, min(2000, (deadline - time.monotonic()) * 1000)
+                            ),
+                        )
+                    )
+                except DialogBlockedError:
+                    raise
+                except Exception as preflight:
+                    message = str(preflight).lower()
+                    if (
+                        "intercepts pointer events" in message
+                        or "element is covered" in message
+                        or "not attached" in message
+                        or await element.count() == 0
+                        or time.monotonic() >= deadline
+                        or not ("timeout" in message or "timed out" in message)
+                    ):
+                        raise
+                    # Readiness may legitimately take longer than two seconds.
+                    # Trial sent no input, so the actual click is still made once.
+                await self._await_or_dialog(
+                    element.click(
+                        button=button,
+                        click_count=int(click_count),
+                        timeout=max(1, (deadline - time.monotonic()) * 1000),
+                    )
+                )
+        except DialogBlockedError:
+            raise
         except Exception as exc:
             msg = str(exc).lower()
+            logger.debug("click_wait_failed", index=index, call_log=str(exc))
+            missing = False
+            if not force:
+                with contextlib.suppress(Exception):
+                    missing = await element.count() == 0
+            if missing or "not attached" in msg:
+                raise BackendError(
+                    error="element_resolve_failed",
+                    hint=f"Click target [{index}] detached during actionability checks",
+                    action="run 'snapshot' to inspect the current page before retrying",
+                ) from exc
             if not force and (
                 "intercepts pointer events" in msg or "element is covered" in msg
             ):
-                raise ElementNotFoundError(
+                # Not an ElementNotFoundError: the ref is valid and still the
+                # same element; only closing the overlay can make it clickable.
+                raise BackendError(
                     error="element_covered",
-                    hint=str(exc),
-                    action="use --force to skip pointer check, or evaluate JS directly",
+                    hint=(
+                        f"Click [{index}] blocked by {self._click_blocker(str(exc))}; "
+                        "close the overlay first (for example 'press Escape')"
+                    ),
+                    action=(
+                        "close the overlay first (for example 'press Escape'), "
+                        "or use --force for an intentional DOM click"
+                    ),
+                ) from exc
+            if "timeout" in msg or "timed out" in msg:
+                raise BrowserTimeoutError(
+                    error="action_timeout",
+                    hint=(
+                        f"Click [{index}] timed out waiting for "
+                        f"{self._click_wait_reason(str(exc))}"
+                    ),
+                    action="inspect the wait reason; use 'wait' for page readiness",
                 ) from exc
             raise
         ref = self._get_ref(index)
@@ -1145,6 +1281,8 @@ class PlaywrightContext(BrowserContextBase):
                 self._emulation_tasks.difference_update(pending)
 
     async def _post_action_cleanup(self) -> None:
+        if self._pending_dialog is not None:
+            return
         with contextlib.suppress(Exception):
             await self._page.wait_for_load_state("domcontentloaded", timeout=2000)
         with contextlib.suppress(Exception):
@@ -1614,17 +1752,35 @@ class PlaywrightContext(BrowserContextBase):
     ) -> dict[str, Any]:
         if self._dialog_object is None:
             return {}
+        dialog = self._dialog_object
+        deferred = self._dialog_navigation_pending and dialog.type == "beforeunload"
         try:
+            if action == "accept" and deferred:
+                async with self._page.expect_navigation(
+                    wait_until="domcontentloaded",
+                    timeout=self._browser_config.navigation_timeout * 1000,
+                ):
+                    await dialog.accept()
+                return {"navigated": True}
             if action == "accept":
                 if text is not None:
-                    await self._dialog_object.accept(text)
+                    await dialog.accept(text)
                 else:
-                    await self._dialog_object.accept()
+                    await dialog.accept()
             else:
-                await self._dialog_object.dismiss()
+                await dialog.dismiss()
         except Exception as exc:
-            logger.debug("dialog_handle_error", error=str(exc))
-        self._dialog_object = None
+            self._pending_dialog = None
+            if deferred:
+                self._page_valid = False
+            raise NavigationError(
+                error="dialog_resolution_failed",
+                hint=str(exc),
+                action="inspect the current page before retrying navigation",
+            ) from exc
+        finally:
+            self._dialog_object = None
+            self._dialog_navigation_pending = False
         return {}
 
     # ------------------------------------------------------------------

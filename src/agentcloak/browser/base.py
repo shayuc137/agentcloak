@@ -21,6 +21,7 @@ import asyncio
 import base64
 import contextlib
 import json
+import math
 import re
 import time
 from abc import ABC, abstractmethod
@@ -249,7 +250,7 @@ class BrowserContextBase(ABC):
         # R1: Dialog handling.
         self._pending_dialog: PendingDialog | None = None
         # Holds the asyncio tasks spawned by ``_dispatch_dialog_event`` to
-        # auto-accept alert/beforeunload dialogs. We keep strong refs so the
+        # auto-accept alerts. We keep strong refs so the
         # event loop doesn't GC the coroutine before it resolves.
         self._auto_dialog_tasks: set[asyncio.Task[None]] = set()
 
@@ -568,12 +569,12 @@ class BrowserContextBase(ABC):
 
     @abstractmethod
     async def _auto_accept_dialog_impl(self) -> None:
-        """Auto-accept the currently-pending alert/beforeunload dialog.
+        """Auto-accept the currently-pending alert dialog.
 
         Subclasses route to whichever underlying primitive their backend
         exposes (Playwright ``dialog.accept()`` vs CDP
         ``Page.handleJavaScriptDialog``). Called from
-        :meth:`_dispatch_dialog_event` for alert/beforeunload only; the
+        :meth:`_dispatch_dialog_event` for alerts only; the
         agent-driven accept/dismiss path runs through
         :meth:`_dialog_handle_impl`.
         """
@@ -908,6 +909,7 @@ class BrowserContextBase(ABC):
     ) -> dict[str, Any]:
         self._check_debugger_paused()
         self._check_browser_alive()
+        self._raise_if_dialog_blocked()
         if timeout is None:
             timeout = float(self._browser_config.navigation_timeout)
 
@@ -924,6 +926,11 @@ class BrowserContextBase(ABC):
         self._console_page_url = url
         try:
             result = await self._navigate_impl(url, timeout=timeout)
+        except DialogBlockedError:
+            # DOS #9: a user decision suspends navigation without invalidating
+            # the still-live page (including its unsaved form state).
+            self._console_page_url, _ = await self._get_page_info()
+            raise
         except Exception as exc:
             self._page_valid = False
             self._translate_browser_closed(exc)
@@ -1305,6 +1312,57 @@ class BrowserContextBase(ABC):
         extra = await self._network_entries(since_seq=since_seq)
         return [*base, *extra] if extra else base
 
+    async def _native_element_box(self, backend_id: int) -> list[float]:
+        # Share native geometry with annotations: JS bounding rectangles may
+        # contain fingerprint noise, and neither caller should compensate twice.
+        model = await self._cdp_send("DOM.getBoxModel", {"backendNodeId": backend_id})
+        quad = model["model"]["border"]
+        xs, ys = quad[0::2], quad[1::2]
+        return [min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys)]
+
+    async def _selector_capture_clip(
+        self, selector: str, padding: float
+    ) -> list[float]:
+        backend_id = await self._resolve_snapshot_selector(selector, unique=True)
+        try:
+            box = await self._native_element_box(backend_id)
+            if box[2] > 0 and box[3] > 0:
+                await self._cdp_send(
+                    "DOM.scrollIntoViewIfNeeded", {"backendNodeId": backend_id}
+                )
+                box = await self._native_element_box(backend_id)
+        except Exception as exc:
+            detail = str(getattr(exc, "hint", exc)).lower()
+            if not any(s in detail for s in ("box model", "layout object")):
+                raise
+            box = [0, 0, 0, 0]
+        if box[2] <= 0 or box[3] <= 0:
+            raise BackendError(
+                error="screenshot_empty_element",
+                hint=f"Selector {selector!r} has no non-empty rendered box",
+                action="choose a visible element with non-zero dimensions",
+            )
+        metrics = await self._cdp_send("Page.getLayoutMetrics", {})
+        viewport = metrics["cssLayoutViewport"]
+        x, y, width, height = box
+        left, top = max(0, x - padding), max(0, y - padding)
+        right = min(viewport["clientWidth"], x + width + padding)
+        bottom = min(viewport["clientHeight"], y + height + padding)
+        if (
+            right <= left
+            or bottom <= top
+            or x + width <= 0
+            or y + height <= 0
+            or x >= viewport["clientWidth"]
+            or y >= viewport["clientHeight"]
+        ):
+            raise BackendError(
+                error="screenshot_outside_viewport",
+                hint=f"Selector {selector!r} is offscreen after scrolling",
+                action="adjust the viewport or choose an on-screen element",
+            )
+        return [left, top, right - left, bottom - top]
+
     async def _annotation_boxes(
         self, *, full_page: bool, within: str, limit: int | None, find: str
     ) -> list[dict[str, Any]]:
@@ -1331,26 +1389,20 @@ class BrowserContextBase(ABC):
             if index not in visible_refs:
                 continue
             try:
-                # Native geometry avoids JS bounding-rect fingerprint noise.
-                model = await self._cdp_send(
-                    "DOM.getBoxModel", {"backendNodeId": backend_id}
-                )
-                quad = model["model"]["border"]
-                xs, ys = quad[0::2], quad[1::2]
-                width, height = max(xs) - min(xs), max(ys) - min(ys)
+                x, y, width, height = await self._native_element_box(backend_id)
                 if width > 0 and height > 0:
                     ref = self._selector_map[index]
                     boxes.append(
                         {
                             "ref": index,
-                            "box": [min(xs) + dx, min(ys) + dy, width, height],
+                            "box": [x + dx, y + dy, width, height],
                             "role": ref.role,
                             "name": ref.text,
                             "in_viewport": (
-                                max(xs) > 0
-                                and max(ys) > 0
-                                and min(xs) < viewport.get("clientWidth", 0)
-                                and min(ys) < viewport.get("clientHeight", 0)
+                                x + width > 0
+                                and y + height > 0
+                                and x < viewport.get("clientWidth", 0)
+                                and y < viewport.get("clientHeight", 0)
                             ),
                         }
                     )
@@ -1383,6 +1435,8 @@ class BrowserContextBase(ABC):
         within: str = "",
         limit: int | None = None,
         find: str = "",
+        selector: str = "",
+        padding: float = 0,
     ) -> bytes:
         # ``output_path`` writes the capture to disk in addition to returning
         # the bytes. Writing lives here rather than in ``_screenshot_impl`` so
@@ -1393,6 +1447,17 @@ class BrowserContextBase(ABC):
         self._check_debugger_paused()
         self._check_browser_alive()
         self._check_page_valid()
+        from agentcloak.core.input import invalid_input
+
+        if not math.isfinite(padding) or padding < 0 or (padding and not selector):
+            raise invalid_input(
+                "Screenshot padding must be finite, non-negative and use selector"
+            )
+        if selector and (not selector.strip() or full_page or within):
+            raise invalid_input(
+                "Screenshot selector cannot be blank or combined with full_page/within"
+            )
+        selector = selector.strip()
         if (within or limit is not None or find) and not annotate:
             from agentcloak.core.input import invalid_input
 
@@ -1434,9 +1499,17 @@ class BrowserContextBase(ABC):
                     hint=f"Expected URL {expect_url!r}, got {identity['url']!r}",
                     action="navigate to the intended page before capturing",
                 )
+            clip = (
+                await self._selector_capture_clip(selector, padding)
+                if selector
+                else None
+            )
             annotations = (
                 await self._annotation_boxes(
-                    full_page=full_page, within=within, limit=limit, find=find
+                    full_page=full_page,
+                    within=selector or within,
+                    limit=limit,
+                    find=find,
                 )
                 if annotate
                 else []
@@ -1458,12 +1531,53 @@ class BrowserContextBase(ABC):
                     hint="Page navigated during capture",
                     action="wait for navigation and retry",
                 )
+            if clip is not None:
+                # Round outwards in actual image pixels. Source CSS coordinates
+                # remain in metadata so DPR and fractional bounds are auditable.
+                with Image.open(BytesIO(data)) as source:
+                    scale_x = source.width / identity["viewport"]["width"]
+                    scale_y = source.height / identity["viewport"]["height"]
+                    x, y, width, height = clip
+                    pixels = (
+                        max(0, math.floor(x * scale_x)),
+                        max(0, math.floor(y * scale_y)),
+                        min(source.width, math.ceil((x + width) * scale_x)),
+                        min(source.height, math.ceil((y + height) * scale_y)),
+                    )
+                    cropped = source.crop(pixels)
+                    output = BytesIO()
+                    cropped.save(
+                        output,
+                        format="PNG" if format == "png" else "JPEG",
+                        **({"quality": quality} if format != "png" else {}),
+                    )
+                    data = output.getvalue()
+                    identity["clip"] = dict(
+                        x=pixels[0] / scale_x,
+                        y=pixels[1] / scale_y,
+                        width=(pixels[2] - pixels[0]) / scale_x,
+                        height=(pixels[3] - pixels[1]) / scale_y,
+                    )
             if annotate:
                 from agentcloak.core.annotation import annotate_image
 
+                draw_boxes = annotations
+                if clip is not None:
+                    origin = identity["clip"]
+                    draw_boxes = [
+                        {
+                            **item,
+                            "box": [
+                                item["box"][0] - origin["x"],
+                                item["box"][1] - origin["y"],
+                                *item["box"][2:],
+                            ],
+                        }
+                        for item in annotations
+                    ]
                 data = annotate_image(
                     data,
-                    annotations,
+                    draw_boxes,
                     dpr=identity["dpr"],
                     format=format,
                     quality=quality,
@@ -1526,7 +1640,7 @@ class BrowserContextBase(ABC):
             dialog["default_value"] = d.default_value
         raise DialogBlockedError(
             error="blocked_by_dialog",
-            hint="A dialog is pending — handle it before continuing",
+            hint=f"Pending {d.dialog_type} dialog: {d.message}",
             action="use 'dialog accept' or 'dialog dismiss'",
             dialog=dialog,
         )
@@ -1562,13 +1676,13 @@ class BrowserContextBase(ABC):
         Called by backend-specific event handlers (Playwright
         ``page.on('dialog')``, CDP ``Page.javascriptDialogOpening``)
         after they normalise the underlying payload into four plain
-        strings. alert / beforeunload are accepted in the background so
-        scripts driven by ``window.alert()`` keep flowing; confirm /
-        prompt are stashed as ``self._pending_dialog`` and surface as a
+        strings. Alerts are accepted in the background so scripts driven by
+        ``window.alert()`` keep flowing; beforeunload / confirm / prompt
+        are stashed as ``self._pending_dialog`` and surface as a
         ``DialogBlockedError`` on the next action — the agent must call
         ``dialog accept`` / ``dialog dismiss`` to clear it.
         """
-        if dialog_type in ("alert", "beforeunload"):
+        if dialog_type == "alert":
             self._last_auto_dialog = {"type": dialog_type, "message": message}
             task = asyncio.ensure_future(self._auto_accept_dialog_impl())
             self._auto_dialog_tasks.add(task)
@@ -1604,8 +1718,11 @@ class BrowserContextBase(ABC):
             "type": self._pending_dialog.dialog_type,
             "message": self._pending_dialog.message,
         }
-        await self._dialog_handle_impl(action_type, text=text)
+        resolution = await self._dialog_handle_impl(action_type, text=text)
         self._pending_dialog = None
+        if resolution.get("navigated"):
+            await self._notify_managers_on_navigated()
+        await self._post_action_cleanup()
 
         new_seq = self._seq_counter.increment_action()
         self._ring_buffer.append(
@@ -1615,13 +1732,15 @@ class BrowserContextBase(ABC):
                 data={"action": action_type, **dialog_info},
             )
         )
-        return {
+        result = {
             "ok": True,
             "handled": True,
             "action": action_type,
             "dialog": dialog_info,
             "seq": new_seq,
         }
+        self._collect_feedback(result)
+        return result
 
     # ------------------------------------------------------------------
     # Wait

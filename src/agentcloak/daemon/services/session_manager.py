@@ -6,6 +6,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
@@ -49,10 +50,21 @@ class SessionSlot:
     page_recreated: bool = False
     has_page: bool = False
     closing: bool = False
+    last_url: str = ""
+    last_title: str = ""
+    page_loss: str = ""
 
     @property
     def state(self) -> str:
         return "active" if self.ctx is not None else "suspended"
+
+    def page_loss_hint(self) -> str:
+        return (
+            f"Session {self.session_id!r} (label={self.label or self.session_id!r}): "
+            f"previous page {self.last_title!r} ({self.last_url or 'unknown URL'}) "
+            f"lost: {self.page_loss}. A blank page was created; "
+            "idle reclamation is configured by daemon.session_idle_timeout"
+        )
 
 
 class SessionManager:
@@ -94,7 +106,7 @@ class SessionManager:
         if workspace is not None and not workspace.is_alive():
             for slot in self._sessions.values():
                 if slot.workspace_id == workspace_id:
-                    await self._reset_slot(slot)
+                    await self._reset_slot(slot, reason="workspace browser rebuilt")
             await self._close_ctx(workspace)
             self._workspaces.pop(workspace_id)
             workspace = None
@@ -114,16 +126,17 @@ class SessionManager:
         async with self._lock:
             owner = await self._state.context_manager.ensure_local()
             if owner is not self._owner:
-                await self._close_slots()
+                await self._close_slots(reason="shared browser rebuilt")
                 self._owner = owner
             owner = await self._workspace_owner(owner, workspace_id)
             slot = self.slot(session_id, workspace_id=workspace_id)
             if slot.ctx is not None and not slot.ctx.is_alive():
-                await self._close_ctx(slot.ctx)
-                slot.ctx = None
-                slot.cache = SimpleNamespace()
-                slot.resume = ResumeWriter()
+                await self._reset_slot(
+                    slot, reason="page closed or disconnected (detected)"
+                )
             if slot.ctx is None:
+                if slot.has_page and not slot.page_loss:
+                    self._record_loss(slot, "page replaced (detected on this request)")
                 slot.page_recreated = slot.has_page
                 raw = await owner.fork_session()
                 slot.ctx = SecureBrowserContext(raw, self._config)
@@ -228,6 +241,7 @@ class SessionManager:
             slot.resume = ResumeWriter()
             slot.has_page = False
             slot.page_recreated = False
+            slot.page_loss = ""
             if ctx is not None:
                 try:
                     async with asyncio.timeout(0.7):
@@ -252,11 +266,38 @@ class SessionManager:
             await self._reset_slot(slot)
             slot.has_page = False
             slot.page_recreated = False
+            slot.page_loss = ""
             await self._release_unused_workspaces()
             return True
 
-    async def _reset_slot(self, slot: SessionSlot) -> None:
+    async def remember_page(self, slot: SessionSlot) -> None:
+        if slot.ctx is None or slot.page_recreated:
+            return
+        try:
+            if not slot.ctx.is_alive():
+                return
+            # Dialogs/frozen renderers must not hold the queue just to improve
+            # a future diagnostic. Keep the last successful identity instead.
+            async with asyncio.timeout(0.1):
+                url, title = await slot.ctx.page_info()
+            if isinstance(url, str) and isinstance(title, str):
+                slot.last_url, slot.last_title = url, title
+        except Exception:
+            pass
+
+    @staticmethod
+    def _record_loss(slot: SessionSlot, reason: str) -> None:
+        if not slot.page_loss:
+            stamp = datetime.now(timezone(timedelta(hours=8))).isoformat(
+                timespec="seconds"
+            )
+            slot.page_loss = f"{reason} at {stamp}"
+
+    async def _reset_slot(self, slot: SessionSlot, *, reason: str = "") -> None:
         if slot.ctx is not None:
+            if reason and slot.has_page:
+                await self.remember_page(slot)
+                self._record_loss(slot, reason)
             await self._close_ctx(slot.ctx)
         slot.ctx = None
         slot.cache = SimpleNamespace()
@@ -271,9 +312,9 @@ class SessionManager:
         for workspace_id in set(self._workspaces) - active:
             await self._close_ctx(self._workspaces.pop(workspace_id))
 
-    async def _close_slots(self) -> None:
+    async def _close_slots(self, *, reason: str = "") -> None:
         for slot in self._sessions.values():
-            await self._reset_slot(slot)
+            await self._reset_slot(slot, reason=reason)
         await self._release_unused_workspaces()
 
     async def close_all(self) -> None:
@@ -312,7 +353,9 @@ class SessionManager:
                     continue
                 if now - slot.last_request_time < timeout:
                     continue
-                await self._reset_slot(slot)
+                await self._reset_slot(
+                    slot, reason=f"idle for at least {timeout:g}s; reclaimed"
+                )
                 suspended.append(slot.session_id)
             await self._release_unused_workspaces()
         return suspended

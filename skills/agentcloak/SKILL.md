@@ -81,7 +81,7 @@ Snapshot modes: `compact` (default, interactive + containers only, capped at 80 
 | `cloak snapshot --offset 50` | Paginate from 50th element |
 | `cloak snapshot --frames` | Include iframe content |
 | `cloak snapshot --diff` | Mark `[+]` added, `[~]` changed vs previous |
-| `cloak screenshot [--output FILE]` | Screenshot to file, stdout = path (`--wait-for CSS` waits first; `--hide CSS` hides overlays once; `--keep-overlays` reveals all) |
+| `cloak screenshot [--selector CSS] [--padding PX] [--output FILE]` | Screenshot to file, stdout = path (`--wait-for CSS` waits first; `--hide CSS` hides overlays once; `--keep-overlays` reveals all) |
 | `cloak screenshot --annotate [--within CSS] [--find TEXT] [--limit N] --json` | Draw fresh `[N]` refs on the image; JSON lists `annotations` with CSS-pixel `box` and `in_viewport` — see Gotchas |
 | `cloak screenshot --expect-url "*/page"` / `navigate URL --expect-path /page` | Fail with `url_mismatch` on silent redirects; screenshot `--json` reports URL, title, viewport, DPR and pixel size |
 | `cloak record start [--format webm\|zip]` / `status` / `stop -o FILE` | Record the current tab (pinned at start) to WebM (needs ffmpeg on the daemon) or a ZIP of JPEG frames; bounded by frames/seconds/64 MiB; unfinished recordings are discarded on session close |
@@ -108,7 +108,7 @@ Actions accept the element index positionally (`cloak click 5`) or via `--index 
 | `cloak do batch --calls-file actions.jsonl` | Run several actions in one request with `$N.path` result references; see `references/data-and-spells.md` |
 | `cloak select N --value "opt"` | Select dropdown option (`--label "text"` to match by visible text) |
 | `cloak keydown/keyup Shift` | Hold/release key |
-| `cloak dialog accept` / `dismiss` | Handle confirm/prompt dialog |
+| `cloak dialog accept` / `dismiss` | Handle beforeunload/confirm/prompt dialog |
 | `cloak wait --selector ".results"` | Wait for element / URL / JS condition / time |
 | `cloak upload --file path [--index N] [--nth N]` | Upload file; omit `--index` to auto-find hidden `input[type=file]` (drag-drop uploaders), `--nth` picks which one |
 | `cloak frame focus --name "x"` | Switch to iframe (`--main` to return) |
@@ -230,7 +230,7 @@ cloak screenshot -o page.png
 
 For one selector readiness condition, combine it with capture: `cloak screenshot --wait-for "#ready" --wait-timeout 15000`. A timeout stops before any file is written.
 
-**Evidence**: use `navigate --expect-path /page` and `screenshot --expect-url "*/page" --json` to reject redirects. Screenshot JSON includes URL, title, viewport, DPR and actual pixel dimensions. After `page_recreated`/`page_lost`, navigate again. For `session_busy` or a frozen page use `session close --force`; see troubleshooting.
+**Evidence**: use `navigate --expect-path /page` and `screenshot --expect-url "*/page" --json` to reject redirects. Screenshot JSON includes URL, title, viewport, DPR and actual pixel dimensions. After `page_recreated`/`page_lost`, inspect the session/page identity, loss reason and UTC+8 time in the error, then navigate again. Idle tab reclamation defaults to 1800s (`daemon.session_idle_timeout`). For `session_busy` or a frozen page use `session close --force`; see troubleshooting.
 
 **Emulation**: color scheme and reduced motion support headed/headless local browsers. Pointer requires `browser.headless=false`; headless and RemoteBridge pointer requests fail before changing the page. Owned tabs inherit settings; popup scripts may run before registration. Overrides last until reset or session closure.
 
@@ -280,3 +280,5 @@ Read these when you need deeper guidance:
 | `references/remote-bridge.md` | operating the user's real Chrome via the extension (token auth, claim, finalize, `bridge doctor`) |
 | `references/troubleshooting.md` | you see a `Error:` on stderr and the inline hint isn't enough, or the daemon won't start; also the `--json` envelope shape |
 | `references/commands-reference.md` | you need an exact daemon parameter / type — full route catalog with CLI / MCP bindings (auto-generated from the OpenAPI spec) |
+
+Element crops: `cloak screenshot --selector '[role=dialog]' --padding 8 -o dialog.png --json` requires one match, scrolls it into view and returns viewport-CSS `clip`. No full-page/within combination; temporary viewport/DPR restore after capture. Annotation boxes keep original viewport coordinates.

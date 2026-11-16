@@ -215,3 +215,7 @@ Local screen recording uses page-pinned CDP screencast with bounded frames; WebM
 Local pending-request observation follows document/frame lifetimes: document replacement and frame detach retire old requests, while same-document history/hash updates retain them. Live EventSource streams remain observable but do not block action-batch snapshot settling.
 
 On local backends, page-level JavaScript evaluation is pinned to the active tab's main document by frame and execution-context identity; `frame focus` never retargets it, and a context destroyed by navigation fails without replay. RemoteBridge evaluation is unchanged. Details: [`js evaluate`](../reference/cli.md#js-evaluate).
+
+Local clicks use a non-dispatching native trial (up to 2s) for overlays/removed markers, then one real click with the remaining configured action budget. This preserves slower readiness and CloakBrowser humanization. Failure hints are one-line summaries; full call logs are debug-only. Ordinary clicks do not wait for network idle.
+
+Only alerts are auto-accepted. beforeunload, confirm and prompt require `dialog accept` or `dialog dismiss`. A blocked navigate returns `blocked_by_dialog` with the browser dialog type/message and preserves the current page. Dismiss keeps unsaved state; accept resumes the pending navigation. Handling a dialog does not override an unrelated navigation failure. Chromium may expose an empty beforeunload message; this is preserved verbatim.

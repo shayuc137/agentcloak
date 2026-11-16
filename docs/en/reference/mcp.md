@@ -59,6 +59,8 @@ Take a screenshot of the current page. Returns an `ImageContent` (the image byte
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
+| `selector` | `str` | `""` | Crop to one CSS element; cannot combine full_page/within |
+| `padding` | `float` | `0` | Finite non-negative CSS padding, clamped to viewport; requires selector |
 | `annotate` | `bool` | `false` | Draw fresh `[N]` refs and boxes on the image; metadata returns `annotations: [{ref, role, name, box: [x,y,width,height], in_viewport}]` in CSS pixels (viewport-relative, document-relative with `full_page`) |
 | `within` / `find` / `limit` | `str` / `str` / `int \| null` | `""` / `""` / `null` | Filter which refs are annotated (require `annotate`); same semantics as the snapshot parameters, `limit=0` is unlimited. The captured area is unchanged |
 | `viewport` | `str \| null` | `null` | Temporary `WIDTHxHEIGHT`, restored after capture |
@@ -167,6 +169,8 @@ Query captured traffic data.
 ### agentcloak_dialog
 
 Handle browser dialogs (alert, confirm, prompt).
+
+Only alerts are auto-accepted. beforeunload, confirm and prompt require `dialog accept` or `dialog dismiss`. A blocked navigate returns `blocked_by_dialog` with the browser dialog type/message and preserves the current page. Dismiss keeps unsaved state; accept resumes the pending navigation. Handling a dialog does not override an unrelated navigation failure. Chromium may expose an empty beforeunload message; this is preserved verbatim.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|

@@ -214,3 +214,7 @@ CSS 定位、snapshot find 和定时拖动复用共享交互/快照路径，两�
 本地 pending 请求观测跟随文档/frame 生命周期：替换文档和移除 frame 会清理旧请求，同文档 history/hash 更新则保留。仍在运行的 EventSource 流继续可见，但不阻塞动作批处理的 snapshot 等待。
 
 本地后端的页面级 JavaScript 求值按 frame 和执行上下文身份固定在当前标签页的主文档上；`frame focus` 不会改变它，导航销毁上下文时直接失败、不重放。RemoteBridge 的求值行为不变。详见 [`js evaluate`](../reference/cli.md#js-evaluate)。
+
+本地点击先用最多 2 秒、不会派发事件的原生 trial 识别遮挡/已移除 marker，然后以剩余配置预算真正点击一次，保留较慢的正常就绪等待与 CloakBrowser humanize 行为。错误仅带一行摘要，完整 call log 写 debug 日志。普通点击不等待网络空闲。
+
+只有 alert 会自动接受；beforeunload、confirm、prompt 均需 `dialog accept` 或 `dialog dismiss`。导航被拦时返回 `blocked_by_dialog`，直接带浏览器对话框类型和原文，并保留当前页面。dismiss 保留未保存状态，accept 继续待决导航。处理对话框不会覆盖无关的导航失败。Chromium 的 beforeunload 原文可能为空，按原样保留。

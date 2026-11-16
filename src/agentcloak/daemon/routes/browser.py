@@ -67,9 +67,9 @@ async def handle_navigate(
     result = await ctx.navigate(body.url, timeout=body.timeout)
     manager = getattr(request.app.state, "session_manager", None)
     if manager is not None:
-        manager.slot(
-            session_id_of(request), **workspace_scope(request)
-        ).page_recreated = False
+        slot = manager.slot(session_id_of(request), **workspace_scope(request))
+        slot.page_recreated = False
+        slot.page_loss = ""
     if body.expect_path:
         from urllib.parse import urlsplit
 
@@ -104,6 +104,16 @@ async def handle_navigate(
 async def handle_screenshot(
     ctx: BrowserCtxDep,
     config: ConfigDep,
+    selector: str = Query(
+        "",
+        description="Crop to one CSS element; cannot use full_page/within.",
+    ),
+    padding: float = Query(
+        0,
+        ge=0,
+        allow_inf_nan=False,
+        description="CSS-pixel padding; requires selector, clamped to viewport.",
+    ),
     annotate: bool = Query(
         False, description="Draw fresh snapshot refs and return CSS boxes."
     ),
@@ -195,6 +205,11 @@ async def handle_screenshot(
             full_page=full_page,
             format=resolved_format,
             quality=quality,
+            **(
+                {"selector": selector, "padding": padding}
+                if selector or padding
+                else {}
+            ),
             **({"annotate": True} if annotate else {}),
             **({"within": within} if within else {}),
             **({"limit": limit} if limit is not None else {}),

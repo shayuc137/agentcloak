@@ -7,12 +7,12 @@ backends now only:
 * Normalise their backend-specific payload (Playwright ``Dialog`` /
   CDP ``Page.javascriptDialogOpening``) into the four primitive fields
   the dispatcher accepts.
-* Implement :meth:`_auto_accept_dialog_impl` for the alert/beforeunload
+* Implement :meth:`_auto_accept_dialog_impl` for the alert
   background-accept path.
 
-These tests pin the dispatch contract: alert/beforeunload trigger
+These tests pin the dispatch contract: alerts trigger
 ``_auto_accept_dialog_impl`` in the background and never block; confirm
-and prompt stash a :class:`PendingDialog` and surface as
+beforeunload and prompt stash a :class:`PendingDialog` and surface as
 ``DialogBlockedError`` on the next action.
 """
 
@@ -39,11 +39,11 @@ def _make_ctx() -> RemoteBridgeContext:
     return RemoteBridgeContext(bridge_ws=ws)
 
 
-class TestDispatchAlertAndBeforeUnload:
-    """alert / beforeunload route to ``_auto_accept_dialog_impl`` in the background."""
+class TestDispatchAlert:
+    """Alerts route to ``_auto_accept_dialog_impl`` in the background."""
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("dialog_type", ["alert", "beforeunload"])
+    @pytest.mark.parametrize("dialog_type", ["alert"])
     async def test_auto_accept_path_does_not_block(self, dialog_type: str) -> None:
         ctx = _make_ctx()
         auto_accept = AsyncMock()
@@ -90,7 +90,7 @@ class TestDispatchConfirmAndPrompt:
     """confirm / prompt stash :class:`PendingDialog` and block subsequent actions."""
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("dialog_type", ["confirm", "prompt"])
+    @pytest.mark.parametrize("dialog_type", ["confirm", "prompt", "beforeunload"])
     async def test_pending_dialog_stashed(self, dialog_type: str) -> None:
         ctx = _make_ctx()
         auto_accept = AsyncMock()

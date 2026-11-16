@@ -6,7 +6,7 @@ Each route handler does three things:
 2. delegate to a service in :mod:`agentcloak.daemon.services`
 3. wrap the service's return value in the ``OkEnvelope`` shape
 
-Business logic (stale-ref retry, snapshot diff, profile CRUD, capture export,
+Business logic (batch references, snapshot diff, profile CRUD, capture export,
 doctor checks) lives in the services. Routes intentionally avoid framework
 specifics — when something goes wrong they either raise
 :class:`AgentBrowserError` (caught by the global handler) or

@@ -58,6 +58,8 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 43 个工具。已包含在�
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|-------|------|
+| `selector` | `str` | `""` | 裁剪到唯一 CSS 元素，不可与 full_page/within 组合 |
+| `padding` | `float` | `0` | 有限非负 CSS 像素边距，限制在视口内；须配合 selector |
 | `annotate` | `bool` | `false` | 在图片上绘制新生成的 `[N]` 引用和元素框；元数据返回 `annotations: [{ref, role, name, box: [x,y,width,height], in_viewport}]`，单位 CSS 像素（相对视口，`full_page` 时相对文档） |
 | `within` / `find` / `limit` | `str` / `str` / `int \| null` | `""` / `""` / `null` | 筛选被标注的引用（须配合 `annotate`）；语义与 snapshot 同名参数一致，`limit=0` 不限。截图范围不变 |
 | `viewport` | `str \| null` | `null` | 一次性 `WIDTHxHEIGHT`，截图后恢复 |
@@ -166,6 +168,8 @@ agentcloak 的 MCP server 通过 stdio 传输暴露 43 个工具。已包含在�
 ### agentcloak_dialog
 
 处理浏览器对话框（alert、confirm、prompt）。
+
+只有 alert 会自动接受；beforeunload、confirm、prompt 均需 `dialog accept` 或 `dialog dismiss`。导航被拦时返回 `blocked_by_dialog`，直接带浏览器对话框类型和原文，并保留当前页面。dismiss 保留未保存状态，accept 继续待决导航。处理对话框不会覆盖无关的导航失败。Chromium 的 beforeunload 原文可能为空，按原样保留。
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|-------|------|

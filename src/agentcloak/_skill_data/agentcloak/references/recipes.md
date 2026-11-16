@@ -186,3 +186,11 @@ cloak cdp endpoint --page
 ```
 
 The capture response includes `url`, `title`, `viewport`, `dpr`, `pixel_width` and `pixel_height`. The output directory must exist. URL mismatches fail without writing a screenshot; temporary viewport and DPR changes are restored on success, failure or cancellation. A 1280×800 capture at DPR 2 contains 2560×1600 image pixels. If recovery reports `page_recreated`, navigate before retrying.
+
+## Capture just one panel
+
+```bash
+cloak screenshot --selector '[role=dialog]' --padding 8 -o dialog.png --json
+```
+
+The selector must match one main-document element. It is scrolled into view; padding is clamped to the viewport. `clip` reports the source viewport-CSS rectangle and actual image dimensions reflect DPR. Use a temporary viewport for large elements; do not combine with full-page or within.

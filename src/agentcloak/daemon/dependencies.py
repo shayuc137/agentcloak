@@ -197,7 +197,7 @@ async def get_browser_ctx(request: Request) -> Any:
                 detail={
                     "ok": False,
                     "error": "page_recreated",
-                    "hint": "Previous page lost; a blank page was created",
+                    "hint": slot.page_loss_hint(),
                     "action": "navigate to the intended URL before capturing",
                 },
             )

@@ -165,6 +165,8 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     async def agentcloak_screenshot(
+        selector: str = "",
+        padding: float = 0,
         annotate: bool = False,
         within: str = "",
         limit: int | None = None,
@@ -193,6 +195,8 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
         Args:
             dpr: Temporary device pixel ratio, restored after capture
             viewport: Temporary WIDTHxHEIGHT, restored after capture
+            selector: Crop to one CSS element; cannot use full_page/within.
+            padding: Finite non-negative CSS-pixel crop padding, clamped to viewport.
             annotate: Draw fresh [N] refs on the captured image.
             within: CSS subtree for annotations; requires annotate.
             limit: Snapshot node limit (0 unlimited); requires annotate.
@@ -225,6 +229,8 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                 )
             if (
                 hide
+                or selector
+                or padding
                 or keep_overlays
                 or viewport is not None
                 or dpr is not None
@@ -242,6 +248,8 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                     find=find,
                     format=format,
                     quality=quality,
+                    **({"selector": selector} if selector else {}),
+                    padding=padding,
                     wait_selector=wait_selector,
                     wait_timeout=wait_timeout,
                     hide=hide,
@@ -276,6 +284,7 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
                     f" | viewport={data.get('viewport', {})} | dpr={data.get('dpr', 1)}"
                     f" | pixels={data.get('pixel_width', 0)}"
                     f"x{data.get('pixel_height', 0)}"
+                    + (f" | clip={data.get('clip')}" if data.get("clip") else "")
                     + (
                         f" | annotations={data.get('annotations', [])}"
                         if annotate

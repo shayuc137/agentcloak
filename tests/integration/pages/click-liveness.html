@@ -1,0 +1,50 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Sales orders click liveness</title>
+<h1>Sales orders</h1>
+<button id="open" onclick="document.querySelector('dialog').showModal()">Open order</button>
+<button id="page-action" onclick="window.pageClicks++">Page action</button>
+<div id="orders"></div>
+<button id="open-menu" onclick="document.querySelector('#backdrop').hidden=false">User menu</button>
+<button id="replace-action" onclick="window.pageClicks++">Replaceable action</button>
+<button id="backdrop" hidden aria-label="Close user menu" class="fixed inset-0 z-panel"
+  style="position:fixed;inset:0;width:100%;height:100%;opacity:0;z-index:100"
+  onclick="this.hidden=true"></button>
+<dialog>
+  <h2>Order details</h2>
+  <button id="modal-action" onclick="window.modalClicks++">Modal action</button>
+  <button id="close" onclick="this.closest('dialog').close()">Close order</button>
+</dialog>
+<script>
+  window.pageClicks = 0;
+  window.modalClicks = 0;
+  window.pollCount = 0;
+  window.streamMessages = 0;
+  window.replaceMarked = false;
+  new MutationObserver(records => {
+    for (const {target} of records) {
+      if (window.replaceMarked && target.id === 'replace-action' && target.hasAttribute('data-cloak-ref')) {
+        window.replaceMarked = false;
+        setTimeout(() => {
+          const replacement = target.cloneNode(true);
+          replacement.removeAttribute('data-cloak-ref');
+          target.replaceWith(replacement);
+        }, 100);
+      }
+    }
+  }).observe(document.body, {subtree:true, attributes:true, attributeFilter:['data-cloak-ref']});
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') document.querySelector('#backdrop').hidden = true;
+  });
+  window.source = new EventSource('/click-events');
+  source.onmessage = () => window.streamMessages++;
+  async function poll() {
+    await fetch('/click-poll');
+    window.pollCount++;
+    // Replace the list as a polling UI would, while keeping the toolbar mounted.
+    document.querySelector('#orders').innerHTML =
+      '<button id="row-action" onclick="window.pageClicks++">Order row action</button>';
+  }
+  poll();
+  setInterval(poll, 2000);
+</script>

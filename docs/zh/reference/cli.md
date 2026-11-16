@@ -158,11 +158,13 @@ HTTP 使用 `POST /emulation`，字段为可选的 `color_scheme`、`reduced_mot
 截取当前页面的屏幕截图。
 
 ```bash
-cloak screenshot [--output FILE] [--viewport WIDTHxHEIGHT] [--dpr RATIO] [--expect-url GLOB] [--annotate [--within CSS] [--find TEXT] [--limit N]] [--full-page] [--format FORMAT] [--quality N] [--wait-for CSS] [--hide CSS] [--keep-overlays]
+cloak screenshot [--selector CSS] [--padding PX] [--output FILE] [--viewport WIDTHxHEIGHT] [--dpr RATIO] [--expect-url GLOB] [--annotate [--within CSS] [--find TEXT] [--limit N]] [--full-page] [--format FORMAT] [--quality N] [--wait-for CSS] [--hide CSS] [--keep-overlays]
 ```
 
 | 参数 | 默认值 | 说明 |
 |------|-------|------|
+| `--selector` | 无 | 裁剪到主文档中唯一匹配的 CSS 元素 |
+| `--padding` | `0` | 有限非负的 CSS 像素边距，须配合 selector |
 | `--output` | 自动放在系统临时目录（`tempfile.gettempdir()`） | 保存到文件；`.png` 选择 PNG，`.jpg`/`.jpeg` 选择 JPEG。父目录必须已存在 |
 | `--viewport` | 当前页面 | 一次性 `WIDTHxHEIGHT`，截图后恢复 |
 | `--dpr` | 当前页面 | 一次性设备像素比，截图后恢复 |
@@ -189,6 +191,14 @@ cloak screenshot [--output FILE] [--viewport WIDTHxHEIGHT] [--dpr RATIO] [--expe
 > CLI 默认质量 80。
 
 `--json` 输出带截图身份：`url`、`title`、`viewport`（CSS 宽高）、`dpr`，以及从图片解码得到的 `pixel_width`/`pixel_height`。截图期间发生导航会以 `page_changed` 失败。完整取证流程见[恢复与证据](../guides/recovery.md)。
+
+`--selector CSS` 按主文档中唯一元素的原生 border 矩形裁剪。`--padding PX` 添加有限、非负的 CSS 像素边距（默认 0），并限制在视口内。先将元素滚入视口，因此可能改变页面滚动位置；超大元素仅截当前可见交集。固定定位元素滚动后仍在视口外时返回 `screenshot_outside_viewport`。无匹配、CSS 无效或多匹配使用已有 selector 错误；未渲染或零尺寸元素返回 `screenshot_empty_element`。
+
+`--selector` 不能与 `--full-page` 或标注的 `--within` 组合。临时 `--viewport`/`--dpr` 先应用再取框，失败后也会恢复；配合 `--annotate` 时自动仅标注所选元素内部。JSON 返回 `clip: {x,y,width,height}`，坐标使用原视口 CSS 像素，并向外取整到实际图片像素；`pixel_width/height` 是裁剪后的文件尺寸。标注框仍用原视口坐标，减去 `clip.x/y` 即为裁剪图片内的位置。未裁剪时 `clip:null`。
+
+```bash
+cloak screenshot --selector '[role=dialog]' --padding 8 -o dialog.png --json
+```
 
 ### 带标注的截图
 
@@ -259,6 +269,9 @@ cloak click N --force             # 一次性的单左击 DOM fallback
 已知 overlay 优先用 `cloak hide add CSS` 加入隐藏规则，重新 snapshot 后正常点击；隐藏也会清理截图和 snapshot 输出。`--force` 用于未知的一次性遮挡，会对解析出的 DOM 元素调用 `click()`，绕过坐标命中测试。它仅支持单左击；与非默认 `--button` 或 `--click-count` 组合会返回 `invalid_argument`。
 
 `cloak click N --click-count 2` 执行双击。
+
+
+本地点击先做最多 2 秒、不会派发事件的 trial 预检，尽快识别持续遮挡和已移除的 marker。`element_covered` 直接点名遮挡元素并提示 `press Escape`；`element_resolve_failed` 提示重取 snapshot。等待 visible/enabled/stable 等正常就绪状态仍使用剩余的 `browser.action_timeout`，真正点击只做一次。错误仅输出一行等待摘要，完整 call log 只写 debug 日志。普通点击不等待 SSE 或轮询结束。
 
 ### fill
 
@@ -413,6 +426,8 @@ cloak dialog status                # 检查是否有待处理对话框
 cloak dialog accept [--text "reply"]
 cloak dialog dismiss
 ```
+
+只有 alert 会自动接受；beforeunload、confirm、prompt 均需 `dialog accept` 或 `dialog dismiss`。导航被拦时返回 `blocked_by_dialog`，直接带浏览器对话框类型和原文，并保留当前页面。dismiss 保留未保存状态，accept 继续待决导航。处理对话框不会覆盖无关的导航失败。Chromium 的 beforeunload 原文可能为空，按原样保留。
 
 ## 等待
 
@@ -781,7 +796,9 @@ cloak session close panel-a            # 显式关闭指定 session
 cloak session close --force            # 取消排队/卡住的工作后关闭（本地后端）
 ```
 
-session 闲置 `daemon.session_idle_timeout` 秒（默认 300s）后仅回收自己的 tab，下次请求重新创建。`session close` 释放页面，但在 daemon 退出前保留 `suspended` 的会话身份——同名再次使用时新建页面，不恢复旧 DOM；持久存储遵循 profile/workspace 策略。页面关闭或本地浏览器断开后，下次请求会重建；共享浏览器整体故障会丢失临时页面状态，页面动作会报告 `page_recreated`，直到重新导航。其他 session 活跃时，切换共享 tier/profile 会报错，避免改变其他调用方的浏览器。RemoteBridge 不会把多个调用方静默映射到同一个用户 tab。队列上限、`--force` 语义与诊断手段见[恢复与证据](../guides/recovery.md)。
+session 闲置 `daemon.session_idle_timeout` 秒（默认 1800s）后仅回收自己的 tab，下次请求重新创建。`session close` 释放页面，但在 daemon 退出前保留 `suspended` 的会话身份——同名再次使用时新建页面，不恢复旧 DOM；持久存储遵循 profile/workspace 策略。页面关闭或本地浏览器断开后，下次请求会重建；共享浏览器整体故障会丢失临时页面状态，页面动作会报告 `page_recreated`，直到重新导航。其他 session 活跃时，切换共享 tier/profile 会报错，避免改变其他调用方的浏览器。RemoteBridge 不会把多个调用方静默映射到同一个用户 tab。队列上限、`--force` 语义与诊断手段见[恢复与证据](../guides/recovery.md)。
+
+`page_recreated` 错误包含当前 session ID/label、原 URL/标题、UTC+8 的回收或检测时间，以及闲置超时、浏览器重建、页面关闭/断开的原因，并给出 `daemon.session_idle_timeout` 配置键。text 失败写 stderr 并退出 1；`--json` 还返回 `ok:false` 与 `error.code/message`。仍需重新导航恢复，不会恢复旧 DOM。
 
 客户端探测记录中的 `/health` 来发现 daemon，只读取 `daemon.json`；PID 不可见或状态目录只读不会让活着的 daemon 被判死。原始 HTTP 可发送 `X-Agentcloak-Workspace` 和 `X-Agentcloak-Session`；缺省时使用兼容的空工作空间和 `default` session。CLI/MCP 发送解析后的身份。
 

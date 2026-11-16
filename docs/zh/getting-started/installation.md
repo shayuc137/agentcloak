@@ -46,6 +46,8 @@ pip install agentcloak
 
 CloakBrowser 在首次使用时自动下载补丁版 Chromium 二进制文件（约 200 MB，缓存在 `~/.cloakbrowser/`）。提前运行 `doctor --fix` 可以避免下载发生在你第一次 navigate 时。
 
+agentcloak 把 `cloakbrowser` 锁在 0.6 以下，请勿单独升级：0.6 重做了 humanize 输入（agentcloak 默认开启），0.7 起每次启动都需要 license key，没有 key 时 headless daemon 无法启动。
+
 ## 安装 Skill 安装包
 
 `pip install agentcloak` 会安装好 CLI 和 MCP 服务。CLI 在 wheel 中已经

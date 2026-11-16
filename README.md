@@ -109,8 +109,8 @@ cloak screenshot
 Errors go to stderr with a recovery hint and a non-zero exit code:
 
 ```text
-Error [element_not_found]: Element [99] not in selector_map (1 entries)
-  -> run 'snapshot' to refresh the selector_map, or re-snapshot if the page changed
+Error [element_not_found]: [99] was not shown in the latest snapshot (1 refs)
+  -> run 'snapshot' and use a ref shown in that output
 ```
 
 Need the legacy JSON envelope for scripts? Pass `--json` (or set `AGENTCLOAK_OUTPUT=json`):

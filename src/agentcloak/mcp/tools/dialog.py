@@ -31,8 +31,9 @@ def register(mcp: FastMCP, client: DaemonClient) -> None:
     ) -> str:
         """Handle browser dialogs (alert, confirm, prompt).
 
-        alert/beforeunload dialogs are auto-accepted. confirm/prompt
-        dialogs are held as pending until you call accept or dismiss.
+        alert dialogs are auto-accepted. beforeunload/confirm/prompt
+        dialogs are held as pending until you call accept or dismiss;
+        dismiss a beforeunload to stay on the page and keep unsaved state.
 
         When a dialog is pending, all other actions return
         'blocked_by_dialog' — handle the dialog first.

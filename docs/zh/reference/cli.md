@@ -18,8 +18,8 @@ $ cloak snapshot
   [1] link "Learn more" href="https://iana.org/domains/example"
 
 $ cloak click 99
-Error [element_not_found]: Element [99] not in selector_map (1 entries)
-  -> run 'snapshot' to refresh the selector_map, or re-snapshot if the page changed
+Error [element_not_found]: [99] was not shown in the latest snapshot (1 refs)
+  -> run 'snapshot' and use a ref shown in that output
 ```
 
 脚本和 jq 流水线可启用结构化输出：

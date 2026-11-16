@@ -1316,7 +1316,7 @@ class RemoteBridgeContext(BrowserContextBase):
     # ------------------------------------------------------------------
 
     def _handle_dialog_event(self, params: dict[str, Any]) -> None:
-        # Backend-agnostic dispatch (alert/beforeunload vs confirm/prompt)
+        # Backend-agnostic dispatch (alert vs beforeunload/confirm/prompt)
         # lives on the base class; we only normalise the CDP payload into
         # the four primitive fields the dispatcher expects.
         self._dispatch_dialog_event(

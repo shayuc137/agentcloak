@@ -48,6 +48,8 @@ Everything the installer command above pulls in:
 
 CloakBrowser downloads its patched Chromium binary automatically on first use (~200 MB, cached at `~/.cloakbrowser/`). Running `doctor --fix` upfront avoids that wait happening during your first navigate.
 
+agentcloak pins `cloakbrowser` below 0.6. Do not upgrade it separately: 0.6 reworks humanized input (agentcloak's default) and 0.7+ requires a license key for every launch, so the headless daemon cannot start without one.
+
 ## Install the Skill bundle
 
 `pip install agentcloak` gives you the CLI and the MCP server. The CLI ships

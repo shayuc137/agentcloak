@@ -209,8 +209,8 @@ $ cloak navigate https://example.com
 https://example.com/ | Example Domain
 
 $ cloak click 99
-Error [element_not_found]: Element [99] not in selector_map (1 entries)
-  -> run 'snapshot' to refresh the selector_map, or re-snapshot if the page changed
+Error [element_not_found]: [99] was not shown in the latest snapshot (1 refs)
+  -> run 'snapshot' and use a ref shown in that output
 ```
 
 需要旧的 JSON envelope（`jq` 流水线或其他结构化消费方）？加 `--json`，或设 `AGENTCLOAK_OUTPUT=json`：

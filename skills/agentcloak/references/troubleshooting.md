@@ -8,8 +8,8 @@ When a command exits non-zero, read the `Error [code]: …` line on stderr — t
 
 ```text
 $ cloak click 99
-Error [element_not_found]: Element [99] not in selector_map (4 entries)
-  -> run 'snapshot' to refresh the selector_map, or re-snapshot if the page changed
+Error [element_not_found]: [99] was not shown in the latest snapshot (4 refs)
+  -> run 'snapshot' and use a ref shown in that output
 ```
 
 | Error text on stderr | Cause | Recovery |

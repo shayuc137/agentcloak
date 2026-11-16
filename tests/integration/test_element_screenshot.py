@@ -104,9 +104,15 @@ async def test_zero_box_and_padding_clamp(
         await ctx.screenshot(selector="#zero")
     assert caught.value.error == "screenshot_empty_element"
     await ctx.evaluate("document.querySelector('#control').style.display='block'")
+    # The session browser is shared: earlier tests may leave their own viewport
+    # (test_input_actions keeps a raw-CDP 800x600 on purpose), so clamp against
+    # the live viewport instead of the fixture's launch size.
+    width, height, dpr = await ctx.evaluate(
+        "[innerWidth, innerHeight, devicePixelRatio]"
+    )
     raw = await ctx.screenshot(format="png", selector="#control", padding=10000)
     with Image.open(BytesIO(raw)) as image:
-        assert image.size == (1280, 720)
+        assert image.size == (round(width * dpr), round(height * dpr))
 
 
 async def test_unreachable_fixed_element_is_not_a_padding_capture(
